@@ -1,0 +1,110 @@
+{
+  "_": "EXTRACTED, NOT AUTHORED. getComputedStyle + getBoundingClientRect read off staging.fareye.co/v2/ses/pending-for-planning (tab 200074091, window 1440x900 -> viewport 1440x722, DPR-scaled capture 1564x784) on 2026-09-18. Re-extract to change a value; never hand-edit one.",
+  "_tenant": "SEKO skin (orders KC5-SEKO-nn). The earlier scratchpad/pfp inventory was captured on the HelloFresh skin; the chrome is identical, the row text and stat numbers are not.",
+  "viewport": { "width": 1440, "height": 722, "captureScale": 1.0861 },
+
+  "font": {
+    "family": "Lato",
+    "note": "Lato 300/400/700/900 are already loaded by index.html. Staging asks for 500 and 600 too; with no such face loaded the browser synthesises from 400/700 — asking for the same weights here reproduces staging's rendering exactly, so these are written verbatim rather than rounded to the design system's 400/700.",
+    "weights": { "body": 400, "action": 500, "tableHeader": 600, "pageTitle": 700 }
+  },
+
+  "color": {
+    "canvas": "rgb(244, 245, 247)",
+    "surface": "rgb(255, 255, 255)",
+    "ink": "rgb(32, 44, 57)",
+    "inkBody": "rgb(76, 87, 97)",
+    "inkMuted": "rgb(92, 112, 138)",
+    "inkHint": "rgb(128, 148, 171)",
+    "brand": "rgb(238, 82, 57)",
+    "brandTint": "rgb(255, 243, 241)",
+    "line": "rgb(226, 228, 230)",
+    "lineTable": "rgb(240, 240, 240)",
+    "linePicker": "rgb(217, 217, 217)",
+    "iconMuted": "rgb(183, 188, 192)",
+    "pillInfoBg": "rgb(231, 248, 254)",
+    "pillInfoBorder": "rgb(170, 223, 245)"
+  },
+
+  "layout": {
+    "sidebarWidth": 256,
+    "headerHeight": 64,
+    "pagePaddingX": 16,
+    "pagePaddingY": 8,
+    "contentOriginX": 272,
+    "contentWidth": 1152,
+    "filterRowY": 81,
+    "cardRowTop": 129,
+    "listToolbarY": 255,
+    "tableTop": 331.8,
+    "footerTop": 675
+  },
+
+  "roles": {
+    "title": { "font": "Lato 20px/30px 700", "letterSpacing": "0.3px", "color": "rgb(32, 44, 57)", "rect": [272, 17, 194.9, 30] },
+    "dateRange": { "bg": "rgb(255, 255, 255)", "border": "1px solid rgb(217, 217, 217)", "radius": 10, "padding": "4px 11px", "height": 32, "width": 225, "font": "Lato 14px/14px 400", "rect": [272, 81, 225, 32] },
+    "dateRangeInput": { "font": "Lato 14px/22px 400", "color": "rgba(0, 0, 0, 0.88)", "width": 75.5, "height": 22 },
+    "dateRangeIcon": { "size": 14, "color": "rgba(0, 0, 0, 0.25)" },
+    "select": { "bg": "rgb(255, 255, 255)", "border": "1px solid rgb(226, 228, 230)", "radius": 10, "padding": "1px 24px 1px 4px", "height": 32, "font": "Lato 14px/22px 400", "color": "rgb(76, 87, 97)" },
+    "selectPlaceholder": { "font": "Lato 14px/22px 400", "color": "rgb(92, 112, 138)" },
+    "stateSelect": { "width": 200, "rect": [509, 81, 200, 32] },
+    "funnelButton": { "bg": "rgb(255, 255, 255)", "border": "1px solid rgb(238, 82, 57)", "radius": 10, "padding": 7, "size": 32, "iconSize": 16, "rect": [721, 81, 32, 32] },
+    "clearFilters": { "font": "Lato 14px/20px 500", "color": "rgb(238, 82, 57)", "border": "1px solid transparent", "radius": 10, "padding": "4px 0", "height": 32, "width": 78.6, "rect": [765, 81, 78.6, 32] },
+    "quickFilterToggle": { "bg": "rgb(255, 255, 255)", "border": "1px solid rgb(226, 228, 230)", "radius": 10, "padding": "4px 16px 4px 8px", "gap": 8, "rect": [1266, 81, 158.4, 34] },
+    "chip": { "bg": "rgb(244, 245, 247)", "border": "1px solid rgb(226, 228, 230)", "radius": 20, "padding": "6px 12px", "gap": 4, "font": "Lato 16px 400", "color": "rgb(31, 31, 31)", "height": 33.5 },
+    "cardRowInner": { "gap": 16, "rect": [272, 135, 576, 98.5] },
+    "searchInput": { "rect": [312, 272, 142, 24], "iconSize": 24 },
+    "exceptionsSelect": { "rect": [482, 267, 175, 36] },
+    "statLabel": { "font": "Lato 16px 400", "color": "rgb(31, 31, 31)", "height": 19.5 },
+    "statStrip": { "rect": [665, 262, 486, 46], "gap": 20, "note": "four readouts spread inside a 486px box; each column is label over value, inline-flex with a 4px gap and baseline alignment" },
+    "hint": { "font": "Lato 16px 400", "color": "rgb(128, 148, 171)", "rect": [1169, 265, 165, 39] },
+    "downloadButton": { "rect": [1350, 269, 30, 32], "iconSize": 16 },
+    "settingsButton": { "rect": [1388, 269, 36, 32], "iconSize": 16 },
+    "tableHeaderCell": { "font": "Lato 14px/22px 600", "color": "rgb(32, 44, 57)", "bg": "rgb(255, 255, 255)", "borderBottom": "1px solid rgb(240, 240, 240)", "padding": "1px 8px", "height": 47 },
+    "tableCell": { "font": "Lato 14px/22px 400", "color": "rgb(76, 87, 97)", "bg": "rgb(255, 255, 255)", "borderBottom": "1px solid rgb(240, 240, 240)", "padding": "12px 8px", "height": 57 },
+    "statePill": { "font": "Lato 14px/20px 400", "color": "rgb(76, 87, 97)", "bg": "rgb(231, 248, 254)", "border": "1px solid rgb(170, 223, 245)", "radius": 30, "padding": "4px 8px" },
+    "orderCell": { "font": "Lato 14px/20px 400", "color": "rgb(76, 87, 97)", "gap": 4 },
+    "rowCheckbox": { "size": 16 },
+    "inlineNumberInput": { "height": 30, "widths": { "weight": 122, "volume": 106, "serviceTime": 108 } },
+    "pageSizeSelect": { "font": "Lato 14px/30px 400", "color": "rgb(76, 87, 97)", "height": 30, "width": 76, "rect": [284, 683, 76, 30] },
+    "pagerButton": { "size": 28, "radius": 8, "font": "Lato 12px/12px 400" },
+    "pagerActive": { "color": "rgb(238, 82, 57)", "bg": "rgb(255, 243, 241)", "border": "1px solid rgb(238, 82, 57)", "shadow": "rgba(238, 82, 57, 0.04) 0 0 0 2px", "rect": [752, 684, 28, 28] },
+    "refresh": { "font": "Lato 14px/20px 500", "color": "rgb(76, 87, 97)", "iconColor": "rgb(183, 188, 192)", "rect": [1335, 687, 72.6, 22] }
+  },
+
+  "table": {
+    "scrollWidth": 3352,
+    "headerRowHeight": 47,
+    "bodyRowHeight": 57,
+    "wrapper": [272, 331.8, 1152, 326.2],
+    "columns": [
+      { "key": "_select", "label": "", "width": 32 },
+      { "key": "_flags", "label": "", "width": 160 },
+      { "key": "orderNumber", "label": "Order Number", "width": 174 },
+      { "key": "referenceNumber", "label": "Reference Number", "width": 178 },
+      { "key": "shipByDate", "label": "Ship By Date", "width": 172 },
+      { "key": "state", "label": "State", "width": 160 },
+      { "key": "carrier", "label": "Carrier", "width": 204 },
+      { "key": "secondaryState", "label": "Secondary State", "width": 160 },
+      { "key": "dispatchDate", "label": "Dispatch Date", "width": 160 },
+      { "key": "weight", "label": "Weight", "width": 200 },
+      { "key": "volume", "label": "Volume", "width": 200 },
+      { "key": "palletSpaces", "label": "Pallet Spaces", "width": 160 },
+      { "key": "sku", "label": "SKU", "width": 80 },
+      { "key": "serviceTime", "label": "Service Time (min)", "width": 164 },
+      { "key": "tag", "label": "Tag", "width": 160 },
+      { "key": "specialInstructions", "label": "Special Instructions", "width": 250 },
+      { "key": "merchant", "label": "Merchant", "width": 160 },
+      { "key": "orderType", "label": "Order Type", "width": 160 },
+      { "key": "ageing", "label": "Ageing (days)", "width": 160 },
+      { "key": "address", "label": "Address", "width": 250 },
+      { "key": "_pad", "label": "", "width": 8 }
+    ]
+  },
+
+  "funnelFilters": [
+    "Facility", "Destination", "Order Type", "Merchant", "Sort Code", "Scheduling",
+    "Service Type", "Attempt Count", "Clearance", "Tags", "Cod Amount",
+    "Total Weight", "Total Volume", "Ageing (days)"
+  ]
+}

@@ -1,0 +1,830 @@
+/*
+ * Pending For Planning — the staging CHROME, rebuilt from `stagingTokens.json`.
+ *
+ * This is the one route in the app where staging's layout is the reference
+ * rather than ours (see the exception paragraph in CLAUDE.md). Every value here
+ * is either a `var(--pfp-*)` set from the extracted tokens or a measured px from
+ * `stagingTokens.json`; nothing is eyeballed. Do not add a colour literal that
+ * is not in the JSON.
+ */
+
+.pfp {
+  background: var(--pfp-canvas);
+  font-family: Lato, system-ui, sans-serif;
+  color: var(--pfp-ink-body);
+  /*
+   * A COLUMN THAT FILLS THE VIEWPORT, so the footer is pinned to the bottom of
+   * the list panel instead of riding up under the last row when the list is
+   * short or filtered. Staging's grid is viewport-driven too — its wrapper
+   * measured 1152 x 326.2 at a 722px viewport, which is exactly what is left
+   * once the rows above and the 55px footer block are taken out.
+   */
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  /* MEASURED vertical rhythm, all from stagingTokens.json:
+       page top 16  ->  filter row at y=81 (the 65px header + 16)
+       filters 32 tall, +22  ->  the card strip at y=135
+       cards 107 tall, +25  ->  the list toolbar at y=267
+       toolbar 36 tall, +29 ->  the grid at y=331.8 */
+  padding: 16px var(--pfp-pad-x) 8px;
+  /* the column must be allowed to shrink, or its grid child can never bound */
+  min-height: 0;
+}
+
+/* everything above the grid keeps its natural height; the grid alone stretches */
+.pfp > *:not(.pfp-tablewrap) { flex: 0 0 auto; }
+
+/* row 1 (filters), the tab strip, pills, popovers, icon buttons and the chip
+   line now live in src/local/chrome.css — shared by every local page. */
+
+.pfp-primary + .pfp-quick { margin-left: 12px; }
+
+.pfp-quick {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 16px 4px 8px;
+  background: var(--pfp-surface);
+  border: 1px solid var(--pfp-line);
+  border-radius: 10px;
+  font-size: 14px;
+  color: var(--pfp-ink);
+  cursor: pointer;
+}
+
+/* ------------------------------------------------------------- row 2 ------ */
+
+.pfp-strip { display: flex; gap: 16px; margin-top: 22px; }
+
+/* measured: two 576px cards at x=272 and x=864, 16px padding, 12px radius */
+.pfp-card {
+  flex: 0 0 576px;
+  background: var(--pfp-surface);
+  border-radius: 12px;
+  padding: 16px;
+  min-width: 0;
+}
+
+.pfp-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 17px;
+  color: var(--pfp-ink);
+  margin: 0 0 12px;
+}
+
+/* the 8.5px gutter is staging's own horizontal scrollbar under the chip row —
+   it is what makes both cards 107px tall rather than 98.5 */
+.pfp-chiprow { display: flex; gap: 16px; overflow-x: auto; padding-bottom: 11.5px; }
+/* the Categories row packs its chips tighter than the Carriers row — 12 vs 16 */
+.pfp-chiprow[data-tight='true'] { gap: 12px; }
+
+
+/*
+ * Quick Filter expanded. Measured off the staging capture taken just before the
+ * session ended: the four cards occupy y=149..228 (79 tall) and the italic
+ * footnote sits at y=245 — i.e. the expanded strip starts 14px lower than the
+ * Carriers/Categories strip it replaces. Staging tints each card and puts a
+ * glyph beside its title; those two facts are recorded as residuals in
+ * scratchpad/split/pixel-diff-log.md rather than guessed at from a JPEG.
+ */
+.pfp-strip[data-quick='true'] { margin-top: 36px; }
+
+.pfp-exception-card {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 79px;
+  background: var(--pfp-surface);
+  border: 1px solid var(--pfp-line);
+  border-radius: 10px;
+  padding: 12px 16px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pfp-exception-card[aria-pressed='true'] { border-color: var(--pfp-brand); background: var(--pfp-brand-tint); }
+.pfp-exception-card h4 { margin: 0; font-size: 14px; font-weight: 600; color: var(--pfp-ink); }
+.pfp-exception-card p { margin: 4px 0 0; font-size: 13px; color: var(--pfp-ink-muted); }
+.pfp-exception-note { margin: 17px 0 0; font-size: 13px; font-style: italic; color: var(--pfp-ink-hint); }
+
+/* ------------------------------------------------------------- row 3 ------ */
+
+/*
+ * Row 3 is laid out by MEASURED OFFSETS, not by one uniform gap: staging butts
+ * the Exceptions select straight against the search box (x=482 for both edges),
+ * then leaves 8px to the stat strip, 26px between each readout and the hint,
+ * 16px to the download icon and 8px to the table-settings icon. A single `gap`
+ * cannot express that, and letting the items flex-shrink instead is what pushed
+ * the search box from its measured 210px down to 196px.
+ */
+.pfp-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-top: 22px;
+  min-height: 36px;
+  position: relative;
+}
+
+.pfp-toolbar > * { flex: none; }
+.pfp-toolbar > .pfp-stats { margin-left: 8px; }
+.pfp-toolbar > .pfp-hint { margin-left: 20px; }
+.pfp-toolbar > .pfp-iconbtn { margin-left: 16px; }
+.pfp-toolbar > .pfp-iconbtn ~ * { margin-left: 8px; }
+
+/*
+ * The stat strip is a MEASURED 486px box (x=665..1151) holding four readouts.
+ * Pinning the box and spreading the readouts inside it is what puts the hint at
+ * x=1169 and the download icon at x=1350 — letting the four columns size purely
+ * from their own text left the whole right-hand end of the row 35px short,
+ * because staging's values carry a trailing <sup> our strings do not.
+ */
+.pfp-stats {
+  display: flex;
+  width: 486px;
+  justify-content: space-between;
+  gap: 20px;
+  white-space: nowrap;
+}
+.pfp-stat-label { font-size: 16px; color: rgb(31, 31, 31); line-height: 19.5px; }
+.pfp-stat-value { font-size: 16px; color: var(--pfp-ink); line-height: 19.5px; margin-top: 4px; }
+/* measured 165 x 39 — two lines, so it never changes the row's height */
+.pfp-hint { width: 165px; height: 39px; font-size: 16px; line-height: 19.5px; color: var(--pfp-ink-hint); }
+
+
+/* -------------------------------------------------------------- table ----- */
+
+.pfp-tablewrap {
+  margin-top: 24px;
+  background: var(--pfp-surface);
+  border-radius: 10px;
+  overflow: auto;
+  position: relative;
+  /*
+   * The grid, and only the grid, absorbs the leftover height — and it MUST be
+   * allowed to shrink below its content (`min-height: 0`), or a 20-row table
+   * pushes the box to its full 1518px and the last rows render underneath the
+   * footer with nothing able to scroll them into view. Staging scrolls this
+   * region too, not the page: its document never exceeded the viewport.
+   */
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.pfp-table { border-collapse: separate; border-spacing: 0; table-layout: fixed; }
+
+.pfp-table th {
+  height: var(--pfp-head-h);
+  padding: 1px 8px;
+  background: var(--pfp-surface);
+  border-bottom: 1px solid var(--pfp-line-table);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 22px;
+  color: var(--pfp-ink);
+  text-align: left;
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+/* ONE LINE PER CELL. Staging truncates — Address is a 250px column holding a
+   full postal address, and letting it wrap turns a 57px row into a 91px one,
+   which is the single biggest geometry error this replica can make. */
+.pfp-table td {
+  height: var(--pfp-row-h);
+  max-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 12px 8px;
+  background: var(--pfp-surface);
+  border-bottom: 1px solid var(--pfp-line-table);
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--pfp-ink-body);
+  vertical-align: middle;
+}
+
+.pfp-table tbody tr:hover td { background: rgb(250, 250, 250); }
+.pfp-table tbody tr[data-selected='true'] td { background: var(--pfp-brand-tint); }
+
+.pfp-th-inner { display: inline-flex; align-items: center; gap: 6px; }
+.pfp-sort { display: inline-flex; flex-direction: column; line-height: 0; color: rgb(191, 191, 191); cursor: pointer; }
+.pfp-sort [data-active='true'] { color: var(--pfp-brand); }
+.pfp-colsearch { display: inline-flex; color: rgb(76, 87, 97); cursor: pointer; }
+
+.pfp-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 30px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--pfp-ink-body);
+  background: var(--pfp-pill-info-bg);
+  border: 1px solid var(--pfp-pill-info-border);
+  white-space: nowrap;
+}
+
+.pfp-order { display: flex; align-items: center; gap: 4px; font-size: 14px; line-height: 20px; color: var(--pfp-ink-body); background: none; border: 0; padding: 0; cursor: pointer; }
+.pfp-table tbody tr:hover .pfp-order { color: var(--pfp-brand); }
+
+.pfp-numcell { display: inline-flex; align-items: center; gap: 8px; }
+
+.pfp-numinput {
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--pfp-line);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--pfp-ink-body);
+  background: var(--pfp-surface);
+}
+
+.pfp-spinner { display: inline-flex; flex-direction: column; gap: 1px; color: var(--pfp-ink-muted); }
+.pfp-spinner button { border: 0; background: none; padding: 0; line-height: 0; cursor: pointer; color: inherit; }
+
+/* 4px, not the original 8 — three discs plus a +n must fit 112px */
+.pfp-flags { display: inline-flex; align-items: center; gap: 4px; }
+.pfp-flag-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--pfp-canvas);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--pfp-ink-hint);
+}
+
+.pfp-flag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--pfp-canvas);
+}
+
+/* ------------------------------------------------- selection panel -------- */
+
+.pfp-panel {
+  position: absolute;
+  right: 0;
+  top: 0;
+  z-index: 20;
+  width: 300px;
+  background: var(--pfp-surface);
+  border: 1px solid var(--pfp-line);
+  border-radius: 10px;
+  box-shadow: rgba(16, 24, 40, 0.08) 0 8px 24px 0;
+  overflow: hidden;
+}
+
+.pfp-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--pfp-ink);
+  border-bottom: 1px solid var(--pfp-line);
+}
+
+.pfp-panel-metrics {
+  display: flex;
+  border-bottom: 1px solid var(--pfp-line);
+}
+
+.pfp-panel-metric { flex: 1 1 0; padding: 10px 16px; min-width: 0; }
+.pfp-panel-metric dt { font-size: 12px; color: var(--pfp-ink-hint); margin: 0; }
+.pfp-panel-metric dd { font-size: 14px; color: var(--pfp-ink); margin: 2px 0 0; }
+
+.pfp-panel-actions { max-height: 296px; overflow-y: auto; padding: 4px 0; }
+
+.pfp-panel-action {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 16px;
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: 14px;
+  color: var(--pfp-ink-body);
+  text-align: left;
+  cursor: pointer;
+}
+
+.pfp-panel-action:hover:not(:disabled) { background: var(--pfp-canvas); }
+.pfp-panel-action:disabled { opacity: 0.45; cursor: not-allowed; }
+.pfp-panel-action[data-danger='true'] { color: rgb(199, 40, 32); }
+
+/* ------------------------------------------------------------- footer ----- */
+
+/*
+ * THREE COLUMNS, NOT `space-between`. With three flex children the pager's
+ * position moved with the width of "20 / Page" and of "Refresh" — change the
+ * page size to 100 and the pager slid. A 1fr / auto / 1fr grid centres the pager
+ * on the panel and pins Refresh to the right, which is what staging shows.
+ * Residual: staging's active page button measured x=752 and this lands it at
+ * ~762 — the 10px is logged in scratchpad/split/pixel-diff-log.md rather than
+ * dialled out with a magic offset.
+ */
+.pfp-footer {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  margin-top: 25px;
+  padding: 0 12px;
+  height: 30px;
+}
+
+.pfp-footer > :last-child { justify-self: end; }
+
+.pfp-pagesize { display: inline-flex; align-items: center; gap: 6px; height: 30px; font-size: 14px; line-height: 30px; color: var(--pfp-ink-body); background: none; border: 0; cursor: pointer; }
+
+.pfp-pager { display: flex; align-items: center; gap: 8px; }
+
+.pfp-pager button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: none;
+  font-size: 12px;
+  line-height: 12px;
+  color: var(--pfp-ink-body);
+  cursor: pointer;
+}
+
+.pfp-pager button[aria-current='page'] {
+  color: var(--pfp-brand);
+  background: var(--pfp-brand-tint);
+  border-color: var(--pfp-brand);
+  box-shadow: rgba(238, 82, 57, 0.04) 0 0 0 2px;
+}
+
+.pfp-pager button:disabled { color: var(--pfp-icon-muted); cursor: not-allowed; }
+
+.pfp-refresh {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: none;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  color: var(--pfp-ink-body);
+  cursor: pointer;
+}
+
+.pfp-refresh svg { color: var(--pfp-icon-muted); }
+
+/* popovers (.pfp-pop*) moved to src/local/chrome.css; the funnel panel stays here */
+
+/* the funnel panel (.pfp-funnel-pop) moved to src/local/chrome.css, beside .pfp-pop */
+
+/* --------------------------------------------------------------- menu ----- */
+
+.pfp-menu-row { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.pfp-menu-row span[data-value] { color: var(--pfp-ink-muted); }
+
+/* ------------------------------------------------------------- overlay ---- */
+
+.pfp-overlay-scrim { position: fixed; inset: 0; background: rgba(16, 24, 40, 0.35); z-index: 40; }
+
+.pfp-overlay {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 62%;
+  min-width: 720px;
+  background: var(--pfp-surface);
+  z-index: 41;
+  display: flex;
+  flex-direction: column;
+  box-shadow: rgba(16, 24, 40, 0.18) -8px 0 32px 0;
+}
+
+.pfp-overlay-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 56px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--pfp-line);
+}
+
+.pfp-overlay-title { font-size: 16px; font-weight: 700; color: var(--pfp-ink); }
+.pfp-overlay-body { flex: 1; display: flex; min-height: 0; }
+
+.pfp-overlay-rail {
+  width: 168px;
+  flex: none;
+  border-right: 1px solid var(--pfp-line);
+  padding: 8px 0;
+  overflow-y: auto;
+}
+
+.pfp-overlay-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 16px;
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: 14px;
+  color: var(--pfp-ink-body);
+  text-align: left;
+  cursor: pointer;
+}
+
+.pfp-overlay-tab[aria-selected='true'] { background: var(--pfp-brand-tint); color: var(--pfp-brand); font-weight: 600; }
+.pfp-overlay-pane { flex: 1; overflow: auto; padding: 16px; min-width: 0; }
+
+/* --------------------------------------------------------------- modal ---- */
+
+.pfp-modal-scrim { position: fixed; inset: 0; background: rgba(16, 24, 40, 0.45); z-index: 50; display: grid; place-items: center; padding: 24px; }
+
+.pfp-modal {
+  width: 520px;
+  max-width: 100%;
+  max-height: 100%;
+  overflow: auto;
+  background: var(--pfp-surface);
+  border-radius: 12px;
+  box-shadow: rgba(16, 24, 40, 0.18) 0 12px 40px 0;
+}
+
+.pfp-modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 20px 24px 0; }
+.pfp-modal-head h2 { margin: 0; font-size: 16px; font-weight: 700; color: var(--pfp-ink); }
+.pfp-modal-head p { margin: 6px 0 0; font-size: 13px; color: var(--pfp-ink-muted); }
+.pfp-modal-body { padding: 16px 24px; display: grid; gap: 16px; }
+.pfp-modal-foot { display: flex; justify-content: flex-end; gap: 12px; padding: 0 24px 20px; }
+
+.pfp-field { display: grid; gap: 6px; }
+.pfp-field > label { font-size: 13px; color: var(--pfp-ink-body); }
+.pfp-field .pfp-req { color: rgb(199, 40, 32); }
+
+.pfp-input, .pfp-textarea {
+  width: 100%;
+  min-height: 32px;
+  padding: 4px 11px;
+  background: var(--pfp-surface);
+  border: 1px solid var(--pfp-line);
+  border-radius: 10px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--pfp-ink-body);
+}
+
+.pfp-textarea { min-height: 88px; resize: vertical; padding: 8px 11px; }
+.pfp-error { font-size: 12px; color: rgb(199, 40, 32); }
+
+.pfp-btn {
+  height: 32px;
+  padding: 0 16px;
+  border-radius: 10px;
+  border: 1px solid var(--pfp-line);
+  background: var(--pfp-surface);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--pfp-ink-body);
+  cursor: pointer;
+}
+
+.pfp-btn[data-kind='primary'] { background: var(--pfp-brand); border-color: var(--pfp-brand); color: #fff; }
+.pfp-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.pfp-radio-row { display: flex; gap: 20px; flex-wrap: wrap; font-size: 14px; }
+
+.pfp-dropzone {
+  border: 1px dashed var(--pfp-line);
+  border-radius: 10px;
+  padding: 20px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--pfp-ink-muted);
+}
+
+.pfp-listrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--pfp-line);
+  border-radius: 10px;
+  background: var(--pfp-surface);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pfp-listrow[aria-pressed='true'] { border-color: var(--pfp-brand); background: var(--pfp-brand-tint); }
+.pfp-listrow strong { display: block; font-size: 14px; color: var(--pfp-ink); }
+.pfp-listrow span { display: block; font-size: 12.5px; color: var(--pfp-ink-muted); margin-top: 2px; }
+
+/* ------------------------------------------- pickup drawer (ViewPickup) ---- */
+
+.pfp-note {
+  margin: 0;
+  border: 1px solid #f6d8c4;
+  background: #fdf3ec;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #8a4b1f;
+}
+
+.pfp-section-title {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pfp-ink-hint);
+}
+
+.pfp-fieldgrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 20px;
+  margin: 0;
+}
+
+.pfp-field[data-wide] { grid-column: 1 / -1; }
+.pfp-field dt { font-size: 12px; color: var(--pfp-ink-hint); margin-bottom: 2px; }
+.pfp-field dd { margin: 0; font-size: 13.5px; color: var(--pfp-ink); }
+
+.pfp-orderlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+
+.pfp-orderlist li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--pfp-line);
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 13px;
+}
+
+.pfp-orderlist-num { font-weight: 700; color: var(--pfp-ink); }
+.pfp-orderlist-to  { color: var(--pfp-ink-hint); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.pfp-empty-note { margin: 0 0 8px; font-size: 12.5px; line-height: 1.5; color: var(--pfp-ink-hint); }
+
+/* a small neutral tag; data-tone colours it without inventing new components */
+.pfp-kindtag {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--pfp-line);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--pfp-ink-hint);
+  background: var(--pfp-canvas);
+  white-space: nowrap;
+}
+
+.pfp-kindtag[data-tone='pickup'] { border-color: #f6d0b8; background: #fdece4; color: #c4551b; }
+.pfp-kindtag[data-tone='ok']     { border-color: #b7e0c4; background: #eef8f1; color: #2f7d4f; }
+.pfp-kindtag[data-tone='warn']   { border-color: #f6d8c4; background: #fdf3ec; color: #8a4b1f; }
+.pfp-kindtag[data-tone='danger'] { border-color: #f2c2c2; background: #fdeeee; color: #a33a3a; }
+
+.pfp-timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+
+.pfp-timeline li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 13px;
+  border-left: 2px solid var(--pfp-line);
+  padding-left: 10px;
+}
+
+.pfp-timeline-at     { color: var(--pfp-ink-hint); font-size: 12px; min-width: 116px; }
+.pfp-timeline-status { font-weight: 700; color: var(--pfp-ink); }
+.pfp-timeline-note   { color: var(--pfp-ink-hint); }
+
+/* selection panel — the by-type breakdown and the per-action eligible count */
+.pfp-panel-breakdown {
+  margin: 0;
+  padding: 0 16px 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--pfp-ink-body);
+}
+
+.pfp-panel-breakdown[data-muted='true'] { color: var(--pfp-ink-hint); }
+
+.pfp-panel-count {
+  margin-left: auto;
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--pfp-canvas);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  color: var(--pfp-ink-hint);
+}
+
+/* a count on a drawer tab — you can see there is something there before opening */
+.pfp-tab-badge {
+  margin-left: auto;
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--pfp-canvas);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  color: var(--pfp-ink-hint);
+}
+
+/*
+ * Type cell — kind on top, sub-classification beneath.
+ *
+ * NO PILL here on purpose. State already owns a pill in every row, and a second
+ * one beside it made the grid read as two competing badges while pushing the
+ * detail line out of alignment with the label above it. Plain text, with colour
+ * carrying the kind, is quieter AND lines up.
+ */
+.pfp-typecell { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; min-width: 0; }
+
+.pfp-typekind {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 18px;
+  color: var(--pfp-ink);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* a booking is the exception in this queue, so it is the one that gets colour */
+.pfp-typekind[data-kind='pickup'] { color: var(--pfp-brand); }
+
+.pfp-typedetail {
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--pfp-ink-hint);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* the page's one primary action, beside the icon buttons in the toolbar */
+.pfp-filters > .pfp-primary { margin-left: auto; }
+
+.pfp-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--pfp-brand);
+  border-radius: 10px;
+  background: var(--pfp-brand);
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pfp-primary:hover { filter: brightness(1.05); }
+
+/* merchant step of Create Pickup */
+.pfp-modal-title { margin: 0; font-size: 18px; font-weight: 700; color: var(--pfp-ink); }
+.pfp-modal-sub   { margin: 6px 0 16px; font-size: 13px; line-height: 1.5; color: var(--pfp-ink-hint); }
+.pfp-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+
+.pfp-merchantlist { display: flex; flex-direction: column; gap: 8px; }
+
+.pfp-merchantrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--pfp-line);
+  border-radius: 8px;
+  background: var(--pfp-surface);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.pfp-merchantrow:hover { border-color: var(--pfp-brand); background: var(--pfp-brand-tint); }
+.pfp-merchantrow-name { font-size: 14px; font-weight: 600; color: var(--pfp-ink); }
+.pfp-merchantrow-meta { font-size: 12px; color: var(--pfp-ink-hint); }
+
+/* address rows stack a name over its address line, so the row keeps one shape
+   whether it is naming a merchant or one of that merchant's locations */
+.pfp-pickrow-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pfp-pickrow-main .pfp-merchantrow-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Events — the booking's whole status flow as a stepper, the way the merchant
+   portal draws it: reached steps filled and joined, the rest still waiting. */
+.pfp-events { list-style: none; margin: 0; padding: 0; }
+.pfp-events li { display: flex; gap: 14px; }
+
+.pfp-events-rail { display: flex; flex-direction: column; align-items: center; flex: none; }
+
+.pfp-events-dot {
+  margin-top: 3px;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--pfp-line);
+}
+.pfp-events-dot[data-done] { background: #56ca00; }
+
+.pfp-events-line { width: 2px; flex: 1; background: var(--pfp-line); }
+.pfp-events-line[data-done] { background: #56ca00; }
+
+.pfp-events-body { display: flex; flex-direction: column; gap: 2px; padding-bottom: 22px; }
+.pfp-events-body[data-last] { padding-bottom: 0; }
+
+.pfp-events-label { font-size: 15px; line-height: 1.2; color: var(--pfp-ink-hint); }
+.pfp-events-label[data-done] { color: var(--pfp-ink); font-weight: 600; }
+.pfp-events-at   { font-size: 13px; color: var(--pfp-ink-body); }
+.pfp-events-note { font-size: 13px; line-height: 1.4; color: var(--pfp-ink-hint); }
+
+/* the tab strip and the ONE-line filter row moved to src/local/chrome.css */
+.pfp { min-width: 0; }
+
+/* bulk-actions affordance: muted until rows are selected */
+.pfp-bulk { position: relative; cursor: default; }
+.pfp-bulk[data-disabled] { color: var(--pfp-icon-muted); }
+.pfp-bulk:not([data-disabled]) { color: var(--pfp-brand); }
+.pfp-bulk:hover { background: transparent; }
+.pfp-bulk-count { margin-left: 4px; font-size: 12px; font-weight: 700; }
+
+
+
+/* queue totals in the footer, beside "20 / Page" */
+.pfp-footer-left { display: flex; align-items: center; gap: 16px; min-width: 0; }
+.pfp-summary { min-width: 0; font-size: 13px; color: var(--pfp-ink-hint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+
+/* the selection panel now hangs from the ONE toolbar row: open it below the
+   row so it never covers the search / icon actions it sits beside */
+.pfp-filters > .pfp-panel { top: calc(100% + 8px); }
+
+
+/* ------------------------------------------ variant="replica" (2026-09-23) --
+ * `/local/pending-for-planning-replica` renders staging's own chrome with the
+ * rules above (.pfp-strip / .pfp-card / .pfp-toolbar / .pfp-stats / .pfp-hint /
+ * .pfp-quick). Everything here is scoped to the replica, so the current page
+ * is untouched. Values: the derived `--pfp-filter-gap`, `--pfp-pad-x`, or ones
+ * already used above.
+ */
+
+/* the owner's Shipments / Pickups / All strip — the Carriers-card chips */
+.pfp-tabs { display: flex; gap: var(--pfp-filter-gap); margin-bottom: var(--pfp-pad-x); }
+
+/* staging's filter row: 12px between controls, Quick Filter at the right edge */
+.pfp[data-variant='replica'] .pfp-filters { gap: var(--pfp-filter-gap); }
+.pfp[data-variant='replica'] .pfp-filters > .pfp-quick { margin-left: auto; white-space: nowrap; }
+
+/* the two 576px cards + 16 gap are 16px wider than the 1152 content box —
+   let them share the width rather than scroll the page sideways */
+.pfp[data-variant='replica'] .pfp-strip:not([data-quick]) > .pfp-card { flex: 0 1 576px; }
+
+/* the stat strip may give up width before anything else on the toolbar */
+.pfp[data-variant='replica'] .pfp-toolbar > .pfp-stats { flex: 0 1 486px; min-width: 0; }
+.pfp[data-variant='replica'] .pfp-toolbar > .pfp-hint { overflow: hidden; }
+
+/* the selection panel opens below the toolbar, clear of its icons */
+.pfp-toolbar > .pfp-panel { top: calc(100% + 8px); }

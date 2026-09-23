@@ -1,0 +1,199 @@
+@import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+@theme {
+  --color-primary: #E84E1B;
+  --color-primary-light: #FFF0EB;
+  --color-sidebar-bg: #FFFFFF;
+  --color-header-bg: #FFFFFF;
+  --font-family-sans: 'Inter', system-ui, -apple-system, sans-serif;
+
+  /* ===== FarEye Nueva Design System (sampled from staging.fareye.co — see design.md) ===== */
+  --font-lato: 'Lato', system-ui, -apple-system, sans-serif;
+
+  /* Brand orange ramp — 500 = #EE5239 (sampled) */
+  --color-brand-50:  #FFF3F1;
+  --color-brand-100: #FDE3DE;
+  --color-brand-200: #FAC3B9;
+  --color-brand-300: #F69C8C;
+  --color-brand-400: #F27462;
+  --color-brand-500: #EE5239;
+  --color-brand-600: #D43B22;
+  --color-brand-700: #AE2E1A;
+
+  /* Teal accent — active nav (sampled #D7F4F6) */
+  --color-teal-50:  #D7F4F6;
+  --color-teal-700: #0E7C86;
+
+  /* Neutrals — cool slate ramp (kept under the `warm-*` token names used in components) */
+  --color-warm-0:   #FFFFFF;
+  --color-warm-25:  #F9FAFC;
+  --color-warm-50:  #F0F2F5;
+  --color-warm-100: #F0F0F0;
+  --color-warm-150: #E8EAED;
+  --color-warm-200: #E6E8EB;
+  --color-warm-300: #D4D8DD;
+  --color-warm-400: #A6B0BD;
+  --color-warm-500: #8094AB;
+  --color-warm-600: #4C5761;
+  --color-warm-700: #3A4453;
+  --color-warm-800: #2A323D;
+  --color-warm-900: #202C39;
+
+  /* Semantic roles (sampled) */
+  --color-canvas:  #F0F2F5;
+  --color-surface: #FFFFFF;
+  --color-line:    #F0F0F0;
+  --color-ink:     #202C39;
+  --color-ink-2:   #4C5761;
+  --color-ink-3:   #8094AB;
+  --color-thead:   #F9FAFC;
+
+  /* Status — dot colors (table rows use dot + slate text) */
+  --color-st-success: #21A366;
+  --color-st-danger:  #EE5239;
+  --color-st-warning: #E6A100;
+  --color-st-info:    #2F80ED;
+  --color-st-neutral: #8094AB;
+
+  /* Status chip tints (bg / fg) — kept for pill usage */
+  --color-success-bg: #E6F6EC;  --color-success-fg: #1B8A53;
+  --color-info-bg:    #E6F0FD;  --color-info-fg:    #2061C7;
+  --color-warning-bg: #FBF0D6;  --color-warning-fg: #9A6700;
+  --color-danger-bg:  #FDE7E3;  --color-danger-fg:  #C23A22;
+  --color-neutral-bg: #EEF1F4;  --color-neutral-fg: #4C5761;
+
+  /* ---- Grow merchant portal replica (Materio MUI template + Grow accent) ---- */
+  --color-grow-canvas:    #F4F5FA;
+  --color-grow-side:      #28243D;
+  --color-grow-side-fg:   rgba(231,227,252,0.87);
+  --color-grow-side-dim:  rgba(231,227,252,0.38);
+  --color-grow-accent:    #C22E49;
+  --color-grow-accent-2:  #FF705E;
+  --color-grow-ink:       rgba(58,53,65,0.87);
+  --color-grow-ink-2:     rgba(58,53,65,0.68);
+  --color-grow-ink-3:     rgba(58,53,65,0.38);
+  --color-grow-line:      #E6E7EC;
+  --color-grow-thead:     #F9FAFC;
+  --color-grow-cell:      rgba(58,53,65,0.12);
+  --color-grow-outline:   rgba(0,0,0,0.23);
+  --color-grow-success:   #56CA00;
+  --color-grow-error:     #FF4C51;
+  --color-grow-warning:   #FFB400;
+  --color-grow-info:      #16B1FF;
+  --color-grow-primary:   #9155FD;
+  --color-grow-disabled:  rgba(58,53,65,0.18);
+  --shadow-grow-1: 0 2px 10px 0 rgba(58,53,65,0.1);
+  --shadow-grow-menu: 0 5px 5px -3px rgba(58,53,65,0.2), 0 8px 10px 1px rgba(58,53,65,0.14), 0 3px 14px 2px rgba(58,53,65,0.12);
+  --shadow-ds-1: 0 1px 2px rgba(32,44,57,0.05), 0 1px 1px rgba(32,44,57,0.03);
+  --shadow-ds-overlay: 0 6px 16px rgba(0,0,0,0.08), 0 3px 6px -4px rgba(0,0,0,0.12), 0 9px 28px 8px rgba(0,0,0,0.05);
+}
+
+/* FarEye Nueva surfaces use Lato */
+.fe-nueva { font-family: var(--font-lato); }
+.fe-nueva *:focus { outline: none; }
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  color: #1a1a2e;
+  background: #f5f6fa;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+#root {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.leaflet-container {
+  height: 100%;
+  width: 100%;
+  background: #f0f0ee;
+}
+
+/* Tailwind v4 base resets can hide img elements inside leaflet — force them visible */
+.leaflet-pane img,
+.leaflet-tile {
+  max-width: none !important;
+  max-height: none !important;
+  display: block !important;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: #f1f1f1; }
+::-webkit-scrollbar-thumb { background: #ccc; border-radius: 4px; }
+
+@keyframes fareye-pop-in {
+  from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes accordion-in {
+  from { opacity: 0; transform: translateY(-3px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.fareye-popup .leaflet-popup-content-wrapper {
+  padding: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.14), 0 2px 6px rgba(0,0,0,0.08);
+  animation: fareye-pop-in 0.15s ease-out;
+}
+.fareye-popup .leaflet-popup-content {
+  margin: 0;
+  width: auto !important;
+  line-height: normal;
+}
+.fareye-popup .leaflet-popup-tip {
+  box-shadow: none;
+}
+.fareye-popup .leaflet-popup-close-button {
+  top: -10px;
+  right: -10px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: white;
+  border-radius: 50%;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.22);
+  color: #475569;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 24px;
+  text-align: center;
+}
+.fareye-popup .leaflet-popup-close-button:hover {
+  color: #0F172A;
+  background: #F1F5F9;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+/* Inline time fields — hide native indicator, keep value text only */
+.time-field::-webkit-calendar-picker-indicator {
+  opacity: 0;
+  position: absolute;
+  pointer-events: none;
+}
+.time-field::-webkit-datetime-edit-fields-wrapper { padding: 0; }
+.time-field::-webkit-datetime-edit { padding: 0; }
+.time-field::-webkit-inner-spin-button { display: none; }
+.time-field {
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+}

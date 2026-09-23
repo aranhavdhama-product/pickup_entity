@@ -1,0 +1,431 @@
+/*
+ * The LOCAL console chrome — ONE source for every page under /local.
+ *
+ * The owner finalised the Pending For Planning toolbar (2026-09-23) and asked
+ * for it on every local page: underline tabs with icon + label + count straight
+ * on the canvas, ONE filter line of 32px rounded controls (date range · selects
+ * · funnel · Clear Filters · search · icon buttons) and an optional chip row
+ * under it. These rules were lifted out of `LocalPFP/pfpChrome.css`, merged to
+ * their final (post-override) values; pfpChrome.css no longer carries them.
+ *
+ * The class vocabulary stays `pfp-*` for the lifted pieces, so PFP's own
+ * dependent rules (`.pfp-funnel-pop .pfp-select`, `.pfp-filters > .pfp-panel`,
+ * the overlay's `.pfp-iconbtn`) keep resolving; `lc-*` names what is new.
+ *
+ * Every colour reads a `--pfp-*` custom property. They are defined ONCE, from
+ * `LocalPFP/stagingTokens.json` (`cssVars`), on the LocalLayout root — so a
+ * re-extraction still changes the JSON and nothing else.
+ *
+ * The React side is `src/local/chrome.tsx`; imported once, by LocalLayout.
+ */
+
+/* ------------------------------------------------------------- the page --- */
+
+/* the page wrapper every non-PFP local page uses: PFP's canvas, PFP's padding,
+   so the tab strip lands at the same x/y on every page */
+.lc-page {
+  min-height: 100%;
+  background: var(--pfp-canvas);
+  padding: 16px var(--pfp-pad-x) 8px;
+  min-width: 0;
+  /* owner (2026-09-23): the filter line sits ABOVE the tab strip on every local
+     page — done here so all pages move together without touching their JSX */
+  display: flex;
+  flex-direction: column;
+}
+.lc-page > * { order: 3; }
+.lc-page > .pfp-filters { order: 1; margin-bottom: 12px; }
+.lc-page > .lc-tabs { order: 2; }
+/* PFP renders the strip right after the filter line in DOM order — same 12px gap */
+.pfp-filters + .lc-tabs { margin-top: 12px; }
+
+/* ------------------------------------------------------------ tab strip --- */
+
+.lc-tabs {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--pfp-line-table);
+  min-width: 0;
+}
+
+.lc-tabs-list {
+  display: flex;
+  align-items: flex-end;
+  align-self: stretch;
+  gap: 4px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.lc-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 41px;
+  padding: 10px 16px;
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: 14px;
+  line-height: 20px;
+  white-space: nowrap;
+  color: var(--pfp-ink-body);
+  cursor: pointer;
+}
+
+.lc-tab:hover { color: var(--pfp-ink); }
+.lc-tab[aria-selected='true'] { color: var(--pfp-ink); font-weight: 700; }
+.lc-tab-icon { display: inline-flex; color: var(--pfp-icon-muted); }
+.lc-tab[aria-selected='true'] .lc-tab-icon { color: var(--pfp-brand); }
+.lc-tab[aria-selected='true']::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--pfp-brand);
+}
+
+/* the page's own actions, on the strip's right edge, vertically centred */
+.lc-tabs-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+  padding-bottom: 4px;
+}
+
+/* ---------------------------------------------------------- filter line --- */
+
+.pfp-filters {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  min-width: 0;
+  position: relative;
+}
+
+.pfp-filters > * { flex: 0 0 auto; }
+.pfp-filters > .pfp-select,
+.pfp-filters > div:has(> .pfp-select) { flex: 0 1 auto; min-width: 94px; }
+.pfp-filters > div > .pfp-select { max-width: 100%; }
+.pfp-filters .pfp-select > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pfp-filters > select.pfp-select { text-overflow: ellipsis; }
+.pfp-filters .pfp-clear { white-space: nowrap; }
+/* the search pill starts the right-hand group */
+.pfp-filters > .pfp-search { flex: 0 1 210px; min-width: 142px; margin-left: auto; }
+.pfp-filters > .pfp-search input { width: 100%; min-width: 0; }
+.pfp-filters > .pfp-search svg { flex: none; }
+/* the first right-hand item when a page has no search */
+.pfp-filters > .lc-right-start { margin-left: auto; }
+
+/* ------------------------------------------------------------ date range -- */
+
+.pfp-daterange {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  width: 225px;
+  padding: 4px 11px;
+  background: var(--pfp-surface);
+  border: 1px solid var(--pfp-line-picker);
+  border-radius: 10px;
+  font-size: 14px;
+  line-height: 22px;
+  color: rgba(0, 0, 0, 0.88);
+}
+
+.pfp-daterange input,
+.pfp-daterange .lc-date-half {
+  width: 75.5px;
+  border: 0;
+  outline: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+}
+
+.pfp-daterange .lc-date-half { cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pfp-daterange .lc-date-half[data-empty='true'] { color: rgba(0, 0, 0, 0.25); }
+.pfp-daterange input::placeholder { color: rgba(0, 0, 0, 0.25); }
+.pfp-daterange .pfp-daterange-sep { color: rgba(0, 0, 0, 0.25); display: inline-flex; }
+.pfp-daterange .pfp-daterange-icon { color: rgba(0, 0, 0, 0.25); margin-left: auto; display: inline-flex; background: none; border: 0; padding: 0; }
+
+/* ---------------------------------------------------------------- select -- */
+
+.pfp-select {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  height: 32px;
+  padding: 1px 12px 1px 12px;
+  background: var(--pfp-surface);
+  border: 1px solid var(--pfp-line);
+  border-radius: 10px;
+  font-size: 14px;
+  line-height: 22px;
+  color: var(--pfp-ink-body);
+  cursor: pointer;
+  user-select: none;
+}
+
+.pfp-select[data-placeholder='true'] { color: var(--pfp-ink-muted); }
+.pfp-select[aria-disabled='true'] { opacity: 0.6; cursor: not-allowed; }
+.pfp-select-caret { color: var(--pfp-ink-muted); display: inline-flex; flex: none; }
+
+/* --------------------------------------------------- funnel · clear · icon - */
+
+.pfp-funnel {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 7px;
+  background: var(--pfp-surface);
+  border: 1px solid var(--pfp-brand);
+  border-radius: 10px;
+  color: var(--pfp-ink);
+  cursor: pointer;
+}
+
+.pfp-funnel[data-active='true'] { background: var(--pfp-brand-tint); color: var(--pfp-brand); }
+.lc-funnel-count {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--pfp-brand);
+  color: var(--pfp-surface);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+.pfp-clear {
+  height: 32px;
+  padding: 4px 0;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  color: var(--pfp-brand);
+  cursor: pointer;
+}
+
+.pfp-clear:disabled { cursor: default; }
+
+.pfp-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: 210px;
+  height: 32px;
+  padding: 0 12px;
+  background: var(--pfp-surface);
+  border: 1px solid var(--pfp-line);
+  border-radius: 10px;
+  color: rgb(76, 87, 97);
+}
+
+.pfp-search input {
+  width: 142px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 14px;
+  color: var(--pfp-ink-body);
+}
+
+.pfp-iconbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  min-width: 30px;
+  padding: 0 7px;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  color: var(--pfp-ink-muted);
+  cursor: pointer;
+}
+
+.pfp-iconbtn:hover { background: var(--pfp-canvas); }
+
+/* icon-only toggles — the funnel's 32px shell, neutral line; pressed = open */
+.pfp-toggle { width: 32px; min-width: 32px; padding: 0; border: 1px solid var(--pfp-line); background: var(--pfp-surface); border-radius: 10px; }
+.pfp-toggle[aria-pressed='true'] { border-color: var(--pfp-brand); background: var(--pfp-brand-tint); color: var(--pfp-brand); }
+
+/* -------------------------------------------------------------- popovers -- */
+
+.pfp-pop {
+  position: absolute;
+  z-index: 30;
+  background: var(--pfp-surface);
+  border: 1px solid var(--pfp-line);
+  border-radius: 10px;
+  box-shadow: rgba(16, 24, 40, 0.12) 0 8px 24px 0;
+  padding: 8px 0;
+}
+
+/* a popover portaled to <body> (FilterSelect, the calendar) */
+.pfp-pop[data-fixed='true'] { position: fixed; z-index: 95; display: flex; flex-direction: column; font-family: Lato, system-ui, sans-serif; }
+
+.pfp-pop-scroll { max-height: 280px; overflow-y: auto; }
+
+.pfp-pop-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 16px;
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: 14px;
+  color: var(--pfp-ink-body);
+  text-align: left;
+  cursor: pointer;
+}
+
+.pfp-pop-option:hover { background: var(--pfp-canvas); }
+.pfp-pop-option[aria-selected='true'] { color: var(--pfp-brand); background: var(--pfp-brand-tint); font-weight: 700; }
+.pfp-pop-option > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.pfp-pop-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 16px 0;
+  border-top: 1px solid var(--pfp-line);
+  margin-top: 8px;
+}
+
+.pfp-pop-foot button { border: 0; background: none; font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; }
+.pfp-pop-foot button[data-kind='clear'] { color: var(--pfp-ink-muted); }
+.pfp-pop-foot button[data-kind='apply'] { color: var(--pfp-brand); }
+
+/* the funnel panel: padded, 8px between full-width selects, and a max-height
+   whose scroll sits INSIDE the padding (the padded box scrolls, not the rows).
+   `.pfp-pop.pfp-funnel-pop` outranks `.pfp-pop` whatever order the sheets load. */
+.pfp-pop.pfp-funnel-pop { width: 280px; padding: 12px 16px; }
+.pfp-funnel-pop .pfp-pop-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 360px;
+  overflow-y: auto;
+  margin: 0 -8px;
+  padding: 0 8px;
+}
+.pfp-funnel-pop .pfp-select { width: 100%; flex: none; }
+
+.lc-pop-search { padding: 0 8px 6px; border-bottom: 1px solid var(--pfp-line); margin-bottom: 4px; }
+.lc-pop-search input {
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--pfp-line);
+  border-radius: 8px;
+  outline: 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--pfp-ink-body);
+}
+.lc-pop-empty { padding: 7px 16px; font-size: 13px; color: var(--pfp-ink-hint); }
+
+/* ------------------------------------------------------------- calendar --- */
+
+.lc-cal { width: 272px; padding: 12px; }
+.lc-cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-size: 14px; font-weight: 700; color: var(--pfp-ink); }
+.lc-cal-head button { display: inline-flex; padding: 4px; border: 0; border-radius: 8px; background: none; color: var(--pfp-ink-muted); cursor: pointer; }
+.lc-cal-head button:hover { background: var(--pfp-canvas); }
+.lc-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; }
+.lc-cal-dow { padding: 4px 0; font-size: 11px; font-weight: 700; color: var(--pfp-ink-hint); }
+.lc-cal-day {
+  width: 32px;
+  height: 32px;
+  margin: 0 auto;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--pfp-ink-body);
+  cursor: pointer;
+}
+.lc-cal-day:hover { background: var(--pfp-canvas); }
+.lc-cal-day[data-today='true'] { color: var(--pfp-brand); font-weight: 700; }
+.lc-cal-day[aria-selected='true'] { background: var(--pfp-brand); color: var(--pfp-surface); font-weight: 700; }
+.lc-cal-foot { display: flex; justify-content: space-between; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--pfp-line); }
+.lc-cal-foot button { border: 0; background: none; font: inherit; font-size: 13px; cursor: pointer; color: var(--pfp-ink-muted); }
+.lc-cal-foot button[data-kind='today'] { color: var(--pfp-brand); font-weight: 700; }
+
+/* --------------------------------------------------------------- chip row - */
+
+.pfp-chipbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  scrollbar-width: thin;
+}
+.pfp-chipbar-label { flex: none; font-size: 13px; font-weight: 600; color: var(--pfp-ink-hint); }
+.pfp-chipbar-sep { flex: none; width: 1px; height: 20px; margin: 0 4px; background: var(--pfp-line); }
+.lc-chipbar-spacer { flex: 1 0 8px; }
+
+.pfp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  padding: 6px 12px;
+  background: var(--pfp-canvas);
+  border: 1px solid var(--pfp-line);
+  border-radius: 20px;
+  font-size: 16px;
+  line-height: 20px;
+  color: rgb(31, 31, 31);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pfp-chip[aria-pressed='true'] {
+  border-color: var(--pfp-brand);
+  background: var(--pfp-brand-tint);
+  color: var(--pfp-brand);
+}
+
+.pfp-chip-count { font-weight: 700; }
+.pfp-chip[data-size='sm'] { height: 28px; padding: 0 10px; font-size: 13px; line-height: 20px; }
+.pfp-chip[data-tone='danger'] .pfp-chip-count { color: rgb(199, 40, 32); }
+.pfp-chip[data-tone='danger'][aria-pressed='true'] { border-color: rgb(199, 40, 32); color: rgb(199, 40, 32); }
+
+/* a multi pill's checkbox rows, and the funnel panel's pills at full width */
+.pfp-pop-option input[type='checkbox'] { flex: none; accent-color: var(--pfp-brand); pointer-events: none; }
+.pfp-funnel-pop .pfp-pop-scroll > div { width: 100%; flex: none; }
