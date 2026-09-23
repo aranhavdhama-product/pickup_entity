@@ -1,21 +1,19 @@
 /**
- * Grow merchant-portal date-time picker — the MUI `DateTimePicker` feel, built
- * from the portal's own tokens.
- *
- * The trigger is an OutlinedField *look-alike* rather than the real
- * `OutlinedField`: that component forces `readOnly` as soon as you give it an
- * `onClick`, and exposes no focus/blur/key hooks, so typed entry, validate-on-
- * blur, Enter-to-confirm and Esc-to-close are all unreachable through it. The
- * classes below are copied from it verbatim so the two never drift apart.
+ * Grow merchant-portal date-time picker, drawn in Nueva: the trigger has the
+ * same anatomy as nueva `DateInput` (label above, 32px warm-300 box, brand
+ * focus ring) and the popover the same card as its calendar — but keeps typed
+ * entry, validate-on-blur, Enter-to-confirm, Esc-to-close and the hour/minute
+ * columns the pickup windows need. Portaled to <body> so no Modal clips it.
  *
  * All date logic lives in `growOrders/datetime.ts` — this file is chrome,
  * keyboard handling and positioning only. It exports components only, so
  * react-refresh keeps working.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight } from 'lucide-react'
-import { Btn } from './ui'
-import { useEscapeKey, useOutside } from './utils'
+import { createPortal } from 'react-dom'
+import { CalendarDays as CalendarIcon, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Button } from '../../nueva/components'
+import { useEscapeKey } from './utils'
 import {
   MONTHS, WEEKDAYS, addDays, clampAt, dayDisabled, datePart, defaultTimeFor, formatDisplay,
   hourOptions, joinAt, localDay, minuteOptions, monthDisabled, monthGrid, nextStepAt,
@@ -24,9 +22,8 @@ import {
 
 /* --------------------------------------------------------------- trigger ---- */
 
-const SHELL = 'relative flex w-full items-center rounded-[6px] border bg-white'
-const INPUT = 'h-full w-full bg-transparent px-[14px] text-[15px] text-grow-ink outline-none placeholder:text-grow-ink-3'
-const LABEL = 'pointer-events-none absolute left-[14px] z-10 bg-white px-1 transition-all'
+const SHELL = 'relative flex w-full items-center rounded-md border bg-surface transition-shadow'
+const INPUT = 'h-full w-full bg-transparent px-3 text-[13px] text-ink outline-none placeholder:text-warm-400'
 
 /**
  * Roughly how big the popover is. It is placed with `position: fixed` and these
@@ -114,27 +111,27 @@ function MonthCalendar({ view, onView, selected, focusDay, onFocusDay, onPick, m
     <div className="w-[268px] shrink-0 p-3">
       <div className="mb-2 flex items-center justify-between">
         <button type="button" aria-label="Previous month" disabled={prevOff} onClick={() => onView(prev)}
-          className={`flex h-[30px] w-[30px] items-center justify-center rounded-full
-            ${prevOff ? 'cursor-not-allowed text-grow-ink-3' : 'text-grow-ink-2 hover:bg-grow-ink/5'}`}>
-          <ChevronLeft size={18} />
+          className={`rounded-md p-1.5
+            ${prevOff ? 'cursor-not-allowed text-warm-300' : 'text-ink-3 hover:bg-warm-50 hover:text-ink'}`}>
+          <ChevronLeft size={15} />
         </button>
-        <span className="text-[14px] font-medium text-grow-ink">{MONTHS[view.month]} {view.year}</span>
+        <span className="text-[13px] font-bold text-ink">{MONTHS[view.month]} {view.year}</span>
         <button type="button" aria-label="Next month" disabled={nextOff} onClick={() => onView(next)}
-          className={`flex h-[30px] w-[30px] items-center justify-center rounded-full
-            ${nextOff ? 'cursor-not-allowed text-grow-ink-3' : 'text-grow-ink-2 hover:bg-grow-ink/5'}`}>
-          <ChevronRight size={18} />
+          className={`rounded-md p-1.5
+            ${nextOff ? 'cursor-not-allowed text-warm-300' : 'text-ink-3 hover:bg-warm-50 hover:text-ink'}`}>
+          <ChevronRight size={15} />
         </button>
       </div>
 
       <div className="grid grid-cols-7 gap-y-0.5" role="row">
         {WEEKDAYS.map((w) => (
-          <span key={w} className="flex h-[30px] items-center justify-center text-[12px] font-medium text-grow-ink-3">{w}</span>
+          <span key={w} className="flex h-[26px] items-center justify-center text-[11px] font-bold text-ink-3">{w}</span>
         ))}
       </div>
 
       <div ref={gridRef} role="grid" aria-label="Choose a date" onKeyDown={onKeyDown} className="grid grid-cols-7 gap-y-0.5">
         {grid.cells.map((day, i) => {
-          if (!day) return <span key={`pad-${i}`} className="h-[34px]" />
+          if (!day) return <span key={`pad-${i}`} className="h-8" />
           const off = dayDisabled(day, min, max)
           const isSel = !!selected && day === selected
           const isToday = day === today
@@ -143,12 +140,12 @@ function MonthCalendar({ view, onView, selected, focusDay, onFocusDay, onPick, m
               tabIndex={day === focusDay ? 0 : -1}
               onFocus={() => onFocusDay(day)}
               onClick={() => onPick(day)}
-              className={`mx-auto flex h-[34px] w-[34px] items-center justify-center rounded-full text-[13px] transition-colors
-                ${off ? 'cursor-not-allowed text-grow-ink-3'
-                  : isSel ? 'bg-grow-accent-2 font-medium text-white'
-                  : isToday ? 'border border-grow-accent-2 text-grow-ink hover:bg-grow-accent-2/10'
-                  : 'text-grow-ink hover:bg-grow-ink/5'}
-                focus:outline-none focus-visible:ring-2 focus-visible:ring-grow-accent-2`}>
+              className={`mx-auto flex h-8 w-8 items-center justify-center rounded-md text-[12.5px] transition-colors
+                ${off ? 'cursor-not-allowed text-warm-300'
+                  : isSel ? 'bg-brand-500 font-bold text-white'
+                  : isToday ? 'font-bold text-brand-500 hover:bg-brand-50'
+                  : 'text-ink hover:bg-warm-50'}
+                focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40`}>
               {Number(day.slice(8))}
             </button>
           )
@@ -170,7 +167,7 @@ function TimeList({ items, value, onPick, isOff, label }: {
   }, [value])
   return (
     <div className="flex w-[58px] shrink-0 flex-col">
-      <span className="py-1.5 text-center text-[11px] font-medium tracking-[0.3px] text-grow-ink-3 uppercase">{label}</span>
+      <span className="py-1.5 text-center text-[11px] font-bold uppercase tracking-wide text-ink-3">{label}</span>
       <div ref={ref} role="listbox" aria-label={label} className="grow overflow-y-auto px-1 pb-1">
         {items.map((it) => {
           const off = isOff(it)
@@ -178,10 +175,10 @@ function TimeList({ items, value, onPick, isOff, label }: {
           return (
             <button key={it} type="button" role="option" aria-selected={sel} disabled={off} data-sel={sel ? '1' : '0'}
               onClick={() => onPick(it)}
-              className={`mb-0.5 flex h-[30px] w-full items-center justify-center rounded-[4px] text-[13px] transition-colors
-                ${off ? 'cursor-not-allowed text-grow-ink-3'
-                  : sel ? 'bg-grow-accent-2 font-medium text-white'
-                  : 'text-grow-ink hover:bg-grow-ink/5'}`}>
+              className={`mb-0.5 flex h-7 w-full items-center justify-center rounded-md text-[12.5px] transition-colors
+                ${off ? 'cursor-not-allowed text-warm-300'
+                  : sel ? 'bg-brand-500 font-bold text-white'
+                  : 'text-ink hover:bg-warm-50'}`}>
               {it}
             </button>
           )
@@ -228,7 +225,19 @@ export function DateTimePicker({
   const gridRef = useRef<HTMLDivElement>(null)
 
   const close = useCallback(() => { setOpen(false); setPos(null) }, [])
-  const wrapRef = useOutside(close)
+  const popRef = useRef<HTMLDivElement>(null)
+  /* the popover is portaled out of the wrapper, so an outside click is one that
+     lands in neither */
+  const wrapRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const h = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (!wrapRef.current?.contains(t) && !popRef.current?.contains(t)) close()
+    }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [open, close])
 
   const [view, setView] = useState(() => {
     const d = value ? new Date(Number(value.slice(0, 4)), Number(value.slice(5, 7)) - 1, 1) : new Date()
@@ -349,59 +358,58 @@ export function DateTimePicker({
   const valueDay = datePart(value) || focusDay
   const hh = timePart(value).slice(0, 2)
   const mm = timePart(value).slice(3, 5)
-  const floated = focused || open || text !== '' || !!placeholder
-  const ring = shown ? 'border-grow-error' : (focused || open) ? 'border-grow-accent border-2' : 'border-grow-outline hover:border-grow-ink'
+  const ring = shown ? 'border-brand-500' : (focused || open) ? 'border-brand-500 ring-[3px] ring-brand-500/20' : 'border-warm-300 hover:border-warm-400'
 
   return (
-    <div ref={wrapRef} className={`relative ${className}`}>
-      <div ref={shellRef} className={`${SHELL} h-[56px] ${ring} ${disabled ? 'bg-grow-ink/5' : ''}`}>
-        {label && (
-          <label className={`${LABEL} ${floated ? '-top-[8px] text-[12px]' : 'top-1/2 -translate-y-1/2 text-[15px]'}
-            ${shown ? 'text-grow-error' : (focused || open) ? 'text-grow-accent' : 'text-grow-ink-2'}`}>
-            {label}{required && <span className={shown ? 'text-grow-error' : 'text-grow-accent'}> *</span>}
-          </label>
-        )}
+    <div ref={wrapRef} className={`relative min-w-0 ${className}`}>
+      {label && (
+        <label className="mb-1.5 flex items-center gap-1 whitespace-nowrap text-[12px] font-bold uppercase tracking-wide text-ink-2" title={label}>
+          <span className="truncate">{label}</span>{required && <span className="shrink-0 text-brand-500">*</span>}
+        </label>
+      )}
+      <div ref={shellRef} className={`${SHELL} h-8 ${ring} ${disabled ? 'bg-warm-50' : ''}`}>
         <input ref={inputRef} value={text} disabled={disabled} placeholder={placeholder} inputMode="numeric"
-          aria-haspopup="dialog" aria-expanded={open} aria-invalid={!!shown}
+          aria-label={label} aria-haspopup="dialog" aria-expanded={open} aria-invalid={!!shown}
           onChange={(e) => { setDraft(e.target.value); if (typedError) setTypedError('') }}
           onFocus={() => { setFocused(true); openPopover() }}
           onBlur={() => { setFocused(false); commitText(text) }}
           onClick={openPopover}
           onKeyDown={onKeyDown}
-          className={INPUT} />
+          className={`${INPUT} disabled:cursor-not-allowed disabled:text-ink-3`} />
         <button type="button" aria-label={open ? 'Close calendar' : 'Open calendar'} disabled={disabled}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => (open ? close() : (inputRef.current?.focus(), openPopover()))}
-          className="mr-[6px] flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-full text-grow-ink-2 hover:bg-grow-ink/5 disabled:text-grow-ink-3">
-          <CalendarIcon size={20} />
+          className="mr-1.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-warm-400 hover:bg-warm-50 hover:text-ink-2 disabled:text-warm-300">
+          <CalendarIcon size={14} />
         </button>
       </div>
 
       {(shown || helper) && (
-        <p className={`mx-[14px] mt-[3px] text-[12px] leading-tight ${shown ? 'text-grow-error' : 'text-grow-ink-2'}`}>{shown || helper}</p>
+        <p className={`mt-1 text-[12px] leading-tight ${shown ? 'text-danger-fg' : 'text-ink-3'}`}>{shown || helper}</p>
       )}
 
-      {open && pos && (
-        <div role="dialog" aria-label={label ? `${label} calendar` : 'Choose a date and time'}
+      {open && pos && createPortal(
+        <div ref={popRef} role="dialog" aria-label={label ? `${label} calendar` : 'Choose a date and time'}
           onMouseDown={(e) => e.preventDefault()} style={{ left: pos.left, top: pos.top }}
-          className="fixed z-50 rounded-[6px] bg-white shadow-grow-menu">
+          className="fe-nueva fixed z-[95] rounded-lg border border-line bg-surface shadow-ds-overlay">
           <div className="flex h-[322px]">
             <MonthCalendar view={view} onView={setView} selected={datePart(value)} focusDay={focusDay}
               onFocusDay={setFocusDay} onPick={pickDay} min={min} max={max} gridRef={gridRef} />
-            <div className="flex border-l border-grow-line">
+            <div className="flex border-l border-line">
               <TimeList label="hh" items={hours} value={hh} onPick={pickHour}
                 isOff={(h) => minutes.every((m) => timeDisabled(valueDay, `${h}:${m}`, min, max))} />
               <TimeList label="mm" items={minutes} value={mm} onPick={pickMinute}
                 isOff={(m) => timeDisabled(valueDay, `${hh || '00'}:${m}`, min, max)} />
             </div>
           </div>
-          <div className="flex items-center justify-end gap-1 border-t border-grow-line px-2 py-1.5">
-            <Btn variant="text" color="neutral" size="sm" onClick={today}>Today</Btn>
-            <Btn variant="text" color="neutral" size="sm" onClick={now}>Now</Btn>
-            <Btn variant="text" color="neutral" size="sm" onClick={clear} disabled={!value}>Clear</Btn>
-            <Btn variant="contained" color="accent2" size="sm" onClick={close}>OK</Btn>
+          <div className="flex items-center justify-end gap-1 border-t border-line px-2 py-1.5">
+            <Button variant="ghost" size="sm" onClick={today}>Today</Button>
+            <Button variant="ghost" size="sm" onClick={now}>Now</Button>
+            <Button variant="ghost" size="sm" onClick={clear} disabled={!value}>Clear</Button>
+            <Button size="sm" onClick={close}>OK</Button>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )
@@ -440,7 +448,7 @@ export function DateRangePicker({
 }: DateRangePickerProps) {
   return (
     <div className={className}>
-      {label && <p className="mb-2 text-[13px] font-medium text-grow-ink-2">{label}{required && <span className="text-grow-accent"> *</span>}</p>}
+      {label && <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.08em] text-ink-3">{label}{required && <span className="text-brand-500"> *</span>}</p>}
       <div className={stacked ? 'flex flex-col gap-4' : 'flex items-start gap-3'}>
         <DateTimePicker label={fromLabel} value={from} min={min} max={to || max} required={required}
           stepMinutes={stepMinutes} className={stacked ? '' : 'flex-1'}
@@ -450,7 +458,7 @@ export function DateRangePicker({
           onChange={(v) => onChange({ from, to: v })} />
       </div>
       {(error || helper) && (
-        <p className={`mx-[14px] mt-[3px] text-[12px] leading-tight ${error ? 'text-grow-error' : 'text-grow-ink-2'}`}>{error || helper}</p>
+        <p className={`mt-1 text-[12px] leading-tight ${error ? 'text-danger-fg' : 'text-ink-3'}`}>{error || helper}</p>
       )}
     </div>
   )

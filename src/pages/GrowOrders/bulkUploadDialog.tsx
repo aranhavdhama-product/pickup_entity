@@ -1,9 +1,9 @@
 /**
  * Grow merchant portal — **Bulk Upload**, the centred popup.
  *
- * Same chrome as Book a Pickup (700px `Dialog`, title/subtitle, `TabStrip`
- * flush under the subtitle, footer Cancel + coral primary) so the merchant only
- * ever learns one modal. Two steps live INSIDE the one dialog:
+ * Same chrome as Book a Pickup (nueva `Modal`, hint line, `Tabs` under it,
+ * footer outline Cancel + brand primary) so the merchant only ever learns one
+ * modal. Two steps live INSIDE the one dialog:
  *
  *  1. **pick**   — shipment tab, dropzone, `Download template`.
  *  2. **review** — `n rows · n valid · n errors` plus the error table, then
@@ -15,7 +15,7 @@
  * and carry an `OrderDraft` so `Resume` reopens the stepper with the row's data.
  */
 import { useRef, useState } from 'react'
-import { FileSpreadsheet, Package, Truck, Upload, type LucideIcon } from 'lucide-react'
+import { FileSpreadsheet, Package, Truck, Upload } from 'lucide-react'
 import { blankParty } from '../../growOrders/seed'
 import { ORDER_DEFAULTS, growOrderActions, newOrderId, newOrderNumber } from '../../growOrders/store'
 import type { GrowOrder, Party, StoreLocation } from '../../growOrders/types'
@@ -25,11 +25,11 @@ import {
   parseBulkCsv, templateCsv, templateFileName, type BulkKind, type BulkParse, type BulkRow,
 } from '../../growOrders/bulkCsv'
 import { toast } from '../../nueva/toast'
-import { Btn, Dialog, TabStrip } from './ui'
+import { Button, Modal, Tabs } from '../../nueva/components'
 
 /** The same two tabs as Create Order and Book a Pickup — one vocabulary. */
 const SHIP_TABS = ['Parcel', 'Vehicle (FTL)'] as const
-const SHIP_TAB_ICONS: Record<(typeof SHIP_TABS)[number], LucideIcon> = { Parcel: Package, 'Vehicle (FTL)': Truck }
+const SHIP_TAB_ICONS = [Package, Truck]
 const KIND_OF: Record<string, BulkKind> = { Parcel: 'Parcel', 'Vehicle (FTL)': 'FTL' }
 const TAB_OF: Record<BulkKind, string> = { Parcel: 'Parcel', FTL: 'Vehicle (FTL)' }
 
@@ -188,41 +188,42 @@ export function BulkUploadDialog({ stores, onClose, onCreated }: {
   const validCount = result?.validRows.length ?? 0
 
   return (
-    <Dialog open title="Bulk Upload" subtitle="Create many orders from a spreadsheet" onClose={onClose}
+    <Modal open title="Bulk Upload" onClose={onClose}
       footer={review
         ? <>
-          <Btn variant="text" color="neutral" onClick={() => setResult(null)}>Back</Btn>
-          <Btn color="accent2" disabled={validCount === 0} startIcon={<Upload size={17} />} onClick={createAll}>
+          <Button variant="outline" onClick={() => setResult(null)}>Back</Button>
+          <Button disabled={validCount === 0} icon={<Upload size={14} />} onClick={createAll}>
             Create {validCount} order{validCount === 1 ? '' : 's'}
-          </Btn>
+          </Button>
         </>
         : <>
-          <Btn variant="text" color="neutral" onClick={onClose}>Cancel</Btn>
-          <Btn color="accent2" disabled={!file || !!fileError || busy} startIcon={<Upload size={17} />} onClick={parse}>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button disabled={!file || !!fileError || busy} icon={<Upload size={14} />} onClick={parse}>
             {busy ? 'Reading…' : 'Upload'}
-          </Btn>
+          </Button>
         </>}>
+      <p className="mb-3 text-[12.5px] text-ink-3">Create many orders from a spreadsheet</p>
       {/* the shipment tabs decide the column set, so they are locked once a file is parsed */}
       {!review && (
-        <TabStrip tabs={SHIP_TABS} active={TAB_OF[kind]} icons={SHIP_TAB_ICONS}
-          onChange={(t) => { setKind(KIND_OF[t]); setResult(null); setFileError(''); setFile(null) }} />
+        <Tabs tabs={[...SHIP_TABS]} active={SHIP_TABS.indexOf(TAB_OF[kind] as (typeof SHIP_TABS)[number])} icons={SHIP_TAB_ICONS}
+          onChange={(i) => { setKind(KIND_OF[SHIP_TABS[i]]); setResult(null); setFileError(''); setFile(null) }} />
       )}
 
       {!review ? (
-        <div className="space-y-5 pt-1">
+        <div className="flex flex-col gap-4 pb-3 pt-4">
           <label
             onDragOver={(e) => { e.preventDefault(); setDrag(true) }}
             onDragLeave={() => setDrag(false)}
             onDrop={(e) => { e.preventDefault(); setDrag(false); pickFile(e.dataTransfer.files?.[0] ?? null) }}
-            className={`relative flex h-[170px] cursor-pointer flex-col items-center justify-center rounded-[6px] border-2 border-dashed text-center transition-colors
-              ${drag ? 'border-grow-accent-2 bg-grow-accent-2/[0.04]' : 'border-grow-outline hover:border-grow-accent-2'}`}>
+            className={`relative flex h-[160px] cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed text-center transition-colors
+              ${drag ? 'border-brand-500 bg-brand-50/40' : 'border-warm-300 hover:border-brand-500 hover:bg-brand-50/40'}`}>
             {file && !fileError
-              ? <FileSpreadsheet size={26} className="mb-2 text-grow-accent-2" />
-              : <Upload size={26} className="mb-2 text-grow-ink-2" />}
-            <span className="px-6 text-[15px] text-grow-ink">
+              ? <FileSpreadsheet size={24} className="mb-2 text-brand-500" />
+              : <Upload size={24} className="mb-2 text-warm-400" />}
+            <span className="px-6 text-[13px] font-bold text-ink">
               {file ? file.name : 'Click to upload or drag and drop (.xlsx, .xls, .csv)'}
             </span>
-            <span className="mt-1 text-[13px] text-grow-ink-2">
+            <span className="mt-1 text-[12.5px] text-ink-3">
               {file ? `${(file.size / 1024).toFixed(1)} KB · click to replace` : 'Maximum size 10 MB'}
             </span>
             {/* transparent rather than display:none, so the real <input type=file> stays hittable */}
@@ -232,49 +233,47 @@ export function BulkUploadDialog({ stores, onClose, onCreated }: {
           </label>
 
           {fileError && (
-            <p className="rounded-[4px] bg-grow-error/10 px-3 py-2 text-[13px] text-grow-error">{fileError}</p>
+            <p className="rounded-md border border-danger-fg/30 bg-danger-bg px-3 py-2 text-[12.5px] text-danger-fg">{fileError}</p>
           )}
 
           <div className="flex items-center justify-between">
-            <button type="button" onClick={downloadTemplate} className="text-[14px] font-medium text-grow-accent-2 hover:underline">
-              Download template
-            </button>
-            <span className="text-[13px] text-grow-ink-2">
+            <Button variant="text" size="sm" icon={<FileSpreadsheet size={13} />} onClick={downloadTemplate}>Download template</Button>
+            <span className="text-[12.5px] text-ink-3">
               {kind === 'FTL' ? 'One row per vehicle booking' : 'One row per parcel order'}
             </span>
           </div>
         </div>
       ) : (
-        <div className="space-y-4 pt-1">
-          <div className="flex flex-wrap items-center gap-2 text-[14px] text-grow-ink">
-            <FileSpreadsheet size={18} className="text-grow-ink-2" />
-            <span className="font-medium">{file?.name}</span>
-            <span className="text-grow-ink-2">
+        <div className="flex flex-col gap-4 pb-3">
+          <div className="flex flex-wrap items-center gap-2 text-[13px] text-ink">
+            <FileSpreadsheet size={16} className="text-warm-400" />
+            <span className="font-bold">{file?.name}</span>
+            <span className="text-ink-3">
               · {result.total} row{result.total === 1 ? '' : 's'} · {validCount} valid · {result.errors.length} error{result.errors.length === 1 ? '' : 's'}
             </span>
           </div>
 
           {result.errors.length === 0 ? (
-            <p className="rounded-[4px] bg-grow-success/10 px-3 py-2 text-[13px] text-[#3E9500]">
+            <p className="rounded-md bg-success-bg px-3 py-2 text-[12.5px] text-success-fg">
               Every row passed validation. {validCount} order{validCount === 1 ? '' : 's'} will be created as unpaid drafts —
               pay for them from the Drafts tab to make them ready for pickup.
             </p>
           ) : (
-            <div className="max-h-[280px] overflow-auto rounded-[6px] border border-grow-line">
+            <div className="max-h-[280px] overflow-auto rounded-md border border-line">
               <table className="w-full border-collapse text-[13px]">
                 <thead>
-                  <tr className="sticky top-0 bg-grow-thead text-left">
+                  <tr className="sticky top-0 border-b border-line bg-warm-50 text-left">
                     {['Row', 'Column', 'Message'].map((h) => (
-                      <th key={h} className="whitespace-nowrap px-3 py-2 text-[12px] font-semibold uppercase tracking-[0.17px] text-grow-ink">{h}</th>
+                      <th key={h} className="whitespace-nowrap px-3 py-2 text-[12px] font-bold text-ink-3">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {result.errors.map((e, i) => (
-                    <tr key={i} className="border-b border-grow-line last:border-0">
-                      <td className="whitespace-nowrap px-3 py-2 text-grow-ink-2">{e.row === 0 ? 'File' : e.row}</td>
-                      <td className="whitespace-nowrap px-3 py-2 font-medium text-grow-ink">{e.column}</td>
-                      <td className="px-3 py-2 text-grow-error">{e.message}</td>
+                    <tr key={i} className="border-b border-line last:border-0 hover:bg-warm-50">
+                      <td className="whitespace-nowrap px-3 py-2 text-ink-2">{e.row === 0 ? 'File' : e.row}</td>
+                      <td className="whitespace-nowrap px-3 py-2 font-bold text-ink">{e.column}</td>
+                      <td className="px-3 py-2 text-danger-fg">{e.message}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -282,12 +281,12 @@ export function BulkUploadDialog({ stores, onClose, onCreated }: {
             </div>
           )}
           {result.errors.length > 0 && validCount > 0 && (
-            <p className="text-[13px] text-grow-ink-2">
+            <p className="text-[12.5px] text-ink-3">
               Rows with errors are skipped — fix them in the spreadsheet and upload again.
             </p>
           )}
         </div>
       )}
-    </Dialog>
+    </Modal>
   )
 }

@@ -19,8 +19,8 @@
  * `YYYY-MM-DDTHH:mm` strings, so a collection may legitimately run overnight
  * or across several days.
  */
-import { useMemo, useState } from 'react'
-import { CalendarDays, ChevronDown, Search, TriangleAlert, Truck, X } from 'lucide-react'
+import { useMemo, useState, type ReactNode } from 'react'
+import { CalendarDays, ChevronDown, Plus, Search, TriangleAlert, Truck, X } from 'lucide-react'
 import { blankParty } from '../../growOrders/seed'
 import { findOpenPickupConflict, growOrderActions } from '../../growOrders/store'
 import type { GrowOrder, GrowPickupRequest, Party, ShipmentType, StoreLocation } from '../../growOrders/types'
@@ -30,7 +30,7 @@ import { DEFAULT_FTL_SERVICE, FTL_SERVICE_CODES, VEHICLE_UNITS, coerceVehicleTyp
 import { toast } from '../../nueva/toast'
 import { earliestWindow, pickupPolicy, violatesCutoff, type PickupPolicy } from '../../growOrders/pickupSlots'
 import { cutoffRuleLine, merchantMayChange, rescheduleError, usePortalMerchant } from './pickupGate'
-import { FOCUS_RING, Btn, Chip, Dialog, Disclosure, Menu, MenuItem, MultiSelect, OutlinedField, TABLE_HEAD_ROW, TABLE_TH } from './ui'
+import { Button, Field, Input, MenuSelect, Modal, MultiSelectDropdown, StatusPill } from '../../nueva/components'
 import { DateTimePicker } from './dateTimePicker'
 import { usePickupLocations } from './pickupLocations'
 import {
@@ -41,6 +41,44 @@ import {
 
 const COUNTRIES = ['Philippines', 'South Africa', 'Namibia', 'Botswana']
 const STATES = ['Metro Manila', 'Laguna', 'Rizal', 'Cebu', 'Iloilo', 'Gauteng', 'Western Cape']
+
+/* ------------------------------------------------------------------ bits ---- */
+
+/** The console dialog footer: outline Cancel, then the one primary action. */
+function Footer({ onClose, onConfirm, label, disabled, icon }: {
+  onClose: () => void; onConfirm: () => void; label: string; disabled?: boolean; icon?: ReactNode
+}) {
+  return (
+    <>
+      <Button variant="outline" onClick={onClose}>Cancel</Button>
+      <Button onClick={onConfirm} disabled={disabled} icon={icon}>{label}</Button>
+    </>
+  )
+}
+
+/** A short explanatory line — the Modal has no subtitle, so this is its first line. */
+function Hint({ children, tone = 'muted' }: { children: ReactNode; tone?: 'muted' | 'danger' }) {
+  return <p className={`text-[12.5px] ${tone === 'danger' ? 'text-danger-fg' : 'text-ink-3'}`}>{children}</p>
+}
+
+/** Uppercase group label, as the console dialogs head their Ship To / Vehicles blocks. */
+function GroupLabel({ children, required, right }: { children: ReactNode; required?: boolean; right?: ReactNode }) {
+  return (
+    <p className="mb-1.5 text-[12px] font-bold uppercase tracking-wide text-ink-2">
+      {children}{required && <span className="text-brand-500">*</span>}
+      {right && <span className="ml-2 font-normal normal-case tracking-normal text-ink-3">{right}</span>}
+    </p>
+  )
+}
+
+/** A multi-line note field in the Input's anatomy. */
+function TextArea({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
+  return (
+    <textarea rows={3} value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)}
+      className="w-full rounded-md border border-warm-300 bg-surface px-3 py-2 text-[13px] text-ink placeholder:text-warm-400
+                 transition-shadow focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/20 focus:outline-none" />
+  )
+}
 
 /* --------------------------------------------------------------- address ---- */
 
@@ -58,35 +96,40 @@ export function AddressFields({ party, set, book = [], searchLabel }: {
     .filter((b) => !q || [b.name, b.contactNumber, b.businessName, partyLine(b)].join(' ').toLowerCase().includes(q.toLowerCase()))
     .slice(0, 6)
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-3">
       {book.length > 0 && searchLabel && (
         <div ref={ref} className="relative">
-          <OutlinedField size="sm" value={q} onChange={(v) => { setQ(v); setOpen(true) }} placeholder={searchLabel}
-            startAdornment={<Search />}
-            endAdornment={q ? <button type="button" onClick={() => setQ('')} aria-label="Clear"><X /></button> : undefined} />
+          <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 z-10 -translate-y-1/2 text-warm-400" />
+          <input value={q} onChange={(e) => { setQ(e.target.value); setOpen(true) }} onFocus={() => setOpen(true)}
+            placeholder={searchLabel}
+            className="h-8 w-full rounded-md border border-warm-300 bg-surface pl-8 pr-8 text-[13px] text-ink placeholder:text-warm-400
+                       transition-shadow focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/20 focus:outline-none" />
+          {q && (
+            <button type="button" onClick={() => setQ('')} aria-label="Clear"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-warm-400 hover:text-ink"><X size={13} /></button>
+          )}
           {open && hits.length > 0 && (
-            <Menu width="w-full" onClose={() => setOpen(false)}>
+            <div className="absolute left-0 right-0 top-9 z-30 max-h-[240px] overflow-auto rounded-md border border-line bg-surface py-1 shadow-ds-overlay">
               {hits.map((b, i) => (
-                <MenuItem key={i} onClick={() => { set({ ...b }); setQ(''); setOpen(false) }}>
-                  <span className="block">
-                    <span className="font-medium">{b.name}</span>{b.businessName ? ` · ${b.businessName}` : ''}
-                    <span className="block text-[13px] text-grow-ink-2">{partyLine(b)}</span>
-                  </span>
-                </MenuItem>
+                <button key={i} type="button" onClick={() => { set({ ...b }); setQ(''); setOpen(false) }}
+                  className="block w-full px-3 py-1.5 text-left text-[13px] text-ink hover:bg-warm-50">
+                  <span className="font-bold">{b.name}</span>{b.businessName ? ` · ${b.businessName}` : ''}
+                  <span className="block truncate text-[12px] text-ink-3">{partyLine(b)}</span>
+                </button>
               ))}
-            </Menu>
+            </div>
           )}
         </div>
       )}
-      <div className="grid grid-cols-2 gap-x-4 gap-y-4">
-        <OutlinedField size="sm" label="Name" required value={party.name} onChange={(v) => set({ name: v })} />
-        <OutlinedField size="sm" label="Contact Number" value={party.contactNumber} onChange={(v) => set({ contactNumber: v.replace(/[^\d+ ]/g, '') })} />
-        <OutlinedField size="sm" label="Address Line 1" required value={party.line1} onChange={(v) => set({ line1: v })} className="col-span-2" />
-        <OutlinedField size="sm" label="Address Line 2" value={party.line2} onChange={(v) => set({ line2: v })} className="col-span-2" />
-        <OutlinedField size="sm" label="Postal Code" required value={party.postalCode} onChange={(v) => set({ postalCode: v })} />
-        <OutlinedField size="sm" label="State" value={party.state} onChange={(v) => set({ state: v })} options={STATES.map((x) => ({ value: x }))} placeholder=" " />
-        <OutlinedField size="sm" label="City" value={party.city} onChange={(v) => set({ city: v })} />
-        <OutlinedField size="sm" label="Country" value={party.country || COUNTRIES[0]} disabled />
+      <div className="grid grid-cols-2 items-end gap-3">
+        <Field label="Name" required><Input value={party.name} onChange={(v) => set({ name: v })} placeholder="eg, John Doe" /></Field>
+        <Field label="Contact Number"><Input value={party.contactNumber} onChange={(v) => set({ contactNumber: v.replace(/[^\d+ ]/g, '') })} placeholder="eg, 1234567890" /></Field>
+        <Field label="Address Line 1" required full><Input value={party.line1} onChange={(v) => set({ line1: v })} placeholder="Street, building" /></Field>
+        <Field label="Address Line 2" full><Input value={party.line2} onChange={(v) => set({ line2: v })} /></Field>
+        <Field label="Postal Code" required><Input value={party.postalCode} onChange={(v) => set({ postalCode: v })} placeholder="eg, 1300" /></Field>
+        <Field label="State"><MenuSelect value={party.state} onChange={(v) => set({ state: v })} options={STATES} placeholder="Select state" /></Field>
+        <Field label="City"><Input value={party.city} onChange={(v) => set({ city: v })} /></Field>
+        <Field label="Country"><Input value={party.country || COUNTRIES[0]} disabled /></Field>
       </div>
     </div>
   )
@@ -118,20 +161,20 @@ export function WindowFields({ startAt, endAt, onStart, onEnd, startError, rule 
      slots and the error message can never disagree */
   const minStart = nextHalfHourAt()
   return (
-    <div>
-      <div className="grid grid-cols-2 gap-5">
+    <div className="flex flex-col gap-2">
+      <div className="grid grid-cols-2 items-start gap-3">
         <DateTimePicker label="Pickup Start" required value={startAt} onChange={onStart}
           min={minStart} error={startAt ? (e.start ?? startError ?? undefined) : undefined} />
         <DateTimePicker label="Pickup End" required value={endAt} onChange={onEnd}
           min={startAt || minStart} error={endAt ? e.end : undefined} />
       </div>
       {span.duration && (
-        <p className="mt-2 text-[13px] text-grow-ink-2">
-          Duration: <span className="text-grow-ink">{span.duration}</span>
-          {span.tag && <span className="ml-2 text-[11px] uppercase tracking-[0.4px] text-grow-ink-3">{span.tag}</span>}
+        <p className="text-[12.5px] text-ink-3">
+          Duration: <span className="font-bold text-ink">{span.duration}</span>
+          {span.tag && <span className="ml-2"><StatusPill label={span.tag} tone="neutral" /></span>}
         </p>
       )}
-      {rule && <p className="mt-1 text-[12px] text-grow-ink-2">{rule}</p>}
+      {rule && <Hint>{rule}</Hint>}
     </div>
   )
 }
@@ -159,7 +202,7 @@ function useBookingRules(global = false) {
  */
 function DuplicateWindowNote({ pr, advice }: { pr: GrowPickupRequest; advice: string }) {
   return (
-    <p className="flex items-center gap-2 rounded-[4px] bg-grow-warning/10 px-3 py-1.5 text-[13px] text-[#B57F00]"
+    <p className="flex items-center gap-2 rounded-md border border-warning-fg/30 bg-warning-bg px-3 py-2 text-[12.5px] text-warning-fg"
       title={`${pr.number} already collects from this address between ${prWindow(pr)}. Booking this window sends a second van to the same dock — ${advice}`}>
       <TriangleAlert size={15} className="shrink-0" />
       <span className="truncate"><b>{pr.number}</b> already collects here {prWindow(pr)} — {advice}</span>
@@ -205,39 +248,37 @@ export function ReschedulePickupDialog({ requests, onClose, onDone }: {
   }
 
   return (
-    <Dialog open title="Reschedule pickup" onClose={onClose}
-      subtitle={one
-        ? `${one.number} · currently ${prWindow(one)}`
-        : `${targets.length} open request${targets.length === 1 ? '' : 's'}`}
-      footer={<>
-        <Btn variant="outlined" color="neutral" onClick={onClose}>Cancel</Btn>
-        <Btn color="accent2" disabled={!targets.length || !ok} startIcon={<CalendarDays size={17} />} onClick={apply}>
-          Reschedule
-        </Btn>
-      </>}>
-      {targets.length === 0 ? (
-        <p className="text-[14px] text-grow-ink-2">
-          None of the selected requests can still be rescheduled — they are closed or already assigned
-          to a driver. Contact support to move an assigned pickup.
-        </p>
-      ) : (
-        <div className="space-y-5 pt-1">
-          {!one && (
-            <div className="rounded-[6px] border border-grow-line">
-              {targets.map((p) => (
-                <div key={p.id} className="flex items-center gap-3 border-b border-grow-line px-3 py-2 text-[13px] last:border-0">
-                  <span className="w-[110px] shrink-0 font-medium text-grow-accent-2">{p.number}</span>
-                  <span className="min-w-0 flex-1 truncate text-grow-ink-2" title={prWindow(p)}>{prWindow(p)}</span>
-                </div>
-              ))}
-            </div>
-          )}
-          <WindowFields startAt={startAt} endAt={endAt} onStart={setStartAt} onEnd={setEndAt}
-            startError={ruleErr}
-            rule={`${cutoffRuleLine(merchant.policy)} · can be moved up to ${merchant.config.rescheduleWindowDays} days ahead`} />
-        </div>
-      )}
-    </Dialog>
+    <Modal open title="Reschedule pickup" onClose={onClose}
+      footer={<Footer onClose={onClose} onConfirm={apply} label="Reschedule"
+        disabled={!targets.length || !ok} icon={<CalendarDays size={14} />} />}>
+      <div className="flex flex-col gap-4 pb-3">
+        <Hint>{one
+          ? `${one.number} · currently ${prWindow(one)}`
+          : `${targets.length} open request${targets.length === 1 ? '' : 's'}`}</Hint>
+        {targets.length === 0 ? (
+          <p className="text-[13px] text-ink-2">
+            None of the selected requests can still be rescheduled — they are closed or already assigned
+            to a driver. Contact support to move an assigned pickup.
+          </p>
+        ) : (
+          <>
+            {!one && (
+              <div className="rounded-md border border-line">
+                {targets.map((p) => (
+                  <div key={p.id} className="flex items-center gap-3 border-b border-line px-3 py-2 text-[13px] last:border-0">
+                    <span className="w-[110px] shrink-0 font-mono text-[12px] font-bold text-ink">{p.number}</span>
+                    <span className="min-w-0 flex-1 truncate text-ink-2" title={prWindow(p)}>{prWindow(p)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <WindowFields startAt={startAt} endAt={endAt} onStart={setStartAt} onEnd={setEndAt}
+              startError={ruleErr}
+              rule={`${cutoffRuleLine(merchant.policy)} · can be moved up to ${merchant.config.rescheduleWindowDays} days ahead`} />
+          </>
+        )}
+      </div>
+    </Modal>
   )
 }
 
@@ -402,6 +443,7 @@ export function PickupDialog({ stores, merchants, onClose, onDone }: {
 
   const addressLabels = shipTos.map((_, i) => `Address ${i + 1}`)
   const withAddresses = shipTos.length > 0
+  const vehicleCols = withAddresses ? 'grid-cols-[1.5fr_110px_120px_1.2fr_32px]' : 'grid-cols-[1.5fr_120px_130px_32px]'
 
   const storeOptions = [
     ...scoped.map((s) => ({ value: s.code, label: storeOptionLabel(s) })),
@@ -411,40 +453,46 @@ export function PickupDialog({ stores, merchants, onClose, onDone }: {
   ]
 
   return (
-    <Dialog open title="Create Pickup Request"
-      subtitle="Reserved pickup — book a courier slot now and add the shipments later."
-      onClose={onClose}
-      footer={<>
-        <Btn variant="outlined" color="neutral" onClick={onClose}>Cancel</Btn>
-        <Btn color="accent2" disabled={!valid} startIcon={<Truck size={17} />} onClick={submit}>
-          {ftl && lines.length > 1 ? `Create ${lines.length} Pickup Requests` : 'Create Pickup Request'}
-        </Btn>
-      </>}>
-      <div className="space-y-5 pt-1">
-        <OutlinedField label="Type" required value={shipType}
-          onChange={(v) => setShipType(v as ShipmentType)} options={SHIP_TYPE_OPTIONS}
-          helper={ftl ? 'Reserve whole vehicles; the shipments are attached later.' : 'A parcel handover into the network.'} />
-
-        {/* console only — who the collection is for, ahead of where it is from */}
-        {merchants && (
-          <OutlinedField label="Select Merchant" required
-            value={merchantName}
-            onChange={(v) => { setMerchantName(v); setStore(''); setOtherPickup(false) }}
-            placeholder={merchantName ? undefined : 'Select a merchant'}
-            options={merchants.map((m) => ({ value: m.name, label: m.name }))}
-            helper={merchantName
-              ? `${scoped.length} pickup address${scoped.length === 1 ? '' : 'es'}`
-              : 'The pickup addresses below are this merchant\u2019s own.'} />
-        )}
+    <Modal open wide title="Create Pickup Request" onClose={onClose}
+      footer={<Footer onClose={onClose} onConfirm={submit} disabled={!valid} icon={<Truck size={14} />}
+        label={ftl && lines.length > 1 ? `Create ${lines.length} Pickup Requests` : 'Create Pickup Request'} />}>
+      <div className="flex flex-col gap-4 pb-3">
+        <Hint>Reserved pickup — book a courier slot now and add the shipments later.</Hint>
+        <div className="grid grid-cols-2 items-start gap-3">
+          <Field label="Type" required>
+            <MenuSelect value={shipType} options={SHIP_TYPE_OPTIONS.map((o) => o.value)}
+              labels={(v) => SHIP_TYPE_OPTIONS.find((o) => o.value === v)?.label ?? v}
+              onChange={(v) => setShipType(v as ShipmentType)} />
+            <p className="mt-1 text-[12px] text-ink-3">
+              {ftl ? 'Reserve whole vehicles; the shipments are attached later.' : 'A parcel handover into the network.'}
+            </p>
+          </Field>
+          {/* console only — who the collection is for, ahead of where it is from */}
+          {merchants && (
+            <Field label="Select Merchant" required>
+              <MenuSelect value={merchantName} placeholder="Select a merchant" options={merchants.map((m) => m.name)}
+                onChange={(v) => { setMerchantName(v); setStore(''); setOtherPickup(false) }} />
+              <p className="mt-1 text-[12px] text-ink-3">
+                {merchantName
+                  ? `${scoped.length} pickup address${scoped.length === 1 ? '' : 'es'}`
+                  : 'The pickup addresses below are this merchant\u2019s own.'}
+              </p>
+            </Field>
+          )}
+        </div>
 
         {/* both types open on where the driver goes. Nothing is rendered under
             the select: the option label already carries the address. */}
-        <OutlinedField label="Ship From" required
-          disabled={!!merchants && !merchantName}
-          value={otherPickup ? OTHER_ADDRESS : store} onChange={pickStore}
-          placeholder={store || otherPickup ? undefined : 'Select a pickup address'} options={storeOptions} />
+        <Field label="Ship From" required>
+          {merchants && !merchantName
+            ? <Input value="" placeholder="Pick a merchant first" disabled />
+            : <MenuSelect value={otherPickup ? OTHER_ADDRESS : store} placeholder="Select a pickup address" searchable
+                options={storeOptions.map((o) => o.value)}
+                labels={(v) => storeOptions.find((o) => o.value === v)?.label ?? v}
+                onChange={pickStore} />}
+        </Field>
         {otherPickup && (
-          <div className="rounded-[6px] border border-grow-line px-4 py-4">
+          <div className="rounded-md border border-line bg-warm-25 px-4 py-3">
             <AddressFields party={shipFrom} set={(x) => setShipFrom((p) => ({ ...p, ...x }))} book={book}
               searchLabel="Search saved addresses…" />
           </div>
@@ -461,107 +509,102 @@ export function PickupDialog({ stores, merchants, onClose, onDone }: {
             that follows the Type field */}
         {ftl ? (
           <>
-            <OutlinedField label="Service Type" required value={ftlService} onChange={pickFtlService}
-              options={FTL_SERVICE_CODES.map((v) => ({ value: v }))}
-              helper={`${vehiclesFor(ftlService).length} vehicle types can be reserved for this service`} />
+            <div className="grid grid-cols-2 items-start gap-3">
+              <Field label="Service Type" required>
+                <MenuSelect value={ftlService} options={FTL_SERVICE_CODES} searchable onChange={pickFtlService} />
+                <p className="mt-1 text-[12px] text-ink-3">{vehiclesFor(ftlService).length} vehicle types can be reserved for this service</p>
+              </Field>
+            </div>
 
             {/* where the vehicles deliver — optional, hidden until asked for,
                 and ABOVE the vehicles so Deliver to has its options */}
-            {shipTos.map((a, i) => (
-              <div key={a.id} className="rounded-[6px] border border-grow-line px-4 py-4">
-                <p className="mb-3 flex items-center justify-between gap-3 text-[14px] font-medium text-grow-ink">
-                  Ship To · Address {i + 1}
-                  <button type="button" onClick={() => setShipTos((as) => as.filter((x) => x.id !== a.id))}
-                    className="text-[13px] font-medium text-grow-accent-2 hover:underline">Remove</button>
-                </p>
-                <AddressFields party={a.party}
-                  set={(x) => setShipTos((as) => as.map((y) => (y.id === a.id ? { ...y, party: { ...y.party, ...x } } : y)))}
-                  book={book} searchLabel="Search address book by name, number, address…" />
+            {withAddresses ? (
+              <div>
+                <GroupLabel>Ship To</GroupLabel>
+                <div className="flex flex-col gap-3">
+                  {shipTos.map((a, i) => (
+                    <div key={a.id} className="rounded-md border border-line px-4 py-3">
+                      <div className="mb-2 flex items-center justify-between">
+                        <span className="text-[12px] font-bold text-ink-3">Address {i + 1}</span>
+                        <button type="button" aria-label={`Remove address ${i + 1}`}
+                          onClick={() => setShipTos((as) => as.filter((x) => x.id !== a.id))}
+                          className="inline-flex h-6 w-6 items-center justify-center rounded-md text-ink-3 hover:bg-warm-100 hover:text-ink">
+                          <X size={13} />
+                        </button>
+                      </div>
+                      <AddressFields party={a.party}
+                        set={(x) => setShipTos((as) => as.map((y) => (y.id === a.id ? { ...y, party: { ...y.party, ...x } } : y)))}
+                        book={book} searchLabel="Search address book by name, number, address…" />
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-2">
+                  <Button size="sm" variant="text" icon={<Plus size={13} />} onClick={() => setShipTos((as) => [...as, newShipTo()])}>Add another address</Button>
+                </div>
               </div>
-            ))}
-            <button type="button" onClick={() => setShipTos((as) => [...as, newShipTo()])}
-              className="block text-[14px] font-medium text-grow-accent-2 hover:underline">
-              {withAddresses ? '+ Add another ship-to address' : '+ Add ship-to address'}
-            </button>
+            ) : (
+              <div>
+                <Button size="sm" variant="text" icon={<Plus size={13} />} onClick={() => setShipTos([newShipTo()])}>Add ship-to address</Button>
+              </div>
+            )}
 
+            {/* the vehicles: a table, one line per vehicle type */}
             <div>
-              <p className="mb-2 text-[14px] font-medium text-grow-ink">
-                Vehicles<span className="text-grow-error"> *</span>
-                <span className="ml-2 text-[13px] font-normal text-grow-ink-2">
-                  {totalVehicles} vehicle{totalVehicles === 1 ? '' : 's'}
-                </span>
-              </p>
-              <div className="rounded-[6px] border border-grow-line">
-                <table className="w-full table-fixed">
-                  <colgroup>
-                    <col /><col className="w-[150px]" /><col className="w-[130px]" />
-                    {withAddresses && <col className="w-[150px]" />}<col className="w-[44px]" />
-                  </colgroup>
-                  <thead>
-                    <tr className={TABLE_HEAD_ROW}>
-                      <th className={TABLE_TH}>Vehicle Type<span className="text-grow-error"> *</span></th>
-                      <th className={TABLE_TH}>No. of vehicles</th>
-                      <th className={TABLE_TH}>Est. load (kg)</th>
-                      {withAddresses && <th className={TABLE_TH}>Deliver to</th>}
-                      <th aria-label="Remove" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {lines.map((l, i) => (
-                      <tr key={l.id} className="h-[52px] border-t border-grow-line">
-                        <td className="px-1">
-                          <OutlinedField size="sm" variant="ghost" label="Vehicle Type" value={l.vehicleType}
-                            options={vehiclesFor(ftlService).map((v) => ({ value: v.type }))}
-                            onChange={(v) => setLine(l.id, { vehicleType: v })} />
-                        </td>
-                        <td className="px-1">
-                          <OutlinedField size="sm" variant="ghost" label="No. of vehicles" value={l.units}
-                            options={VEHICLE_UNITS.map((v) => ({ value: v }))} onChange={(v) => setLine(l.id, { units: v })} />
-                        </td>
-                        <td className="px-1">
-                          <OutlinedField size="sm" variant="ghost" label="Est. load (kg)" type="number" value={l.loadKg}
-                            placeholder={vehicleSpec(l.vehicleType).capacity.split(' · ')[0].replace('Payload ', '')}
-                            onChange={(v) => setLine(l.id, { loadKg: v })} />
-                        </td>
-                        {withAddresses && (
-                          <td className="px-1">
-                            <MultiSelect placeholder="Select" maxChips={1}
-                              options={shipTos.map((a, k) => ({ value: String(a.id), label: addressLabels[k] }))}
-                              value={l.deliverTo.filter((id) => shipTos.some((a) => a.id === id)).map(String)}
-                              onChange={(vals) => setLine(l.id, { deliverTo: vals.map(Number) })} />
-                          </td>
-                        )}
-                        <td className="px-1 text-center">
-                          <button type="button" aria-label={`Remove vehicle ${i + 1}`} disabled={lines.length === 1}
-                            onClick={() => setLines((ls) => ls.filter((x) => x.id !== l.id))}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-full text-grow-ink-2 hover:bg-grow-ink/5 disabled:cursor-not-allowed disabled:opacity-40">
-                            <X size={16} />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <GroupLabel required right={`${totalVehicles} vehicle${totalVehicles === 1 ? '' : 's'}`}>Vehicles</GroupLabel>
+              <div className="rounded-md border border-line">
+                <div className={`grid ${vehicleCols} gap-3 border-b border-line bg-warm-50 px-3 py-2 text-[12px] font-bold text-ink-3`}>
+                  <span>Vehicle type<span className="text-brand-500">*</span></span><span>No. of vehicles</span><span>Est. load (kg)</span>
+                  {withAddresses && <span>Deliver to</span>}<span />
+                </div>
+                {lines.map((l, i) => (
+                  <div key={l.id} className={`grid ${vehicleCols} items-center gap-3 border-b border-line px-3 py-2 last:border-0`}>
+                    <MenuSelect value={l.vehicleType} options={vehiclesFor(ftlService).map((v) => v.type)} searchable
+                      onChange={(v) => setLine(l.id, { vehicleType: v })} />
+                    <MenuSelect value={l.units} options={VEHICLE_UNITS} onChange={(v) => setLine(l.id, { units: v })} />
+                    <Input type="number" value={l.loadKg} onChange={(v) => setLine(l.id, { loadKg: v })}
+                      placeholder={vehicleSpec(l.vehicleType).capacity.split(' · ')[0].replace('Payload ', '')} />
+                    {withAddresses && (
+                      <MultiSelectDropdown options={addressLabels} noun="addresses" placeholder="Select"
+                        values={l.deliverTo.map((id) => shipTos.findIndex((a) => a.id === id)).filter((k) => k >= 0).map((k) => addressLabels[k])}
+                        onChange={(vals) => setLine(l.id, { deliverTo: vals.map((v) => shipTos[addressLabels.indexOf(v)]?.id).filter((x): x is number => x !== undefined) })} />
+                    )}
+                    <button type="button" aria-label={`Remove vehicle ${i + 1}`} disabled={lines.length === 1}
+                      onClick={() => setLines((ls) => ls.filter((x) => x.id !== l.id))}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-md text-ink-3 hover:bg-warm-100 hover:text-ink disabled:cursor-not-allowed disabled:opacity-40">
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
               </div>
-              <button type="button" onClick={() => setLines((ls) => [...ls, newLine(ftlService)])}
-                className="mt-3 text-[14px] font-medium text-grow-accent-2 hover:underline">
-                + Add vehicle
-              </button>
+              <div className="mt-2">
+                <Button size="sm" variant="text" icon={<Plus size={13} />} onClick={() => setLines((ls) => [...ls, newLine(ftlService)])}>Add vehicle</Button>
+              </div>
             </div>
           </>
         ) : (
-          <div className="grid grid-cols-2 gap-5">
-            <OutlinedField label="Estimated Number of Shipments" required type="number" value={pieces} onChange={setPieces} />
-            <OutlinedField label="Estimated Weight (kg)" required type="number" value={weight} onChange={setWeight} />
+          <div className="grid grid-cols-2 items-end gap-3">
+            <Field label="Estimated number of shipments" required><Input type="number" value={pieces} onChange={setPieces} placeholder="e.g. 12" /></Field>
+            <Field label="Estimated weight (kg)" required><Input type="number" value={weight} onChange={setWeight} placeholder="e.g. 40" /></Field>
           </div>
         )}
 
-        <Disclosure label="More details" open={more} onToggle={() => setMore((v) => !v)}>
-          <OutlinedField label="Instructions for driver" value={instructions} onChange={setInstructions} multiline rows={3}
-            helper="Shared with the pickup driver." />
-        </Disclosure>
+        <div>
+          <button type="button" onClick={() => setMore((v) => !v)} aria-expanded={more}
+            className="flex items-center gap-1.5 text-[13px] font-bold text-ink-2 hover:text-ink">
+            <ChevronDown size={14} className={`text-warm-400 transition-transform ${more ? '' : '-rotate-90'}`} />
+            More details
+          </button>
+          {more && (
+            <div className="mt-3">
+              <Field label="Instructions for the driver">
+                <TextArea value={instructions} onChange={setInstructions} placeholder="Optional" />
+                <p className="mt-1 text-[12px] text-ink-3">Shared with the pickup driver.</p>
+              </Field>
+            </div>
+          )}
+        </div>
       </div>
-    </Dialog>
+    </Modal>
   )
 }
 
@@ -588,41 +631,39 @@ function BookingCard({ group: g, stores, conflict, onDrop }: {
   const address = addr !== '-' ? addr : (first ? partyLine(first.sender) : '')
   const count = `${g.orders.length} order${g.orders.length === 1 ? '' : 's'}`
   return (
-    <div className="rounded-[6px] border border-grow-line bg-white">
+    <div className="overflow-hidden rounded-lg border border-line bg-surface">
       <button type="button" onClick={() => setOpen(!expanded)} aria-expanded={expanded}
         aria-label={`${expanded ? 'Hide' : 'Show'} ${count}`}
-        className="block w-full rounded-[6px] px-4 py-2.5 text-left hover:bg-grow-ink/[0.02]">
-        <span className="flex items-baseline gap-3">
-          <span className="min-w-0 flex-1 truncate text-[15px] text-grow-ink">
+        className="block w-full bg-warm-25 px-4 py-2.5 text-left transition-colors hover:bg-warm-50">
+        <span className="flex items-center gap-3">
+          <ChevronDown size={15} className={`shrink-0 text-warm-400 transition-transform ${expanded ? '' : '-rotate-90'}`} />
+          <span className="min-w-0 flex-1 truncate text-[13px] text-ink">
             <span className="font-bold">{storeName(g.storeCode, stores)}</span>
-            <span className="mx-1.5 text-grow-ink-2">→</span>
+            <span className="mx-1.5 text-ink-3">→</span>
             <span>{g.destinationLabel}</span>
           </span>
-          <span className="shrink-0 text-[13px] text-grow-ink-2">{groupLoadLabel(g)}</span>
-          <ChevronDown size={16} className={`shrink-0 self-center text-grow-ink-2 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+          <span className="shrink-0 text-[12.5px] text-ink-3">{groupLoadLabel(g)}</span>
         </span>
-        <span className="mt-0.5 flex items-center gap-2">
-          <span className="min-w-0 flex-1 truncate text-[12px] text-grow-ink-2" title={address}>{address}</span>
+        <span className="mt-0.5 flex items-center gap-2 pl-[27px]">
+          <span className="min-w-0 flex-1 truncate text-[12px] text-ink-3" title={address}>{address}</span>
           {conflict && (
             <span title={`${conflict.number} already collects here between ${prWindow(conflict)}`}>
-              <Chip tone="warning" className="gap-1">
-                <TriangleAlert size={13} /> Overlaps {conflict.number}
-              </Chip>
+              <StatusPill label={`Overlaps ${conflict.number}`} tone="warning" />
             </span>
           )}
         </span>
       </button>
       {expanded && (
-        <div className="border-t border-grow-line">
+        <div className="border-t border-line">
           {g.orders.map((o) => (
-            <div key={o.id} className="flex items-center gap-3 border-b border-grow-line px-4 py-1.5 text-[13px] last:border-0">
-              <span className="w-[120px] shrink-0 truncate font-medium text-grow-accent-2">{o.orderNumber}</span>
-              <span className="min-w-0 flex-1 truncate text-grow-ink">{o.receiver.name}</span>
-              <span className="shrink-0 text-grow-ink-2">{o.pkg.weightKg} kg</span>
+            <div key={o.id} className="flex items-center gap-3 border-b border-line px-4 py-1.5 text-[13px] last:border-0 hover:bg-warm-50">
+              <span className="w-[120px] shrink-0 truncate font-bold text-ink">{o.orderNumber}</span>
+              <span className="min-w-0 flex-1 truncate text-ink-2">{o.receiver.name}</span>
+              <span className="shrink-0 text-ink-3">{o.pkg.weightKg} kg</span>
               <button type="button" aria-label={`Remove ${o.orderNumber} from this booking`}
                 title="Remove from this booking" onClick={() => onDrop(o.id)}
-                className="-mr-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-grow-ink-2 hover:bg-grow-ink/5 hover:text-grow-error">
-                <X size={16} />
+                className="-mr-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-ink-3 hover:bg-warm-100 hover:text-ink">
+                <X size={14} />
               </button>
             </div>
           ))}
@@ -692,36 +733,31 @@ export function BookPickupDialog({ orders, stores, onClose, onBooked }: {
   }
 
   return (
-    <Dialog open title="Book a Pickup"
-      subtitle="Specify the date and time window for scheduling your courier pickup."
-      onClose={onClose}
-      footer={<>
-        <Btn variant="outlined" color="neutral" onClick={onClose}>Cancel</Btn>
-        <Btn color="accent2" disabled={!win || n === 0} startIcon={<Truck size={17} />} onClick={submit}>
-          Book {n} pickup{n === 1 ? '' : 's'}
-        </Btn>
-      </>}>
-      <div className="space-y-5 pt-1">
+    <Modal open title="Book a Pickup" onClose={onClose}
+      footer={<Footer onClose={onClose} onConfirm={submit} disabled={!win || n === 0} icon={<Truck size={14} />}
+        label={`Book ${n} pickup${n === 1 ? '' : 's'}`} />}>
+      <div className="flex flex-col gap-4 pb-3">
+        <Hint>Specify the date and time window for scheduling your courier pickup.</Hint>
         {/* what the merchant is about to create — a courier collects at one
             address and drops at one hub, so a mixed selection is several bookings */}
-        <section>
+        <section className="rounded-md border border-line">
           <button type="button" onClick={() => setShowBookings((v) => !v)} aria-expanded={showBookings}
-            className={`mb-2 flex w-full items-center justify-between text-left text-[13px] text-grow-ink ${FOCUS_RING}`}>
-            <span>
+            className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] text-ink hover:bg-warm-50">
+            <ChevronDown size={15} className={`shrink-0 text-warm-400 transition-transform ${showBookings ? '' : '-rotate-90'}`} />
+            <span className="min-w-0 flex-1">
               {n === 0
                 ? 'Every order has been removed \u2014 nothing left to book.'
                 : <><span className="font-bold">{bookingCountLine(n)}</span>
-                    <span className="text-grow-ink-2"> · {kept.length} order{kept.length === 1 ? '' : 's'}
-                      {conflicts.size > 0 && <span className="text-[#B57F00]"> · {conflicts.size} overlap{conflicts.size === 1 ? '' : 's'} an open request</span>}</span></>}
+                    <span className="text-ink-3"> · {kept.length} order{kept.length === 1 ? '' : 's'}</span></>}
             </span>
-            <ChevronDown size={18} className={`shrink-0 text-grow-ink-2 transition-transform ${showBookings ? 'rotate-180' : ''}`} />
+            {conflicts.size > 0 && <StatusPill tone="warning" label={`${conflicts.size} overlap${conflicts.size === 1 ? '' : 's'} an open request`} />}
           </button>
-          <div className={`max-h-[320px] space-y-2 overflow-y-auto ${showBookings ? '' : 'hidden'}`}>
+          <div className={`max-h-[320px] flex-col gap-2 overflow-y-auto border-t border-line p-3 ${showBookings ? 'flex' : 'hidden'}`}>
             {groups.map((g) => (
               <BookingCard key={g.key} group={g} stores={stores} conflict={conflicts.get(g.key)} onDrop={drop} />
             ))}
             {n === 0 && (
-              <p className="rounded-[6px] border border-dashed border-grow-line px-3 py-4 text-[13px] text-grow-ink-3">
+              <p className="rounded-md border border-dashed border-warm-300 px-3 py-4 text-[12.5px] text-ink-3">
                 No orders left in this booking. Close the dialog to keep the selection.
               </p>
             )}
@@ -736,9 +772,11 @@ export function BookPickupDialog({ orders, stores, onClose, onBooked }: {
           /* scenario 25: past the add-until state the booking cannot join — say what happens instead */
           : `${clash.number} is already ${clash.status} and cannot take more orders, so these become a new request its driver will not collect.`} />}
 
-        <OutlinedField label="Instructions for driver" value={instructions} onChange={setInstructions} multiline rows={3}
-          helper="Shared with the pickup driver." />
+        <Field label="Instructions for the driver">
+          <TextArea value={instructions} onChange={setInstructions} placeholder="Optional" />
+          <p className="mt-1 text-[12px] text-ink-3">Shared with the pickup driver.</p>
+        </Field>
       </div>
-    </Dialog>
+    </Modal>
   )
 }

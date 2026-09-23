@@ -1,14 +1,15 @@
 /**
- * Grow merchant portal — View Order (1:1 with grow-staging.fareye.co).
+ * Grow merchant portal — View Order, on the console's detail grammar (spec §15).
  *
- * Header (back arrow + "Order Number : <no>" + order-type pill) over a two-column
- * body: three stacked cards (Address Details / Parcel — or Vehicle — Details /
- * Service Type) and a sticky tracking timeline on the right. Edit pencils and
- * "Book Now" are demo affordances; the data comes from the local grow store.
+ * PageHeader (back + order number + order type / status / payment pills, a
+ * kebab of merchant actions) over Panels: Consignment details · Ship From /
+ * Ship To · Packages & SKUs (or Vehicle Details) · Service Type on the left and
+ * the tracking timeline on the right. Edit pencils are demo affordances; the
+ * data comes from the local grow store.
  */
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useState, type ReactNode } from 'react'
-import { ArrowLeft, Banknote, CircleAlert, House, Pencil, Truck } from 'lucide-react'
+import { CircleAlert, Pencil, Truck } from 'lucide-react'
 import { useGrowOrders, growOrderActions } from '../../growOrders/store'
 import { usePickupModuleConfig } from '../../config/pickupModule'
 import type { GrowOrder, Party } from '../../growOrders/types'
@@ -16,9 +17,11 @@ import { displayStatus, isOpenPr } from '../../growOrders/tabs'
 import { VOL_FACTOR, quoteForOrder, vehiclesOf } from '../../growOrders/draft'
 import { toast } from '../../nueva/toast'
 import { hubName } from '../../growOrders/hubs'
-import { Btn, Card, Chip, TABLE_TH } from './ui'
+import {
+  Button, EmptyState, KebabMenu, PageHeader, Panel, SimpleTable, StatusPill, type MenuItem,
+} from '../../nueva/components'
 import { BookPickupDialog } from './pickupDialog'
-import { DISPLAY_TONE, PR_STATUS_TONE, money, prWindow } from './utils'
+import { DISPLAY_TONE, PR_STATUS_TONE, money, pillTone, prWindow } from './utils'
 
 /*
  * NO LOCAL RATE CONSTANTS. This page used to mirror the rate card with its own
@@ -31,60 +34,54 @@ const ETA_DAYS = 2
 
 /* ------------------------------------------------------------------ bits ---- */
 
-function SectionCard({ title, onEdit, children, className = '' }: {
-  title: string; onEdit?: () => void; children: ReactNode; className?: string
-}) {
+/** A Panel whose title row carries an optional edit pencil (demo affordance). */
+function Card({ title, onEdit, children }: { title: string; onEdit?: () => void; children: ReactNode }) {
   return (
-    <Card className={`!p-6 ${className}`}>
-      <div className="flex items-start justify-between gap-4">
-        <h2 className="text-[20px] font-semibold leading-snug text-grow-ink">{title}</h2>
+    <Panel>
+      <div className="flex items-center justify-between gap-3 px-5 pt-4 pb-1">
+        <h2 className="text-[15px] font-bold text-ink">{title}</h2>
         {onEdit && (
           <button type="button" aria-label={`Edit ${title}`} onClick={onEdit}
-            className="-mr-1 -mt-1 flex h-9 w-9 items-center justify-center rounded-full text-grow-ink-2 transition-colors hover:bg-grow-accent-2/10 hover:text-grow-accent-2">
-            <Pencil size={20} />
+            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-ink-3 hover:bg-warm-50 hover:text-ink">
+            <Pencil size={14} />
           </button>
         )}
       </div>
       {children}
-    </Card>
+    </Panel>
   )
 }
 
-/** Stacked label / value pair; `right` mirrors it for the receiver column. */
-function Pair({ label, value, right }: { label: string; value: string; right?: boolean }) {
+/** Key / value grid — the console detail page's Pairs. */
+function Pairs({ pairs, cols = 3 }: { pairs: [string, ReactNode][]; cols?: 2 | 3 }) {
   return (
-    <div className={`py-[10px] ${right ? 'text-right' : ''}`}>
-      <p className="text-[14px] leading-tight text-grow-ink-2">{label}</p>
-      <p className="mt-1 text-[16px] leading-tight text-grow-ink">{value || '-'}</p>
-    </div>
-  )
-}
-
-/** Inline label → value, as used above the parcel table. */
-function InlinePair({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex flex-wrap items-baseline gap-2">
-      <span className="text-[14px] text-grow-ink-2">{label}</span>
-      <span className="text-[16px] text-grow-ink">{value || '-'}</span>
-    </div>
+    <dl className={`grid gap-x-6 gap-y-3 px-5 pb-5 pt-2 ${cols === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
+      {pairs.map(([k, v]) => (
+        <div key={k} className="min-w-0">
+          <dt className="text-[12px] font-bold text-ink-3">{k}</dt>
+          <dd className="mt-0.5 break-words text-[13px] text-ink">{v === '' || v == null ? '—' : v}</dd>
+        </div>
+      ))}
+    </dl>
   )
 }
 
 const cityLine = (p: Party) => [p.city || p.line1, p.country, p.postalCode].filter(Boolean).join(', ') || '-'
-const partyPairs = (p: Party, prefix: string, right: boolean) => (
-  <>
-    <Pair right={right} label={`${prefix} Name`} value={p.name} />
-    <Pair right={right} label="Company Name" value={p.businessName} />
-    <Pair right={right} label="Contact Number" value={p.contactNumber} />
-    <Pair right={right} label="Email Id" value={p.email} />
-    {/* what the Create Consignment form adds — shown only when it was typed */}
-    {p.locationCode && <Pair right={right} label="Location Code" value={p.locationCode} />}
-    {(p.line1 || p.line2 || p.line3) && <Pair right={right} label="Address" value={[p.line1, p.line2, p.line3, p.landmark, p.county].filter(Boolean).join(', ')} />}
-    {(p.latitude || p.longitude) && <Pair right={right} label="Latitude, Longitude" value={[p.latitude, p.longitude].filter(Boolean).join(', ')} />}
-    {(p.windowStart || p.windowEnd) && <Pair right={right} label="Window" value={[p.windowStart, p.windowEnd].map((x) => (x ? x.replace('T', ' ') : '…')).join(' → ')} />}
-    {(p.floorNumber || p.liftAvailable) && <Pair right={right} label="Floor · Lift" value={`${p.floorNumber || '-'} · ${p.liftAvailable ? 'Lift available' : 'No lift'}`} />}
-  </>
-)
+const partyPairs = (p: Party, prefix: string): [string, ReactNode][] => [
+  [`${prefix} Name`, p.name],
+  ['Company Name', p.businessName],
+  ['Contact Number', p.contactNumber],
+  ['Email Id', p.email],
+  /* what the Create Consignment form adds — shown only when it was typed */
+  ...(p.locationCode ? [['Location Code', p.locationCode] as [string, ReactNode]] : []),
+  ...((p.line1 || p.line2 || p.line3) ? [['Address', [p.line1, p.line2, p.line3, p.landmark, p.county].filter(Boolean).join(', ')] as [string, ReactNode]] : []),
+  ...((p.latitude || p.longitude) ? [['Latitude, Longitude', [p.latitude, p.longitude].filter(Boolean).join(', ')] as [string, ReactNode]] : []),
+  ...((p.windowStart || p.windowEnd) ? [['Window', [p.windowStart, p.windowEnd].map((x) => (x ? x.replace('T', ' ') : '…')).join(' → ')] as [string, ReactNode]] : []),
+  ...((p.floorNumber || p.liftAvailable) ? [['Floor · Lift', `${p.floorNumber || '-'} · ${p.liftAvailable ? 'Lift available' : 'No lift'}`] as [string, ReactNode]] : []),
+]
+
+type Pkg = NonNullable<NonNullable<GrowOrder['consignment']>['packages']>[number]
+type Vas = NonNullable<NonNullable<GrowOrder['consignment']>['vas']>[number]
 
 /**
  * Consignment details — a compact read-only echo of every Create Consignment
@@ -107,46 +104,36 @@ function ConsignmentCard({ o }: { o: GrowOrder }) {
     ['Special Instructions', c.specialInstructions ?? ''],
     ['Return To Origin', c.rto ? [c.rto.name, c.rto.line1, c.rto.city].filter(Boolean).join(', ') : c.rtoMode ?? ''],
   ]
+  const pkgs = c.packages ?? []
   return (
-    <SectionCard title="Consignment details">
-      <div className="mt-3 grid gap-x-8 sm:grid-cols-3">
-        {rows.map(([label, value]) => <Pair key={label} label={label} value={value} />)}
-      </div>
-      {(c.packages ?? []).some((p) => p.trackingNumber || p.palletSpace || p.description) && (
-        <div className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-[520px] border-collapse text-left">
-            <thead><tr className="bg-grow-thead">
-              {['Piece', 'Package Type', 'Quantity', 'Tracking Number', 'Pallet Space', 'Description'].map((h) => <th key={h} className={`h-[40px] ${TABLE_TH}`}>{h}</th>)}
-            </tr></thead>
-            <tbody>
-              {(c.packages ?? []).map((p, i) => (
-                <tr key={i} className="border-b border-grow-line last:border-0 text-[13px] text-grow-ink">
-                  <td className="px-4 py-2">{p.packageId || i + 1}</td><td className="px-4 py-2">{p.packageType}</td><td className="px-4 py-2">{p.quantity}</td>
-                  <td className="px-4 py-2">{p.trackingNumber || '-'}</td><td className="px-4 py-2">{p.palletSpace || '-'}</td><td className="px-4 py-2">{p.description || '-'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+    <Card title="Consignment details">
+      <Pairs pairs={rows} />
+      {pkgs.some((p) => p.trackingNumber || p.palletSpace || p.description) && (
+        <div className="border-t border-line">
+          <SimpleTable<Pkg & { i: number }> rows={pkgs.map((p, i) => ({ ...p, i }))} rowKey={(p) => p.i}
+            columns={[
+              { label: 'Piece', render: (p) => p.packageId || p.i + 1 },
+              { label: 'Package Type', render: (p) => p.packageType },
+              { label: 'Quantity', render: (p) => p.quantity },
+              { label: 'Tracking Number', render: (p) => p.trackingNumber || '-' },
+              { label: 'Pallet Space', render: (p) => p.palletSpace || '-' },
+              { label: 'Description', render: (p) => p.description || '-' },
+            ]} />
         </div>
       )}
       {(c.vas ?? []).length > 0 && (
-        <div className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-[520px] border-collapse text-left">
-            <thead><tr className="bg-grow-thead">
-              {['VAS Added Level', 'SKU Line Item No', 'Service', 'Service Time (mins)', 'Remark'].map((h) => <th key={h} className={`h-[40px] ${TABLE_TH}`}>{h}</th>)}
-            </tr></thead>
-            <tbody>
-              {(c.vas ?? []).map((v, i) => (
-                <tr key={i} className="border-b border-grow-line last:border-0 text-[13px] text-grow-ink">
-                  <td className="px-4 py-2">{v.level}</td><td className="px-4 py-2">{v.skuCode || '-'}</td><td className="px-4 py-2">{v.service}</td>
-                  <td className="px-4 py-2">{v.serviceTimeMin}</td><td className="px-4 py-2">{v.remark || '-'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="border-t border-line">
+          <SimpleTable<Vas & { i: number }> rows={(c.vas ?? []).map((v, i) => ({ ...v, i }))} rowKey={(v) => v.i}
+            columns={[
+              { label: 'VAS Added Level', render: (v) => v.level },
+              { label: 'SKU Line Item No', render: (v) => v.skuCode || '-' },
+              { label: 'Service', render: (v) => v.service },
+              { label: 'Service Time (mins)', render: (v) => v.serviceTimeMin },
+              { label: 'Remark', render: (v) => v.remark || '-' },
+            ]} />
         </div>
       )}
-    </SectionCard>
+    </Card>
   )
 }
 
@@ -162,35 +149,28 @@ function Tracking({ o, onBook, canBook }: { o: GrowOrder; onBook: () => void; ca
   const pickupOn = usePickupModuleConfig().enabled
   const reached = STEP_OF[o.status]
   return (
-    <ol>
+    <ol className="flex flex-col px-5 pb-5 pt-2">
       {TRACK.map((label, i) => {
         const done = i <= reached
-        const lineDone = i < reached
-        const last = i === TRACK.length - 1
         return (
-          <li key={label} className="flex gap-4">
-            <div className="flex flex-col items-center">
-              <span className={`mt-1 h-[20px] w-[20px] shrink-0 rounded-full ${done ? 'bg-[#56CA00]' : 'bg-grow-ink-3'}`} />
-              {!last && <span className={`w-[2px] flex-1 ${lineDone ? 'bg-[#56CA00]' : 'bg-grow-ink-3/50'}`} />}
-            </div>
-            <div className={`flex-1 ${last ? 'pb-0' : 'pb-7'}`}>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <span className={`text-[17px] leading-tight ${done ? 'text-grow-ink' : 'text-grow-ink-2'}`}>{label}</span>
-                {/* the ONE step a merchant can act on: an order that is paid and
-                    has no courier booked yet */}
-                {i === 1 && canBook && (
-                  <span title={pickupOn ? undefined : 'Pickup module is off for this account'}>
-                    <Btn color="accent2" size="sm" disabled={!pickupOn} startIcon={<Truck size={15} />} onClick={onBook}>Book Pickup</Btn>
-                  </span>
-                )}
-              </div>
-              {i === 3 && o.status === 'Undelivered' && (
-                <p className="mt-1.5 flex items-start gap-1.5 text-[13px] leading-snug text-grow-error">
-                  <CircleAlert size={15} className="mt-[1px] shrink-0" />
-                  {o.error || 'Delivery attempt failed'}
-                </p>
+          <li key={label} className="relative border-l border-line pb-4 pl-4 last:pb-0">
+            <span className={`absolute -left-[4.5px] top-1.5 h-2 w-2 rounded-full ${i === reached ? 'bg-brand-500' : done ? 'bg-success-fg' : 'bg-warm-300'}`} />
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className={`text-[13px] ${done ? 'font-bold text-ink' : 'text-ink-3'}`}>{label}</span>
+              {/* the ONE step a merchant can act on: an order that is paid and
+                  has no courier booked yet */}
+              {i === 1 && canBook && (
+                <span title={pickupOn ? undefined : 'Pickup module is off for this account'}>
+                  <Button size="sm" disabled={!pickupOn} icon={<Truck size={13} />} onClick={onBook}>Book Pickup</Button>
+                </span>
               )}
             </div>
+            {i === 3 && o.status === 'Undelivered' && (
+              <p className="mt-1 flex items-start gap-1.5 text-[12.5px] text-danger-fg">
+                <CircleAlert size={13} className="mt-[2px] shrink-0" />
+                {o.error || 'Delivery attempt failed'}
+              </p>
+            )}
           </li>
         )
       })}
@@ -207,7 +187,12 @@ export default function OrderViewPage() {
   const [book, setBook] = useState(false)
   const o = db.orders.find((x) => x.id === id)
   if (!o) {
-    return <p className="text-grow-ink-2">Order not found. <Link className="text-grow-accent" to="/grow/orders">Back to Orders</Link></p>
+    return (
+      <div>
+        <PageHeader title="Order" onBack={() => nav('/grow/orders')} />
+        <Panel><EmptyState title="Order not found" hint="It may have been removed, or the link is from another browser's data." /></Panel>
+      </div>
+    )
   }
 
   const isFtl = o.shipmentType === 'FTL'
@@ -234,213 +219,159 @@ export default function OrderViewPage() {
     toast.success(`${pr.number} cancelled`)
   }
 
+  const kebab: MenuItem[] = [
+    ...((o.isDraft || o.paymentStatus === 'Unpaid') ? [{ label: 'Edit draft', onClick: () => nav(`/grow/orders/add?draft=${o.id}`) }] : []),
+    ...(pr && isOpenPr(pr.status) ? [{ label: 'Cancel Pickup', tone: 'danger' as const, onClick: cancelPickup }] : []),
+    ...(o.status !== 'Cancelled' && o.status !== 'Delivered' ? [{ label: 'Cancel Order', tone: 'danger' as const, onClick: cancel }] : []),
+  ]
+
   return (
     <div>
-      {/* header */}
-      <div className="mb-5 flex flex-wrap items-center gap-3">
-        <button type="button" aria-label="Back to Orders" onClick={() => nav(backTo)}
-          className="-ml-2 flex h-9 w-9 items-center justify-center rounded-full text-grow-ink transition-colors hover:bg-grow-ink/5">
-          <ArrowLeft size={22} />
-        </button>
-        <h1 className="text-[24px] font-medium leading-[1.33] text-grow-ink">Order Number : {o.orderNumber}</h1>
-        <span className="inline-flex h-[28px] items-center rounded-full bg-grow-ink/[0.08] px-3 text-[14px] leading-none text-grow-ink-2">{o.orderType}</span>
-        {/* the SAME chip the grid and the Status filter show — the header used to
-            speak payment only, so a row and its own page disagreed */}
-        <Chip tone={DISPLAY_TONE[ds]}>{ds}</Chip>
-        <Chip tone={o.paymentStatus === 'Paid' ? 'success' : 'neutral'}>{o.paymentStatus}</Chip>
-      </div>
+      <PageHeader title={`Order Number : ${o.orderNumber}`} onBack={() => nav(backTo)}
+        subtitle={`${cityLine(o.sender)} → ${cityLine(o.receiver)}`}
+        right={(
+          <div className="flex items-center gap-2">
+            <StatusPill label={o.orderType} tone="neutral" />
+            {/* the SAME pill the grid and the Status filter show */}
+            <StatusPill label={ds} tone={pillTone(DISPLAY_TONE[ds])} />
+            <StatusPill label={o.paymentStatus} tone={o.paymentStatus === 'Paid' ? 'success' : 'neutral'} />
+            {kebab.length > 0 && <KebabMenu items={kebab} />}
+          </div>
+        )} />
 
       {/* draft — nothing has been paid for yet, so the only next step is the stepper */}
       {(o.isDraft || o.paymentStatus === 'Unpaid') && (
-        <div className="mb-5 flex flex-wrap items-center gap-3 rounded-[6px] border border-grow-warning/40 bg-grow-warning/10 px-4 py-3">
-          <CircleAlert size={18} className="shrink-0 text-[#B57F00]" />
-          <span className="text-[14px] text-[#B57F00]">Draft — not paid. Finish checkout to book this order.</span>
-          <Btn color="accent2" size="sm" className="ml-auto" onClick={() => nav(`/grow/orders/add?draft=${o.id}`)}>Edit draft</Btn>
+        <div className="mb-4 flex flex-wrap items-center gap-3 rounded-md border border-line bg-warning-bg px-4 py-2.5">
+          <CircleAlert size={15} className="shrink-0 text-warning-fg" />
+          <span className="text-[13px] text-warning-fg">Draft — not paid. Finish checkout to book this order.</span>
+          <span className="ml-auto"><Button size="sm" onClick={() => nav(`/grow/orders/add?draft=${o.id}`)}>Edit draft</Button></span>
         </div>
       )}
 
       {/* the pickup this order was booked into */}
       {pr && (
-        <div className="mb-5 flex flex-wrap items-center gap-3 rounded-[6px] border border-grow-line bg-white px-4 py-3">
-          <Truck size={18} className="shrink-0 text-grow-ink-2" />
-          <span className="text-[14px] text-grow-ink-2">Pickup</span>
-          <Link to={`/grow/orders/pickups/${pr.id}`} className="text-[14px] font-medium text-grow-accent-2 hover:underline">{pr.number}</Link>
-          <span className="text-[14px] text-grow-ink">{prWindow(pr)}</span>
+        <div className="mb-4 flex flex-wrap items-center gap-3 rounded-md border border-line bg-surface px-4 py-2.5 text-[13px]">
+          <Truck size={15} className="shrink-0 text-ink-3" />
+          <span className="text-ink-3">Pickup</span>
+          <Link to={`/grow/orders/pickups/${pr.id}`} className="font-mono text-[12px] font-bold text-brand-500 hover:text-brand-600">{pr.number}</Link>
+          <span className="text-ink">{prWindow(pr)}</span>
           {/* where the courier drops it — the inbound hub this order is routed through */}
-          {pr.destinationCode && (
-            <span className="text-[14px] text-grow-ink-2">→ {hubName(pr.destinationCode, db.stores)}</span>
-          )}
-          <Chip tone={PR_STATUS_TONE[pr.status]}>{pr.status}</Chip>
+          {pr.destinationCode && <span className="text-ink-3">→ {hubName(pr.destinationCode, db.stores)}</span>}
+          <StatusPill label={pr.status} tone={pillTone(PR_STATUS_TONE[pr.status])} />
           {isOpenPr(pr.status) && (
-            <Btn variant="outlined" color="error" size="sm" className="ml-auto" onClick={cancelPickup}>Cancel Pickup</Btn>
+            <span className="ml-auto"><Button size="sm" variant="outline" onClick={cancelPickup}>Cancel Pickup</Button></span>
           )}
         </div>
       )}
 
-      {/* `min-w-0` on the 1fr track: a grid item's min-width defaults to its
-          min-content, so without it the cards' own minimums pushed the whole
-          two-column body past the viewport and the page scrolled sideways. */}
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
-        <div className="min-w-0 space-y-6">
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="flex min-w-0 flex-col gap-4">
           <ConsignmentCard o={o} />
-          {/* ---------------------------------------------- address details ---- */}
-          <SectionCard title="Address Details" onEdit={demo}>
-            <div className="mt-5 flex items-center gap-4">
-              <div className="min-w-0 max-w-[40%]">
-                <p className="text-[12px] font-medium uppercase tracking-[0.8px] text-grow-ink-2">Origin</p>
-                <p className="mt-1.5 text-[15px] leading-snug text-grow-ink">{cityLine(o.sender)}</p>
-              </div>
-              <div className="relative flex min-w-[80px] flex-1 items-center justify-center">
-                <span className="absolute inset-x-0 top-1/2 border-t-2 border-dashed border-grow-ink/25" />
-                <Truck size={44} strokeWidth={1.5} className="relative bg-white px-1 text-grow-ink-2" />
-              </div>
-              <div className="min-w-0 max-w-[40%] text-right">
-                <p className="text-[12px] font-medium uppercase tracking-[0.8px] text-grow-ink-2">Destination</p>
-                <p className="mt-1.5 text-[15px] leading-snug text-grow-ink">{cityLine(o.receiver)}</p>
-              </div>
-            </div>
 
-            <div className="my-5 border-t border-grow-line" />
-
-            <div className="grid gap-x-8 sm:grid-cols-2">
-              <div>{partyPairs(o.sender, 'Sender', false)}</div>
+          <Card title="Ship From / Ship To" onEdit={demo}>
+            <div className="grid gap-x-6 sm:grid-cols-2">
               <div>
+                <p className="px-5 pt-2 text-[11px] font-bold uppercase tracking-[0.08em] text-ink-3">Ship From · {cityLine(o.sender)}</p>
+                <Pairs cols={2} pairs={partyPairs(o.sender, 'Sender')} />
+              </div>
+              <div className="border-l border-line">
                 {receivers.map((r, i) => (
-                  <div key={i} className={i > 0 ? 'mt-3 border-t border-grow-line pt-2' : ''}>
-                    {partyPairs(r, receivers.length > 1 ? `Receiver ${i + 1}` : 'Receiver', true)}
+                  <div key={i} className={i > 0 ? 'border-t border-line' : ''}>
+                    <p className="px-5 pt-2 text-[11px] font-bold uppercase tracking-[0.08em] text-ink-3">
+                      {receivers.length > 1 ? `Ship To ${i + 1}` : 'Ship To'} · {cityLine(r)}
+                    </p>
+                    <Pairs cols={2} pairs={partyPairs(r, receivers.length > 1 ? `Receiver ${i + 1}` : 'Receiver')} />
                   </div>
                 ))}
               </div>
             </div>
-          </SectionCard>
+          </Card>
 
-          {/* ----------------------------------------------- parcel/vehicle ---- */}
-          <SectionCard title={isFtl ? 'Vehicle Details' : 'Parcel Details'} onEdit={demo}>
-            {isFtl ? (
-              <>
-                <div className="mt-4 grid gap-x-8 gap-y-1 sm:grid-cols-3">
-                  <InlinePair label="Service Type" value={o.serviceType || '-'} />
-                  <InlinePair label="Number of Vehicles" value={String(units)} />
-                  <InlinePair label="Actual Load" value={`${(o.actualLoad ?? o.pkg.weightKg).toLocaleString()} kg`} />
-                </div>
-                {/* one row per vehicle, with the delivery addresses it serves */}
-                <div className="mt-5 overflow-x-auto">
-                  <table className="w-full min-w-[520px] border-collapse text-left">
-                    <thead>
-                      <tr className="bg-grow-thead">
-                        {['#', 'Vehicle Type', 'Actual Load', 'Addresses'].map((h) => (
-                          <th key={h} className={`h-[40px] ${TABLE_TH}`}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {vehicles.map((v, i) => (
-                        <tr key={i} className="border-b border-grow-line last:border-0">
-                          <td className="px-4 py-2.5 text-[15px] text-grow-ink-2">{i + 1}</td>
-                          <td className="px-4 py-2.5 text-[15px] text-grow-ink">{v.vehicleType}</td>
-                          <td className="px-4 py-2.5 text-[15px] text-grow-ink">{v.actualLoadKg.toLocaleString()} kg</td>
-                          <td className="px-4 py-2.5 text-[15px] text-grow-ink">
-                            {v.addressIdx.map((a) => {
-                              const d = [o.receiver, ...o.drops][a]
-                              return d ? `Address ${a + 1} · ${d.name}${d.city ? `, ${d.city}` : ''}` : `Address ${a + 1}`
-                            }).join(' · ') || '-'}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="mt-4 flex flex-wrap gap-x-12 gap-y-2">
-                  <InlinePair label="Cargo type" value={o.pkg.cargoType || o.pkg.kind} />
-                  <InlinePair label="Package type" value={o.pkg.packageType || '-'} />
-                  <InlinePair label="Authority to leave" value="Leave at the door" />
-                  <InlinePair label="Delivery Instructions" value={o.remarks} />
-                </div>
-                {/* the SKU-master contents, one row each. `Quantity` here is the
-                    item count inside the packages — the package count is the
-                    `Packages` line under the table, so the two never read as one. */}
-                <div className="mt-5 overflow-x-auto">
-                  <table className="w-full min-w-[520px] border-collapse text-left">
-                    <thead>
-                      <tr className="bg-grow-thead">
-                        {['SKU', 'HSN Code', 'Origin Country', 'Quantity', 'Weight', 'Volumetric weight'].map((h) => (
-                          <th key={h} className={`h-[40px] ${TABLE_TH}`}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {items.length > 0 ? items.map((it, i) => (
-                        <tr key={i} className="border-b border-grow-line last:border-0">
-                          <td className="px-4 py-2.5 text-[15px] text-grow-ink">
-                            {it.name || '-'}{it.skuCode && <span className="block text-[13px] text-grow-ink-2">{it.skuCode}</span>}
-                            {(it.category || it.description || it.unitCost || it.imageUrl) && (
-                              <span className="block text-[13px] text-grow-ink-2">
-                                {[it.category, it.description, it.unitCost ? `Unit Cost ${money(it.unitCost, o.currency)}` : '', it.imageUrl].filter(Boolean).join(' · ')}
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-4 py-2.5 text-[15px] text-grow-ink">{it.hsnCode || <span className="text-grow-ink-3">-</span>}</td>
-                          <td className="px-4 py-2.5 text-[15px] text-grow-ink">{it.originCountry || <span className="text-grow-ink-3">-</span>}</td>
-                          <td className="px-4 py-2.5 text-[15px] text-grow-ink">{it.quantity}</td>
-                          <td className="px-4 py-2.5 text-[15px] text-grow-ink">{(it.weightKg * it.quantity).toFixed(3)} kg</td>
-                          <td className="px-4 py-2.5 text-[15px] text-grow-ink-3">-</td>
-                        </tr>
-                      )) : (
-                        <tr className="border-b border-grow-line last:border-0">
-                          <td className="px-4 py-2.5 text-[15px] text-grow-ink">{o.pkg.description || '-'}</td>
-                          <td className="px-4 py-2.5 text-[15px] text-grow-ink-3">-</td>
-                          <td className="px-4 py-2.5 text-[15px] text-grow-ink-3">-</td>
-                          <td className="px-4 py-2.5 text-[15px] text-grow-ink">{o.pkg.count}</td>
-                          <td className="px-4 py-2.5 text-[15px] text-grow-ink">{o.pkg.weightKg.toFixed(3)} kg</td>
-                          <td className="px-4 py-2.5 text-[15px] text-grow-ink">{volumetric.toFixed(3)} kg</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-                {items.length > 0 && (
-                  <div className="mt-3 flex flex-wrap gap-x-12 gap-y-2">
-                    <InlinePair label="Packages" value={String(o.pkg.count)} />
-                    <InlinePair label="Chargeable weight" value={`${o.pkg.weightKg.toFixed(3)} kg`} />
-                    <InlinePair label="Volumetric weight" value={`${volumetric.toFixed(3)} kg`} />
-                  </div>
+          {isFtl ? (
+            <Card title="Vehicle Details" onEdit={demo}>
+              <Pairs pairs={[
+                ['Service Type', o.serviceType || '-'],
+                ['Number of Vehicles', String(units)],
+                ['Actual Load', `${(o.actualLoad ?? o.pkg.weightKg).toLocaleString()} kg`],
+              ]} />
+              {/* one row per vehicle, with the delivery addresses it serves */}
+              <div className="border-t border-line">
+                <SimpleTable<(typeof vehicles)[number] & { i: number }> rows={vehicles.map((v, i) => ({ ...v, i }))} rowKey={(v) => v.i}
+                  columns={[
+                    { label: '#', render: (v) => <span className="text-ink-3">{v.i + 1}</span> },
+                    { label: 'Vehicle Type', render: (v) => v.vehicleType },
+                    { label: 'Actual Load', align: 'right', render: (v) => `${v.actualLoadKg.toLocaleString()} kg` },
+                    { label: 'Addresses', render: (v) => v.addressIdx.map((a) => {
+                      const d = [o.receiver, ...o.drops][a]
+                      return d ? `Address ${a + 1} · ${d.name}${d.city ? `, ${d.city}` : ''}` : `Address ${a + 1}`
+                    }).join(' · ') || '-' },
+                  ]} />
+              </div>
+            </Card>
+          ) : (
+            <Card title="Packages & SKUs" onEdit={demo}>
+              <Pairs pairs={[
+                ['Cargo type', o.pkg.cargoType || o.pkg.kind],
+                ['Package type', o.pkg.packageType || '-'],
+                ['Authority to leave', 'Leave at the door'],
+                ['Delivery Instructions', o.remarks],
+                ['Packages', String(o.pkg.count)],
+                ['Chargeable weight', `${o.pkg.weightKg.toFixed(3)} kg`],
+                ['Volumetric weight', `${volumetric.toFixed(3)} kg`],
+              ]} />
+              {/* the SKU-master contents, one row each. `Quantity` here is the
+                  item count inside the packages — the package count is the
+                  `Packages` pair above, so the two never read as one. */}
+              <div className="border-t border-line">
+                {items.length > 0 ? (
+                  <SimpleTable<(typeof items)[number] & { i: number }> rows={items.map((it, i) => ({ ...it, i }))} rowKey={(it) => it.i}
+                    columns={[
+                      { label: 'SKU', render: (it) => (
+                        <span>
+                          {it.name || '-'}{it.skuCode && <span className="block text-[12px] text-ink-3">{it.skuCode}</span>}
+                          {(it.category || it.description || it.unitCost || it.imageUrl) && (
+                            <span className="block text-[12px] text-ink-3">
+                              {[it.category, it.description, it.unitCost ? `Unit Cost ${money(it.unitCost, o.currency)}` : '', it.imageUrl].filter(Boolean).join(' · ')}
+                            </span>
+                          )}
+                        </span>
+                      ) },
+                      { label: 'HSN Code', render: (it) => it.hsnCode || <span className="text-ink-3">-</span> },
+                      { label: 'Origin Country', render: (it) => it.originCountry || <span className="text-ink-3">-</span> },
+                      { label: 'Quantity', align: 'right', render: (it) => it.quantity },
+                      { label: 'Weight', align: 'right', render: (it) => `${(it.weightKg * it.quantity).toFixed(3)} kg` },
+                    ]} />
+                ) : (
+                  <SimpleTable<GrowOrder> rows={[o]} rowKey={(x) => x.id}
+                    columns={[
+                      { label: 'Description', render: (x) => x.pkg.description || '-' },
+                      { label: 'Quantity', align: 'right', render: (x) => x.pkg.count },
+                      { label: 'Weight', align: 'right', render: (x) => `${x.pkg.weightKg.toFixed(3)} kg` },
+                      { label: 'Volumetric weight', align: 'right', render: () => `${volumetric.toFixed(3)} kg` },
+                    ]} />
                 )}
-              </>
-            )}
-          </SectionCard>
+              </div>
+            </Card>
+          )}
 
-          {/* ------------------------------------------------- service type ---- */}
-          <SectionCard title="Service Type" onEdit={demo}>
-            <div className="mt-5 flex items-center gap-4 rounded-[12px] border-2 border-grow-accent-2 px-8 py-5">
+          <Card title="Service Type" onEdit={demo}>
+            <div className="mx-5 mb-5 mt-2 flex items-center gap-4 rounded-md border border-brand-500 bg-brand-50/60 px-5 py-3.5">
               <span className="flex-1">
-                <span className="block text-[20px] font-medium text-grow-ink">{o.serviceType || 'Standard Delivery'}</span>
-                <span className="mt-1 flex items-center gap-2 text-[17px] text-grow-ink-2">
-                  {isFtl
-                    ? <Truck size={22} className="text-grow-accent-2" />
-                    : <House size={22} className="fill-grow-accent-2 text-grow-accent-2" />}
-                  {isFtl ? `${units} × ${o.vehicleType} · ` : ''}Delivery by <b className="text-grow-ink">{ETA_DAYS} DAY</b>
+                <span className="block text-[15px] font-bold text-ink">{o.serviceType || 'Standard Delivery'}</span>
+                <span className="mt-0.5 flex items-center gap-1.5 text-[13px] text-ink-2">
+                  <Truck size={14} className="text-brand-500" />
+                  {isFtl ? `${units} × ${o.vehicleType} · ` : ''}Delivery by <b className="text-ink">{ETA_DAYS} DAY</b>
                 </span>
               </span>
-              <span className="flex items-center gap-2 text-[18px] font-medium text-grow-ink">
-                <Banknote size={26} className="text-grow-ink-2" /> {money(rate, o.currency)}
-              </span>
+              <span className="text-[15px] font-bold text-ink">{money(rate, o.currency)}</span>
             </div>
-          </SectionCard>
+          </Card>
         </div>
 
-        {/* ------------------------------------------------------ tracking ---- */}
         <div className="lg:sticky lg:top-4 lg:self-start">
-          <Card className="!p-6">
+          <Panel title="Tracking">
             <Tracking o={o} canBook={ds === 'Ready for Pickup'} onBook={() => setBook(true)} />
-          </Card>
-          {o.status !== 'Cancelled' && o.status !== 'Delivered' && (
-            <div className="mt-2 flex justify-end">
-              <Btn variant="text" color="error" onClick={cancel}>Cancel Order</Btn>
-            </div>
-          )}
+          </Panel>
         </div>
       </div>
 

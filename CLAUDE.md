@@ -84,17 +84,23 @@ Beyond Masters, every sub-nav item is a live page hooked to real staging APIs
 
 Routes: `/console/settings/masters`, `/console/settings/masters/:catId`, `/console/settings/masters/:catId/:subId`.
 
-## Grow merchant portal replica — `src/pages/GrowOrders/` + `src/growOrders/`
+## Grow merchant portal — `src/pages/GrowOrders/` + `src/growOrders/`
 
-A **1:1 replica of grow-staging.fareye.co** (the Grow *merchant* portal, tenant 2GO_PH) at
-`/grow/orders`, `/grow/orders/add`, `/grow/orders/checkout`, `/grow/orders/:id`. This is the ONE
-surface that deliberately does **not** use Nueva: it reproduces the portal's own Material-UI
-(Materio) look — 260px `#28243D` drawer with the real nav, coral `#FF705E` accent, `#F4F5FA`
-canvas, Lato — from computed-style tokens (`--color-grow-*` in `src/index.css`) and the
-crawler's field inventory. Primitives live in `GrowOrders/ui.tsx` (Btn, SplitBtn w/ nested
-menus, TextAction, Switch, Checkbox, OutlinedField, MultiSelect, SearchBox, Chip, StatusChips,
-TabStrip, Sheet, Dialog, AdvancedFilters, ClearFilters, SelectionBar, Card, PageTitle, Stepper,
-GridFooter); non-component helpers in `utils.ts` (window spans, overdue/duplicate selectors,
+The Grow *merchant* portal (tenant 2GO_PH, modelled on grow-staging.fareye.co) at `/grow/orders`,
+`/grow/orders/add`, `/grow/orders/checkout`, `/grow/orders/:id`, `/grow/orders/pickups[/:id]`.
+**Rule (owner, spec §15): ONE component set for both portals.** Grow is built from the SAME
+components as the consignment portal so the two read as one product: shell =
+`src/local/shell.tsx` (`ShellSidebar` + `ShellHeader`, the rail/title bar `LocalSidebar` /
+`LocalHeader` also render — white 256px rail with the FarEye mark, canvas title bar, the
+merchant switcher ⇄ on the right); list pages = `src/local/chrome.tsx` (`LocalPage`,
+`FilterLine`, `DateRange`, `FilterSelect`, `FilterMultiSelect`, `FunnelFilters`,
+`ClearFilters`, `SearchBox`, `IconBtn`, `ColumnChooser`, `LocalTabs`) + Nueva `DataTable` /
+`Pagination` / `PageSize` / `StatusPill` (tones via `stateTone` / `prModel.PR_STATUS_TONE`);
+forms = Nueva inputs in the console SectionCard grid; dialogs = Nueva `Modal`; toasts =
+`nueva/toast`. Tokens = design.md (brand orange) — the `--color-grow-*` Materio tokens are
+removed from `src/index.css` and `GrowOrders/ui.tsx` is RETIRED (nothing imports it; delete
+it, never import it again). Grow keeps its routes, stores and behaviour; only rendering changed.
+Non-component helpers live in `utils.ts` (window spans, overdue/duplicate selectors,
 `groupForPickup`); data is the local `src/growOrders` store (types/seed/store/tabs/draft/hubs,
 localStorage key `fareye-grow-orders-v14`, every persisted record is normalized on load — bump
 the key when a required field is added). `hubs.ts` holds `INBOUND_HUBS` + `inboundHubFor()`:
@@ -103,37 +109,32 @@ orders / ~30 pickup requests, built from deterministic index math (never `Math.r
 reload shows the same data. Runs with no session.
 
 Product changes layered on the replica (deliberate departures from the live portal):
-- **Consignment Order page** (`/grow/orders`, nav "Shipments") — the console Orders-page
-  structure in Grow's theme, console vocabulary (spec §12). NO tabs (any `?tab=` is ignored).
-  ONE filter line on the canvas: date range · State/Secondary State (one grouped listbox) ·
-  Origin (merchant's pickup addresses) · compact funnel (Facility = inbound hub, Type, Carrier,
-  Service Type, Exception, Tag) · Clear Filters; right: "Create Consignment | upload" split +
-  Search pill; below the card `ListFooter` (20 / Page · pages · Refresh). Must fit one line at
-  1440px with the nav expanded. Rows = `shipmentRows.ts` (`toConsignmentRow` from
-  `LocalPFP/adapter` + the console planning overlay, so State / Secondary State / Exception
-  match `/local/consignments`; drafts read State `Draft` / Secondary `Save for later`). Grid =
-  `shipmentTable.tsx`, shared with Pickup Requests: column-configurable (⚙ chooser, persisted
-  `grow-shipments-columns-v1`) from the consignment column universe — default Order Number ·
-  Reference · State · Secondary State · Exception · Tags · Ship By · Service Type · Carrier · Ship
-  To Name/Address · Weight · Volume · Pallet Space · Pickup Request · Delivery Window · Attempts ·
-  Created At; columns with no data are hidden; scrolls sideways. State/Secondary State use
-  FarEye's vocabulary (`fareyeStatesOf`); Schedule Pickup is gated by `canSchedulePickup`.
-  Shell: FarEye mark, no Quick actions / wallet, merchant switcher is the ⇄ icon only.
-  Row click → drawer `?order=<id>` (Details · SKU / Package · Tracking · Notes; Resume for
-  drafts). Selection: Modify Shipment Details · Schedule Pickup (BookPickupDialog, which GROUPS
-  the selection by pickup location → destination, one `GrowPickupRequest` per group) ·
-  Initiate Return to Origin · Print Label · Download CSV · Cancel Shipment.
-- **Pickup Requests page** (`/grow/orders/pickups`) — same grammar, no tabs; old `?tab=` slugs
-  become filter presets (active → open statuses, closed → Completed/Cancelled/Failed, exception →
-  all Exception flags, eligible → Eligible view). Filter line: pickup-window range · Status (PR
-  states + Partially picked / In transit to hub / Handed Over) · funnel (Pickup Address,
-  Exception = Overdue/Discrepancy/Duplicate/Re-attempt available, Type LTL/FTL, Carrier/Driver,
-  Source, Reserved); right: "Eligible (n)" toggle (swaps in `ShipmentTable` with Schedule
-  Pickup), "Create Pickup Request", Search. Columns (`pickupRequestTable.tsx`): Reference ·
-  Status · Exception · Pickup Window · Ship From → hub · Shipments · Weight · Driver / Carrier ·
-  Trip; row click opens the request page. Also kept: `PR-000123` references, weight/qty summed
-  from linked orders, Overdue + Duplicate markers, detail page with status history, Reschedule /
-  Cancel / Print Consolidated Label, a dev
+- **Consignment Order page** (`/grow/orders`, nav "Shipments") — the `/local/consignments`
+  page's grammar and vocabulary (spec §12): `FilterLine` (date range · State/Secondary State
+  grouped `FilterMultiSelect` · Origin `FilterSelect` · funnel: Facility, Type, Carrier, Service
+  Type, Exception, Tag · Clear Filters; right: search · ⚙ `ColumnChooser` · download) → the
+  console's six `LocalTabs` below it with counts (`?tab=` slug; error → Data Validation Issues,
+  Undelivered → Exception, reverse/RTO → Returns, Delivered/Cancelled → Closed, rest → Active,
+  All = no error; DRAFTS always Active; unknown slugs → Active) with **Add ▾** (Add consignment /
+  Add FTL consignment) + upload `IconButton` on the strip's right → `DataTable` with
+  `selectionActions` (Modify Shipment Details · Schedule Pickup → `BookPickupDialog` · Initiate
+  RTO · Print Label · Download CSV · Cancel Shipment) → Pagination/PageSize. Rows =
+  `shipmentRows.ts` (`toConsignmentRow` + the console planning overlay; drafts = State `Draft` /
+  Secondary `Save for later`); columns = `shipmentTable.tsx` `useShipmentColumns` (persisted
+  `grow-shipments-columns-v1`; empty columns hidden). Row click → drawer `?order=<id>` in the
+  console drawer's markup (Details · SKU / Package · Tracking · Notes; Resume for drafts).
+- **Pickup Requests page** (`/grow/orders/pickups`) — same grammar, NO tabs; old `?tab=` slugs
+  become filter presets. Filter line: pickup-window range · Status `FilterMultiSelect` · funnel
+  (Pickup Address, Exception, Type, Carrier/Driver, Source, Reserved) · Clear Filters; right:
+  search · "Eligible (n)" toggle (swaps in the shipments columns, `grow-eligible-columns-v1`,
+  with Schedule Pickup) · ⚙ · **Add** (Create Pickup Request dialog). Columns
+  (`pickupRequestColumns.tsx`, formatting from `LocalPickup/prModel.ts`, persisted
+  `grow-pickup-columns-v1`) = the `/local/pickup` grid minus Merchant: Reference · Status ·
+  Exception · Pickup window · Pickup address → hub · Shipments · Weight · Driver / Carrier ·
+  Trip; `PrStatusChip` / `PrExecutionLine` (`pickupRequestTable.tsx`) are the one status
+  rendering. Row click opens the request page. Also kept: `PR-000123` references, weight/qty
+  summed from linked orders, Overdue + Duplicate markers, detail page with status history,
+  Reschedule / Cancel / Print Consolidated Label, a dev
   "Simulate next step" through Requested → Planned → Ready For Last Mile Dispatch → Assigned → Out For Pickup → Completed (derived `Partially picked`; side exits Pickup Failed / Cancelled).
   Pickup windows are two datetimes and may run overnight or
   across days (≤ 7): multi-day rows render two lines + an `overnight` / `n days` tag, Overdue
@@ -162,9 +163,6 @@ Product changes layered on the replica (deliberate departures from the live port
   the list and `vehiclesOf()` reads a pre-list record as one vehicle covering every address.
   The blind FTL pickup (`Create Pickup Request`) and the rate calculator ask for the service
   type the same way (`ftlServiceType` on the request). Vehicle specs and rates are ESTIMATED.
-- List pages follow the console Orders-page grammar above (one filter line, compact funnel,
-  Clear Filters, create split + Search pill right, floating selection panel); the shell has a
-  collapsible/hover-expand nav and a wallet chip.
 - **Masters, live** (`src/growOrders/masters.ts`): the form reads the FarEye Location
   (`businessUnitLocation`), Package (`packageType`), SKU (`sku`) and Merchant (`businessUnit`)
   masters through the `/staging` proxy — the proxy injects the cookie server-side, so `/grow`
@@ -183,7 +181,7 @@ Product changes layered on the replica (deliberate departures from the live port
   sits below the cards. `Parcel.quantity` = packages of this spec, `ParcelItem.quantity` =
   units per package.
 `?step=1|2` (+`&type=FTL`) on Create Order deep-links into a step with sample parties (QA
-shortcut). Do not restyle these pages to Nueva.
+shortcut). Never reintroduce a Grow-only look: new Grow UI uses the shared console components.
 
 ## First-mile pickup program — `/local/*` + `/driver` (2026-09-23)
 

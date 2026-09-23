@@ -566,3 +566,17 @@ Only values from staging's 41-option State / Secondary State list are shown, on 
 Ready To Ship}, Secondary State ∉ {Scheduled, Planned, Driver Assigned For Pickup, Out For
 Pickup, At Pickup Location}, the row has no open pickup request and no data-validation error.
 A `Pickup Failed` row is therefore schedulable again.
+
+## 15. One component set for both portals (owner, 2026-09-23 afternoon)
+
+Grow no longer has its own Materio primitives. Every Grow page is built from the SAME
+components as the consignment portal: shell = the local shell look (`src/local/LocalLayout`
+grammar: white sidebar with the FarEye mark, canvas-coloured title bar), list pages = the
+shared local chrome (`src/local/chrome.tsx`: FilterLine, DateRange, FilterSelect,
+FunnelFilters, ClearFilters, SearchBox, IconBtn, ChipRow) + Nueva `DataTable`, forms =
+Nueva `Input / MenuSelect / DateInput / Toggle / Checkbox / MultiSelect` inside the console's
+SectionCard grid, dialogs = Nueva `Modal`, detail pages = `PageHeader` + `Panel` + `KebabMenu`
++ `StatusPill`, toasts = `nueva/toast`. Tokens = design.md (brand orange), not coral.
+`src/pages/GrowOrders/ui.tsx` is retired once nothing imports it. Grow keeps its routes,
+stores and behaviour; only the rendering layer changes. Invariant: Grow still imports nothing
+from `src/auth` and calls nothing under `/staging` directly.

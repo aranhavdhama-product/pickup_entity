@@ -291,12 +291,16 @@ export function FilterSelect({ value, placeholder, options, onChange, width, lab
  * A multi-value pill: same shell as FilterSelect, a checkbox list inside.
  * Toggling applies at once (as the Nueva AdvancedFilters it replaces did).
  */
-export function FilterMultiSelect({ values, placeholder, options, onChange, width }: {
+export function FilterMultiSelect({ values, placeholder, options, onChange, width, labels, groupOf }: {
   values: string[]
   placeholder: string
   options: string[]
   onChange: (vals: string[]) => void
   width?: number
+  /** display text for a value (defaults to the value) */
+  labels?: (v: string) => string
+  /** a group heading for a value — a heading row is drawn whenever it changes */
+  groupOf?: (v: string) => string
 }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
@@ -305,10 +309,11 @@ export function FilterMultiSelect({ values, placeholder, options, onChange, widt
   const popRef = useRef<HTMLDivElement>(null)
   useDismiss(open, () => setOpen(false), [ref, popRef])
   const needle = q.trim().toLowerCase()
-  const shown = options.filter((o) => !needle || o.toLowerCase().includes(needle))
+  const text = (o: string) => (labels ? labels(o) : o)
+  const shown = options.filter((o) => !needle || text(o).toLowerCase().includes(needle))
   const toggle = (o: string) => onChange(values.includes(o) ? values.filter((x) => x !== o) : [...values, o])
   const label = values.length === 0 ? placeholder
-    : values.length === 1 ? `${placeholder}: ${values[0]}` : `${placeholder}: ${values.length} selected`
+    : values.length === 1 ? `${placeholder}: ${text(values[0])}` : `${placeholder}: ${values.length} selected`
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
@@ -328,12 +333,18 @@ export function FilterMultiSelect({ values, placeholder, options, onChange, widt
             </div>
           )}
           <div className="pfp-pop-scroll" style={{ minHeight: 0 }}>
-            {shown.map((o) => (
-              <button key={o} type="button" role="option" aria-selected={false} className="pfp-pop-option" onClick={() => toggle(o)}>
-                <input type="checkbox" readOnly checked={values.includes(o)} tabIndex={-1} />
-                <span>{o}</span>
-              </button>
-            ))}
+            {shown.map((o, i) => {
+              const g = groupOf?.(o)
+              return (
+                <div key={o}>
+                  {g && g !== groupOf?.(shown[i - 1] ?? '') && <p className="lc-pop-group">{g}</p>}
+                  <button type="button" role="option" aria-selected={false} className="pfp-pop-option" onClick={() => toggle(o)}>
+                    <input type="checkbox" readOnly checked={values.includes(o)} tabIndex={-1} />
+                    <span>{text(o)}</span>
+                  </button>
+                </div>
+              )
+            })}
             {shown.length === 0 && <p className="lc-pop-empty">{needle ? 'No match' : 'No options'}</p>}
           </div>
           <div className="pfp-pop-foot">
@@ -426,6 +437,68 @@ export function IconBtn({ children, title, onClick, pressed, bordered }: {
       title={title} aria-label={title} aria-pressed={pressed} onClick={onClick}>
       {children}
     </button>
+  )
+}
+
+/* ------------------------------------------------------- column chooser -- */
+
+/**
+ * The ⚙ column chooser: a 32px icon action opening a checkbox list of the
+ * grid's columns (+ Reset). The glyph is the caller's `children`, so this file
+ * still pulls no icon package. At least one column always stays on.
+ */
+export function ColumnChooser({ columns, visible, onChange, onReset, children, title = 'Columns' }: {
+  columns: { key: string; label: string }[]
+  visible: string[]
+  onChange: (keys: string[]) => void
+  onReset: () => void
+  children: ReactNode
+  title?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState<PopPos | null>(null)
+  const ref = useRef<HTMLDivElement>(null)
+  const popRef = useRef<HTMLDivElement>(null)
+  useDismiss(open, () => setOpen(false), [ref, popRef])
+  const toggle = (k: string) => {
+    const on = visible.includes(k)
+    if (on && visible.length === 1) return
+    /* keep the grid's own order, whatever order the clicks came in */
+    onChange(columns.map((c) => c.key).filter((x) => (x === k ? !on : visible.includes(x))))
+  }
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button type="button" className="pfp-iconbtn pfp-toggle" title={title} aria-label={title}
+        aria-pressed={open} aria-haspopup="listbox"
+        onClick={() => {
+          if (open) { setOpen(false); return }
+          const p = placeUnder(ref.current, 420)
+          /* right-align: the chooser sits at the line's right edge */
+          setPos(p && { ...p, left: Math.max(8, (ref.current?.getBoundingClientRect().right ?? 0) - 240) })
+          setOpen(true)
+        }}>
+        {children}
+      </button>
+      {open && pos && createPortal(
+        <div ref={popRef} role="listbox" aria-multiselectable className="pfp-pop" data-fixed="true" data-lc-pop
+          style={{ ...cssVars, top: pos.top, bottom: pos.bottom, left: pos.left, width: 240, maxHeight: pos.maxHeight }}>
+          <p className="lc-pop-group">Columns</p>
+          <div className="pfp-pop-scroll" style={{ minHeight: 0 }}>
+            {columns.map((c) => (
+              <button key={c.key} type="button" role="option" aria-selected={false} className="pfp-pop-option" onClick={() => toggle(c.key)}>
+                <input type="checkbox" readOnly checked={visible.includes(c.key)} tabIndex={-1} />
+                <span>{c.label}</span>
+              </button>
+            ))}
+          </div>
+          <div className="pfp-pop-foot">
+            <button type="button" data-kind="clear" onClick={onReset}>Reset</button>
+            <button type="button" data-kind="apply" onClick={() => setOpen(false)}>Done</button>
+          </div>
+        </div>,
+        document.body,
+      )}
+    </div>
   )
 }
 

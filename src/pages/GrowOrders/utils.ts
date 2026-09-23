@@ -9,7 +9,12 @@ import {
 } from '../../growOrders/tabs'
 import { hubName } from '../../growOrders/hubs'
 import { masterStoreLocations } from '../../growOrders/masters'
-import type { ChipTone } from './ui'
+
+/** The status vocabulary's tone (kept for callers); render it with `pillTone` → Nueva StatusPill. */
+export type ChipTone = 'success' | 'info' | 'warning' | 'error' | 'primary' | 'neutral'
+export type PillTone = 'success' | 'info' | 'warning' | 'danger' | 'neutral'
+export const pillTone = (t: ChipTone): PillTone =>
+  t === 'error' ? 'danger' : t === 'primary' ? 'info' : t
 
 /**
  * Escape belongs to the TOP layer only.

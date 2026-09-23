@@ -17,7 +17,6 @@
 import type { GrowOrder, GrowOrdersDb } from '../../growOrders/types'
 import { csvOf, stateTone, toConsignmentRow, type LocalConsignmentRow } from '../LocalPFP/adapter'
 import type { PlanningDb } from '../LocalPFP/planningStore'
-import type { ChipTone } from './ui'
 
 export const DRAFT_STATE = 'Draft'
 export const DRAFT_SECONDARY = 'Save for later'
@@ -60,11 +59,9 @@ export function shipmentRowsOf(db: GrowOrdersDb, plan: PlanningDb): ShipmentRow[
     .sort((a, b) => b.order.createdAt.localeCompare(a.order.createdAt) || a.orderId.localeCompare(b.orderId))
 }
 
-/** The console's state tone, in the Grow chip palette ('danger' → 'error'). */
-export function stateChipTone(state: string): ChipTone {
-  if (state === DRAFT_STATE) return 'neutral'
-  const t = stateTone(state)
-  return t === 'danger' ? 'error' : t
+/** The console's state tone (`stateTone`) for a Nueva `StatusPill`; a draft reads neutral. */
+export function stateChipTone(state: string): ReturnType<typeof stateTone> {
+  return state === DRAFT_STATE ? 'neutral' : stateTone(state)
 }
 
 /** The console's CSV (same columns as `/local/consignments`); `state` is only stringified. */

@@ -1,13 +1,12 @@
 /** /order/checkout/ replica — Payment Summary rail + remarks; Proceed creates the order. */
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft } from 'lucide-react'
 import { CURRENCY } from '../../growOrders/seed'
 import { inboundHubFor } from '../../growOrders/hubs'
 import { growOrderActions, newOrderId, newOrderNumber, orderById, pickupRequestById } from '../../growOrders/store'
 import type { GrowOrder, PaymentMode } from '../../growOrders/types'
 import { toast } from '../../nueva/toast'
-import { Btn, Card, OutlinedField, PageTitle } from './ui'
+import { Button, Field, Input, MenuSelect, PageHeader, Panel } from '../../nueva/components'
 import { money } from './utils'
 import { usePortalMerchant } from './pickupGate'
 import {
@@ -34,10 +33,12 @@ export default function CheckoutPage() {
   if (!draft) {
     return (
       <div>
-        <PageTitle title="Checkout" subtitle="Complete the payment for your order" />
-        <Card className="text-[14px] text-grow-ink-2">
-          Nothing to check out. <Link to="/grow/orders/add" className="font-medium text-grow-accent-2 hover:underline">Create a consignment</Link>
-        </Card>
+        <PageHeader title="Checkout" subtitle="Complete the payment for your order" />
+        <Panel>
+          <p className="px-5 py-5 text-[13px] text-ink-2">
+            Nothing to check out. <Link to="/grow/orders/add" className="font-bold text-brand-500 hover:text-brand-600">Create a consignment</Link>
+          </p>
+        </Panel>
       </div>
     )
   }
@@ -121,55 +122,68 @@ export default function CheckoutPage() {
     toast.success(`Consignment ${o.orderNumber} created`)
     nav('/grow/orders')
   }
+  const taxes = Math.round(draft.rate * 0.15)
+  const line = (k: string, v: ReactNode, key?: number) => (
+    <p key={key} className="mt-1 first:mt-0"><span className="text-ink-3">{k} </span>{v}</p>
+  )
   return (
     <div>
-      <PageTitle title="Checkout" subtitle="Complete the payment for your order"
-        right={<Btn variant="outlined" color="neutral" startIcon={<ArrowLeft size={17} />} onClick={() => nav(-1)}>Back to consignment</Btn>} />
-      <div className="grid items-start gap-5 lg:grid-cols-[1fr_400px]">
-        <Card className="space-y-5">
-          <div className="text-[14px] text-grow-ink">
-            <p><span className="text-grow-ink-2">From </span>{draft.sender.name}, {draft.sender.city}</p>
-            {[draft.receiver, ...draft.drops].map((d, i) => (
-              <p key={i} className="mt-1"><span className="text-grow-ink-2">{i === 0 ? 'To ' : `Drop ${i + 1} `}</span>{d.name}, {d.line1}, {d.postalCode}</p>
-            ))}
-            {draft.shipmentType === 'FTL' && (
-              <>
-                <p className="mt-1"><span className="text-grow-ink-2">Service </span>{draft.ftlServiceType || draft.service}</p>
-                {vehiclesOf(draft).map((v, i) => (
-                  <p key={i} className="mt-1"><span className="text-grow-ink-2">Vehicle {i + 1} </span>{v.vehicleType} · {v.actualLoadKg.toLocaleString()} kg
-                    <span className="text-grow-ink-2"> · {v.addressIdx.map((a) => `Address ${a + 1}`).join(', ')}</span></p>
-                ))}
-                {draft.additionalServices.length > 0 && <p className="mt-1"><span className="text-grow-ink-2">Extras </span>{draft.additionalServices.join(', ')}</p>}
-              </>
-            )}
-            {/* what is actually being shipped: the Package master preset, then its contents */}
-            {draft.shipmentType !== 'FTL' && (
-              <p className="mt-1"><span className="text-grow-ink-2">Cargo </span>{p0.cargoType}
-                <span className="text-grow-ink-2"> · Package type </span>{p0.packageTypeName || 'Custom'}
-                {items.length > 0 && <span className="text-grow-ink-2"> · {items.length} item{items.length === 1 ? '' : 's'}: <span className="text-grow-ink">{items.map((it) => it.name).filter(Boolean).join(', ')}</span></span>}</p>
-            )}
-            <p className="mt-1"><span className="text-grow-ink-2">Service </span>{draft.service} · Delivery by {draft.etaDays} DAY</p>
+      <PageHeader title="Checkout" subtitle="Complete the payment for your order" onBack={() => nav(-1)}
+        right={<Button variant="outline" onClick={() => nav(-1)}>Back to consignment</Button>} />
+      <div className="grid items-start gap-4 lg:grid-cols-[1fr_380px]">
+        <div className="flex min-w-0 flex-col gap-4">
+          <Panel title="Consignment">
+            <div className="px-5 pb-5 pt-2 text-[13px] text-ink">
+              {line('From', `${draft.sender.name}, ${draft.sender.city}`)}
+              {[draft.receiver, ...draft.drops].map((d, i) => line(i === 0 ? 'To' : `Drop ${i + 1}`, `${d.name}, ${d.line1}, ${d.postalCode}`, i))}
+              {draft.shipmentType === 'FTL' && (
+                <>
+                  {line('Service', draft.ftlServiceType || draft.service)}
+                  {vehiclesOf(draft).map((v, i) => line(`Vehicle ${i + 1}`, <>{v.vehicleType} · {v.actualLoadKg.toLocaleString()} kg
+                    <span className="text-ink-3"> · {v.addressIdx.map((a) => `Address ${a + 1}`).join(', ')}</span></>, 100 + i))}
+                  {draft.additionalServices.length > 0 && line('Extras', draft.additionalServices.join(', '))}
+                </>
+              )}
+              {/* what is actually being shipped: the Package master preset, then its contents */}
+              {draft.shipmentType !== 'FTL' && line('Cargo', <>{p0.cargoType}
+                <span className="text-ink-3"> · Package type </span>{p0.packageTypeName || 'Custom'}
+                {items.length > 0 && <span className="text-ink-3"> · {items.length} item{items.length === 1 ? '' : 's'}: <span className="text-ink">{items.map((it) => it.name).filter(Boolean).join(', ')}</span></span>}</>)}
+              {line('Service', `${draft.service} · Delivery by ${draft.etaDays} DAY`)}
+            </div>
+          </Panel>
+          <Panel title="Payment">
+            <div className="grid grid-cols-2 gap-4 px-5 pb-5 pt-2">
+              <Field label="Payment Mode" plain>
+                <MenuSelect value={payment} options={['Prepaid', 'COD']} onChange={(v) => setPayment(v as PaymentMode)} />
+              </Field>
+              {payment === 'COD' && (
+                <Field label={`COD Amount (${CURRENCY})`} plain>
+                  <Input type="number" value={cod} onChange={setCod} />
+                </Field>
+              )}
+              <div className="col-span-2">
+                <Field label="Add remarks if any" plain>
+                  <textarea rows={3} value={remarks} onChange={(e) => setRemarks(e.target.value)}
+                    placeholder="Remarks for the driver or the receiver"
+                    className="w-full rounded-md border border-warm-300 bg-surface px-3 py-2 text-[13px] text-ink placeholder:text-warm-400
+                               transition-shadow focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/20" />
+                </Field>
+              </div>
+            </div>
+          </Panel>
+        </div>
+        <Panel title="Payment Summary">
+          <div className="px-5 pb-5">
+            <p className="mb-4 text-[13px] text-ink-3">Complete the payment for your order</p>
+            <div className="space-y-2 text-[13px] text-ink">
+              <div className="flex justify-between"><span className="text-ink-3">Total Shipments</span><span>1</span></div>
+              <div className="flex justify-between"><span className="text-ink-3">Shipping charges</span><span>{money(draft.rate, CURRENCY)}</span></div>
+              <div className="flex justify-between"><span className="text-ink-3">Taxes</span><span>{money(taxes, CURRENCY)}</span></div>
+              <div className="mt-3 flex justify-between border-t border-line pt-3 text-[15px] font-bold"><span>Payable Amount</span><span>{money(draft.rate + taxes, CURRENCY)}</span></div>
+            </div>
+            <div className="mt-5 flex [&>button]:w-full"><Button onClick={proceed}>Proceed</Button></div>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <OutlinedField label="Payment Mode" value={payment} onChange={(v) => setPayment(v as PaymentMode)} options={[{ value: 'Prepaid' }, { value: 'COD' }]} />
-            {payment === 'COD' && <OutlinedField label={`COD Amount (${CURRENCY})`} type="number" value={cod} onChange={setCod} />}
-          </div>
-          <div>
-            <p className="mb-2 text-[15px] font-semibold text-grow-ink">Add remarks if any</p>
-            <OutlinedField value={remarks} onChange={setRemarks} multiline placeholder="Remarks for the driver or the receiver" />
-          </div>
-        </Card>
-        <Card>
-          <h2 className="text-[20px] font-semibold leading-snug text-grow-ink">Payment Summary</h2>
-          <p className="mb-4 mt-0.5 text-[14px] text-grow-ink-2">Complete the payment for your order</p>
-          <div className="space-y-2 text-[14px] text-grow-ink">
-            <div className="flex justify-between"><span className="text-grow-ink-2">Total Shipments</span><span>1</span></div>
-            <div className="flex justify-between"><span className="text-grow-ink-2">Shipping charges</span><span>{money(draft.rate, CURRENCY)}</span></div>
-            <div className="flex justify-between"><span className="text-grow-ink-2">Taxes</span><span>{money(Math.round(draft.rate * 0.15), CURRENCY)}</span></div>
-            <div className="mt-3 flex justify-between border-t border-grow-line pt-3 text-[16px] font-semibold"><span>Payable Amount</span><span>{money(draft.rate + Math.round(draft.rate * 0.15), CURRENCY)}</span></div>
-          </div>
-          <Btn color="accent2" size="lg" className="mt-5 w-full" onClick={proceed}>Proceed</Btn>
-        </Card>
+        </Panel>
       </div>
     </div>
   )
