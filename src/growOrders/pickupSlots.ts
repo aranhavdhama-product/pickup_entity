@@ -209,6 +209,7 @@ export function pickupDaysLabel(days: number[]): string {
 export function autoPickupWindow(now: Date, cfg?: PolicyInput, auto?: Partial<AutoPickupConfig>): { startAt: string; endAt: string } {
   const p = pol(cfg)
   const a: AutoPickupConfig = {
+    afterState: auto?.afterState ?? 'Ready To Ship',
     dateRule: auto?.dateRule ?? 'next-business-day',
     daysAfterOrder: auto?.daysAfterOrder ?? 1,
     slot: auto?.slot ?? '',
@@ -244,12 +245,26 @@ export function autoPickupWindow(now: Date, cfg?: PolicyInput, auto?: Partial<Au
   return { startAt: w.startAt, endAt: w.endAt }
 }
 
-/** 'Auto pickup · next pickup day · 09:00–12:00 · Mon–Sat' — the pill the pages show in auto mode. */
+/**
+ * Whether an AUTO request may be raised for this consignment now: it must be a
+ * live, unbooked consignment that has reached the configured trigger state.
+ */
+export function autoPickupEligible(
+  o: { isDraft: boolean; status: string; pickupRequestId: string | null; paymentStatus: string; error: string },
+  afterState: AutoPickupConfig['afterState'],
+): boolean {
+  if (o.isDraft || o.pickupRequestId || o.status !== 'Order Created') return false
+  if (afterState === 'Created') return true
+  if (o.paymentStatus !== 'Paid') return false            // no label before payment
+  return afterState === 'Label Generated' || !o.error     // Ready To Ship = validated too
+}
+
+/** 'Auto pickup · after Ready To Ship · next pickup day · 09:00–12:00 · Mon–Sat' — the pill the pages show in auto mode. */
 export function autoPickupSummary(cfg: Pick<PickupModuleConfig, 'autoPickup' | 'sameDayCutoff' | 'slotDefinitions'>): string {
   const a = cfg.autoPickup
   const rule = a.dateRule === 'same-day' ? `same day before ${cfg.sameDayCutoff}`
     : a.dateRule === 'days-after-order' ? `${a.daysAfterOrder} day${a.daysAfterOrder === 1 ? '' : 's'} after creation`
     : 'next pickup day'
   const slot = a.slot || cfg.slotDefinitions[0] || ''
-  return ['Auto pickup', rule, slot.replace('-', '–'), pickupDaysLabel(a.pickupDays)].filter(Boolean).join(' · ')
+  return ['Auto pickup', `after ${a.afterState}`, rule, slot.replace('-', '–'), pickupDaysLabel(a.pickupDays)].filter(Boolean).join(' · ')
 }

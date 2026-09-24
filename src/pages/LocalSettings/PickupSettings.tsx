@@ -37,6 +37,12 @@ const DATE_RULE_OPTIONS: Opt[] = [
   { name: 'Next pickup day', code: 'next-business-day' },
   { name: 'N days after the consignment is created', code: 'days-after-order' },
 ]
+/* the FarEye consignment states that may RAISE an auto pickup (owner, 2026-09-24) */
+const AFTER_STATE_OPTIONS: Opt[] = [
+  { name: 'Created — as soon as the consignment exists', code: 'Created' },
+  { name: 'Label Generated — once it is paid and labelled', code: 'Label Generated' },
+  { name: 'Ready To Ship — paid, labelled, no validation issues', code: 'Ready To Ship' },
+]
 const DAY_CHIPS: { code: number; name: string }[] = [
   { code: 1, name: 'Mon' }, { code: 2, name: 'Tue' }, { code: 3, name: 'Wed' }, { code: 4, name: 'Thu' },
   { code: 5, name: 'Fri' }, { code: 6, name: 'Sat' }, { code: 0, name: 'Sun' },
@@ -136,15 +142,15 @@ function OptionSelect({ value, options, onChange }: { value: string; options: Op
 }
 
 /** The two ways requests are raised — one selected card (owner, 2026-09-24). */
-function ModeCards({ value, onChange, disabled }: { value: PickupMode; onChange: (m: PickupMode) => void; disabled?: boolean }) {
+function ModeCards({ value, onChange }: { value: PickupMode; onChange: (m: PickupMode) => void }) {
   const cards: { code: PickupMode; icon: ReactNode; title: string; desc: string }[] = [
     { code: 'auto', icon: <Zap size={18} />, title: 'Auto pickup request',
-      desc: 'A request is raised the moment a consignment is created, on the pickup date this page computes.' },
+      desc: 'A request is raised when a consignment reaches the chosen state, on the pickup date this page computes.' },
     { code: 'manual', icon: <Hand size={18} />, title: 'Create pickup request manually',
       desc: 'Merchants and ops book pickups themselves — Schedule Pickup, Book Pickup and Create Pickup stay on the pages.' },
   ]
   return (
-    <div className={`grid grid-cols-1 gap-3 sm:grid-cols-2 ${disabled ? 'pointer-events-none opacity-50' : ''}`} role="radiogroup" aria-label="Pickup request mode">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2" role="radiogroup" aria-label="Pickup request mode">
       {cards.map((c) => {
         const on = c.code === value
         return (
@@ -222,15 +228,27 @@ export default function PickupSettings() {
           <LabeledField label="Pickup module enabled" hint="Same switch as the Pickup Request card on Base Modules.">
             <ToggleField checked={draft.enabled} onChange={(v) => set('enabled', v)} />
           </LabeledField>
-          <div className="py-3">
-            <div className="mb-2 text-[13.5px] text-ink">Pickup request mode</div>
-            <ModeCards value={draft.mode} disabled={!draft.enabled} onChange={(m) => set('mode', m)} />
-          </div>
+          {draft.enabled && (
+            <div className="py-3">
+              <div className="mb-2 text-[13.5px] text-ink">Pickup request mode</div>
+              <ModeCards value={draft.mode} onChange={(m) => set('mode', m)} />
+            </div>
+          )}
         </SectionCard>
 
-        {draft.mode === 'auto' ? (
+        {/* owner, 2026-09-24: a disabled module shows nothing but its switch */}
+        {!draft.enabled ? (
+          <p className="rounded-xl border border-line bg-surface px-5 py-4 text-[13px] text-ink-3 shadow-ds-1">
+            The pickup module is off. Switch it on to choose how requests are raised and to see booking, execution and merchant rules.
+          </p>
+        ) : draft.mode === 'auto' ? (
           <SectionCard title="Auto pickup — pickup dates" hint="How the raised request picks its date and window. Slots and the same-day cutoff come from the manual card's values.">
-            <LabeledField label="Pickup date rule" wide hint="Which day the collection is booked for, counted from the moment the consignment is created.">
+            <LabeledField label="Raise the request after state" wide
+              hint="The consignment state that raises the request. Later states (Picked Up, At Facility…) never do; a consignment that reaches this state later — validation fixed, payment made — is booked at that moment.">
+              <OptionSelect value={draft.autoPickup.afterState} options={AFTER_STATE_OPTIONS}
+                onChange={(v) => setAuto({ afterState: v as AutoPickupConfig['afterState'] })} />
+            </LabeledField>
+            <LabeledField label="Pickup date rule" wide hint="Which day the collection is booked for, counted from the moment the consignment reaches that state.">
               <OptionSelect value={draft.autoPickup.dateRule} options={DATE_RULE_OPTIONS}
                 onChange={(v) => setAuto({ dateRule: v as AutoPickupConfig['dateRule'] })} />
             </LabeledField>
@@ -263,11 +281,12 @@ export default function PickupSettings() {
                 })}
               </div>
             </LabeledField>
-            <LabeledField label="Booking lead time (minutes)" hint="A same-day window that starts sooner than this moves to the next slot or day.">
+            <LabeledField label="Minimum notice before the window (minutes)"
+              hint="The courier needs this much notice: if the computed window would start sooner than this after the request is raised, the pickup moves to the next slot, or the next pickup day. Shared with manual booking as its lead time.">
               <Input type="number" value={draft.bookingLeadTimeMins} onChange={(v) => set('bookingLeadTimeMins', v)} />
             </LabeledField>
             <div className="py-3 text-[13px] text-ink-2">
-              <span className="font-bold text-ink">Preview:</span> a consignment created now would be collected{' '}
+              <span className="font-bold text-ink">Preview:</span> a consignment reaching <span className="font-bold text-ink">{draft.autoPickup.afterState}</span> now would be collected{' '}
               <span className="font-bold text-ink">{windowLabel(autoPickupWindow(new Date(), next, next.autoPickup))}</span>
               <span className="text-ink-3"> · {autoPickupSummary(next)}</span>
             </div>
@@ -298,6 +317,7 @@ export default function PickupSettings() {
           </SectionCard>
         )}
 
+        {draft.enabled && (<>
         <SectionCard title="Execution & proof of pickup" hint="What the driver and hub capture when parcels are collected.">
           <LabeledField label="Handover scan mode" hint="Who scans a picked-up consignment into the hub.">
             <OptionSelect value={draft.scanMode} options={SCAN_MODE_OPTIONS}
@@ -384,6 +404,7 @@ export default function PickupSettings() {
             </Button>
           </div>
         </section>
+        </>)}
       </div>
     </div>
   )

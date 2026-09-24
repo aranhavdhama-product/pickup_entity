@@ -102,7 +102,7 @@ removed from `src/index.css` and `GrowOrders/ui.tsx` is RETIRED (nothing imports
 it, never import it again). Grow keeps its routes, stores and behaviour; only rendering changed.
 Non-component helpers live in `utils.ts` (window spans, overdue/duplicate selectors,
 `groupForPickup`); data is the local `src/growOrders` store (types/seed/store/tabs/draft/hubs,
-localStorage key `fareye-grow-orders-v15`, every persisted record is normalized on load — bump
+localStorage key `fareye-grow-orders-v16`, every persisted record is normalized on load — bump
 the key when a required field is added). `hubs.ts` holds `INBOUND_HUBS` + `inboundHubFor()`:
 every parcel order carries an `inboundHubCode` derived from its receiver. The seed is ~80 demo
 orders / ~30 pickup requests, built from deterministic index math (never `Math.random`), PLUS
@@ -217,8 +217,9 @@ effects (a cancelled/rescheduled PR leaving its trip) flow through `onPickupRequ
   local app never calls `/staging`). `enabled:false` hides only the pickup additions.
   **`mode` (owner, 2026-09-24): `manual` (default) = merchants/ops book; `auto` = a request is
   raised the moment a consignment is created on the date `autoPickup` computes
-  (`dateRule` same-day | next-business-day | days-after-order, `daysAfterOrder`, `slot`,
-  `pickupDays`; `autoPickupWindow()` / `autoPickupSummary()` in `pickupSlots.ts`; the legacy
+  (`afterState` Created | Label Generated | Ready To Ship = the consignment state that raises it —
+  `autoPickupEligible()`; a consignment reaching it LATER is booked from `update()`; `dateRule`
+  same-day | next-business-day | days-after-order, `daysAfterOrder`, `slot`, `pickupDays`; `autoPickupWindow()` / `autoPickupSummary()` in `pickupSlots.ts`; the legacy
   `autoCreateOnConsignment` is derived from it). `/local/settings/pickup` shows the module
   toggle, then two selectable mode cards, and the card below switches with the mode (Auto:
   pickup dates; Manual: booking & slots). In auto mode every manual booking control is

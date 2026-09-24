@@ -17,7 +17,7 @@ import {
 } from './tabs'
 import { blankHandover, PR_DEFAULTS, SIZE_CLASSES } from './types'
 import { cancelReasonLabel, failureReasonLabel, NO_ORDERS_REASON } from './pickupReasons'
-import { nextBusinessDay, pickupPolicy, autoPickupWindow } from './pickupSlots'
+import { nextBusinessDay, pickupPolicy, autoPickupWindow, autoPickupEligible } from './pickupSlots'
 import { readPickupModuleConfig } from '../config/pickupModule'
 
 /** -v9: `Created` and `Requested` MERGED into the single entry status `Requested`. The key bump is
@@ -44,7 +44,7 @@ import { readPickupModuleConfig } from '../config/pickupModule'
 /* v14: seed clean-up (one inbound hub per parcel PR, FTL orders on their own
    PRs 138/139, PR-000129's auto re-attempt PR-000140, PR-000104 back to
    Requested) + `carrierPickupRef`; bumped TOGETHER with planningStore's v4. */
-const KEY = 'fareye-grow-orders-v15'
+const KEY = 'fareye-grow-orders-v16'
 
 /** Explicit field defaults — deliberately NOT derived from a seed row, so what a
  *  persisted blob inherits can never drift with the seed data. */
@@ -455,6 +455,13 @@ export const growOrderActions = {
       })
     }
     commit()
+    /* auto mode: a consignment that only NOW reached the trigger state (validation fixed, paid) gets its request */
+    const after = db.orders.find((o) => o.id === id)
+    const cfg = readPickupModuleConfig()
+    if (before && after && cfg.enabled && cfg.mode === 'auto'
+      && !autoPickupEligible(before, cfg.autoPickup.afterState) && autoPickupEligible(after, cfg.autoPickup.afterState)) {
+      growOrderActions.autoBookOnConsignment(id)
+    }
     /* an emptied request that was routed leaves its trip, like a cancel */
     if (pr && emptied && pr.tripId) {
       emitDetached({ prId: pr.id, number: pr.number, tripId: pr.tripId, cause: 'cancelled', note: `${pr.number} has no orders left` })
@@ -1090,7 +1097,8 @@ export const growOrderActions = {
     const cfg = readPickupModuleConfig()
     if (!cfg.enabled || cfg.mode !== 'auto') return null
     const o = db.orders.find((x) => x.id === orderId)
-    if (!o || o.error || tabOf(o) !== 'Ready for Pickup') return null
+    /* the trigger STATE is configurable (Created · Label Generated · Ready To Ship) */
+    if (!o || !autoPickupEligible(o, cfg.autoPickup.afterState)) return null
     /* the date rule is the account's (owner, 2026-09-24); slots and cutoff may be the merchant's */
     const w = autoPickupWindow(new Date(), pickupPolicy(merchantCode), cfg.autoPickup)
     const ftl = o.shipmentType === 'FTL'

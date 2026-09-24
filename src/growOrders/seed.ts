@@ -7,6 +7,8 @@ import type {
 } from './types'
 import { blankHandover, PR_DEFAULTS } from './types'
 import { STAGING_CONSIGNMENTS, STAGING_STORES } from './stagingConsignments'
+import { autoPickupWindow } from './pickupSlots'
+import { DEFAULT_AUTO_PICKUP, DEFAULT_PICKUP_MODULE_CONFIG } from '../config/pickupModule'
 
 export const MERCHANT = { code: '2GO_PH', name: '2GO_PH' }
 export const CURRENCY = '₱'
@@ -429,6 +431,8 @@ const SEED_CARRIERS: Record<string, { code: string; name: string; mode: CarrierM
 /** Seed provenance where it is not the merchant portal. */
 const SEED_SOURCES: Record<string, PickupSource> = {
   pr122: 'API', pr124: 'Console', pr134: 'Console', pr135: 'Console', pr136: 'Console', pr137: 'Console',
+  /* the AUTO-raised first-mile requests at the top of the list (owner, 2026-09-24) */
+  pr141: 'Auto',
 }
 
 /**
@@ -543,7 +547,32 @@ function withExecution(p: GrowPickupRequest): GrowPickupRequest {
 export function seed(): GrowOrdersDb {
   const pickupDate = tomorrow()
   const sanPablo = STORES[0]
+  const cebu = STORES[2]
+  /* ---- AUTO pickup (owner, 2026-09-24): four consignments created minutes ago whose
+     first-mile request was raised by the module itself, on the default auto rule
+     (after Ready To Ship · next pickup day · first slot). They sort to the TOP.
+     All four ship from Cebu to the Manila hub: one point, one slot, one hub = ONE
+     request (the module merges per slot) — and Cebu has no other request that
+     morning, so it is not a Duplicate. */
+  const autoWin = autoPickupWindow(new Date(), DEFAULT_PICKUP_MODULE_CONFIG, DEFAULT_AUTO_PICKUP)
+  const autoDate = autoWin.startAt.slice(0, 10)
+  const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString()
+  const autoOrder = (i: number, store: StoreLocation, prId: string, o: Partial<GrowOrder>): GrowOrder => order(i, {
+    storeCode: store.code, sender: store.party, status: 'Pickup Scheduled', pickupRequestId: prId, pickupDate: autoDate,
+    carrier: '2GO Express', serviceType: 'Standard Delivery', ...o,
+  })
+  const autoOrders: GrowOrder[] = [
+    autoOrder(60, cebu, 'pr141', { orderNumber: 'AUTO1K7AUTO01', createdAt: minutesAgo(4), receiver: RCV[2], inboundHubCode: 'MNL-01', trackingNumber: '2GO00141',
+      pkg: { kind: 'Parcel', count: 2, weightKg: 3.2, lengthCm: 34, widthCm: 24, heightCm: 16, description: 'Phone accessories', declaredValue: 2600 } }),
+    autoOrder(61, cebu, 'pr141', { orderNumber: 'AUTO2P3AUTO02', createdAt: minutesAgo(9), receiver: RCV[3], inboundHubCode: 'MNL-01', trackingNumber: '2GO00142',
+      pkg: { kind: 'Parcel', count: 1, weightKg: 1.1, lengthCm: 28, widthCm: 20, heightCm: 10, description: 'Skincare set', declaredValue: 1450 } }),
+    autoOrder(62, cebu, 'pr141', { orderNumber: 'AUTO5R9AUTO03', createdAt: minutesAgo(15), receiver: RCV[0], inboundHubCode: 'MNL-01', trackingNumber: '2GO00143',
+      pkg: { kind: 'Parcel', count: 3, weightKg: 6.9, lengthCm: 42, widthCm: 30, heightCm: 24, description: 'Kitchenware', declaredValue: 5200 } }),
+    autoOrder(63, cebu, 'pr141', { orderNumber: 'AUTO8T2AUTO04', createdAt: minutesAgo(22), receiver: RCV[1], inboundHubCode: 'MNL-01', trackingNumber: '2GO00144',
+      pkg: { kind: 'Parcel', count: 1, weightKg: 2.4, lengthCm: 30, widthCm: 22, heightCm: 14, description: 'Apparel restock', declaredValue: 1900 } }),
+  ]
   const orders: GrowOrder[] = [
+    ...autoOrders,
     /* Drafts — saved from the stepper, never checked out */
     order(0, { orderNumber: '7PP5ZK7PPG68', paymentStatus: 'Unpaid', isDraft: true,
       draft: draftOf(STORES[0], RCV[0], [parcel({ itemInfo: 'Phone cases', quantity: 3, weight: 0.6 })]) }),
@@ -687,6 +716,14 @@ export function seed(): GrowOrdersDb {
      (Cancelled lives on PR-000130 below). Every parcel request here drops at
      ONE inbound hub, and no vehicle order sits inside a parcel request. */
   const pickupRequests: GrowPickupRequest[] = [
+    /* the AUTO-raised request: four consignments, one point, one slot, one hub (the module's default window) */
+    { ...pr(141, cebu.code, autoDate, PICKUP_SLOTS[0], 'Requested', ['o60', 'o61', 'o62', 'o63'], 0,
+        'Raised automatically — consignments reached Ready To Ship.'),
+      startAt: autoWin.startAt, endAt: autoWin.endAt, slot: slotFrom(autoWin.startAt, autoWin.endAt),
+      createdAt: minutesAgo(22), statusHistory: [
+        { status: 'Requested', at: minutesAgo(22), note: 'Auto pickup · after Ready To Ship · AUTO8T2AUTO04' },
+        { status: 'Requested', at: minutesAgo(4), note: 'Merged AUTO1K7AUTO01, AUTO2P3AUTO02, AUTO5R9AUTO03 — same point, same slot' },
+      ] },
     pr(101, sanPablo.code, pickupDate, PICKUP_SLOTS[0], 'Requested', ['o4', 'o41'], 1, 'Dock 2 — ask for the dispatch desk.'),
     /* o9's dedicated vehicle booking — FTL never rides inside a parcel request.
        The evening slot keeps it clear of PR-000101 / 122 at the same point (no Duplicate). */

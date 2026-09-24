@@ -531,6 +531,7 @@ const MULTI_PR_OPTIONS = [
 const MULTI_PR_LABEL: Record<string, string> = Object.fromEntries(MULTI_PR_OPTIONS.map((o) => [o.code, o.name]))
 const INHERIT = '__inherit__'
 const PICKUP_MODE_OPTIONS = [{ name: 'Auto', code: 'auto' }, { name: 'Manual', code: 'manual' }]
+const AUTO_AFTER_STATE_OPTIONS = [{ name: 'Created', code: 'Created' }, { name: 'Label Generated', code: 'Label Generated' }, { name: 'Ready To Ship', code: 'Ready To Ship' }]
 const AUTO_DATE_RULE_OPTIONS = [
   { name: 'Same day, else next', code: 'same-day' }, { name: 'Next pickup day', code: 'next-business-day' }, { name: 'N days after', code: 'days-after-order' },
 ]
@@ -712,12 +713,17 @@ function PickupGeneralTab({ draft, patch }: {
           <FeatureRow label="Pickup module enabled" hint="Same switch as the Pickup Request card on Base Modules.">
             <Toggle checked={!!fs.enabled} onChange={(v) => set('enabled', v)} />
           </FeatureRow>
-          {/* owner, 2026-09-24: auto = raised at creation on a computed date; manual = booked by merchants / ops */}
+          {/* owner, 2026-09-24: a disabled module shows nothing but its switch */}
+          {!!fs.enabled && (<>
+          {/* auto = raised at creation on a computed date; manual = booked by merchants / ops */}
           <FeatureRow label="Pickup request mode" hint="Auto raises a request the moment a consignment is created; Manual keeps Schedule / Book / Create Pickup on the pages.">
             <RadioRow options={PICKUP_MODE_OPTIONS} value={String(fs.mode ?? 'manual')} onChange={(v) => set('mode', v)} />
           </FeatureRow>
           {fs.mode === 'auto' && (
             <>
+              <FeatureRow label="Auto pickup — raise after state" hint="The consignment state that raises the request; later states never do.">
+                <RadioRow options={AUTO_AFTER_STATE_OPTIONS} value={String(auto.afterState)} onChange={(v) => setAuto({ afterState: v as AutoPickupConfig['afterState'] })} />
+              </FeatureRow>
               <FeatureRow label="Auto pickup — date rule" hint="Which day the collection is booked for, counted from creation.">
                 <RadioRow options={AUTO_DATE_RULE_OPTIONS} value={String(auto.dateRule)} onChange={(v) => setAuto({ dateRule: v as AutoPickupConfig['dateRule'] })} />
               </FeatureRow>
@@ -760,7 +766,7 @@ function PickupGeneralTab({ draft, patch }: {
           </FeatureRow>
           {/* `cutoffTime` is not shown: Same-day cutoff below is THE rule. The key
               stays in the config type (and in saved blobs) for compatibility. */}
-          <FeatureRow label="Booking lead time (minutes)" hint="Minimum gap between booking and the pickup window start.">
+          <FeatureRow label="Booking lead time (minutes)" hint="Minimum notice before a pickup window may start; a window sooner than this moves to the next slot or day (auto and manual).">
             <div className="w-28"><Input type="number" value={str('bookingLeadTimeMins')} onChange={numIn('bookingLeadTimeMins')} /></div>
           </FeatureRow>
           <FeatureRow label="Same-day cutoff" hint="Book before this for a same-day pickup; later bookings start next business day.">
@@ -776,9 +782,10 @@ function PickupGeneralTab({ draft, patch }: {
           <FeatureRow label="Auto-reschedule on failure" hint="Re-raise a failed pickup for the next business day while attempts remain.">
             <Toggle checked={!!fs.autoRescheduleOnFail} onChange={(v) => set('autoRescheduleOnFail', v)} />
           </FeatureRow>
+          </>)}
         </div>
       </div>
-      <MerchantRulesTable rules={rules} global={fs} onChange={(next) => patch({ merchantRules: next })} />
+      {!!fs.enabled && <MerchantRulesTable rules={rules} global={fs} onChange={(next) => patch({ merchantRules: next })} />}
     </div>
   )
 }

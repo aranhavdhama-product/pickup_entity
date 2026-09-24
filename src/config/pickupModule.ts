@@ -49,6 +49,13 @@ export type PodLevel = 'required' | 'optional' | 'off'
 export type PickupMode = 'auto' | 'manual'
 /** How an auto-raised request picks its date and window. */
 export interface AutoPickupConfig {
+  /**
+   * The consignment state that RAISES the request (owner, 2026-09-24):
+   * Created = as soon as the consignment exists (validation issues included);
+   * Label Generated = once it is paid and labelled; Ready To Ship = paid,
+   * labelled and free of validation issues. Later states never raise one.
+   */
+  afterState: AutoPickupAfterState       // default 'Ready To Ship'
   /** same-day = today when created before the same-day cutoff, else the next pickup day;
    *  next-business-day = always the next pickup day; days-after-order = created date + N, rolled onto a pickup day */
   dateRule: 'same-day' | 'next-business-day' | 'days-after-order'   // default 'next-business-day'
@@ -59,9 +66,11 @@ export interface AutoPickupConfig {
   pickupDays: number[]                   // default Mon–Sat
 }
 export const PICKUP_MODES: PickupMode[] = ['auto', 'manual']
+export const AUTO_AFTER_STATES = ['Created', 'Label Generated', 'Ready To Ship'] as const
+export type AutoPickupAfterState = (typeof AUTO_AFTER_STATES)[number]
 export const AUTO_DATE_RULES = ['same-day', 'next-business-day', 'days-after-order'] as const
 export const DEFAULT_AUTO_PICKUP: AutoPickupConfig = Object.freeze({
-  dateRule: 'next-business-day', daysAfterOrder: 1, slot: '', pickupDays: Object.freeze([1, 2, 3, 4, 5, 6]) as unknown as number[],
+  afterState: 'Ready To Ship', dateRule: 'next-business-day', daysAfterOrder: 1, slot: '', pickupDays: Object.freeze([1, 2, 3, 4, 5, 6]) as unknown as number[],
 }) as AutoPickupConfig
 export type MerchantOverride = Partial<Pick<PickupModuleConfig, 'sameDayCutoff' | 'slotDefinitions' | 'multiPrPolicy' | 'maxAttempts'>>
 
@@ -158,6 +167,7 @@ function normalize(raw: unknown): PickupModuleConfig {
     enabled: typeof o.enabled === 'boolean' ? o.enabled : d.enabled,
     mode,
     autoPickup: {
+      afterState: oneOf(ap.afterState, AUTO_AFTER_STATES, d.autoPickup.afterState),
       dateRule: oneOf(ap.dateRule, AUTO_DATE_RULES, d.autoPickup.dateRule),
       daysAfterOrder: int(ap.daysAfterOrder, d.autoPickup.daysAfterOrder, 0, 14),
       slot: typeof ap.slot === 'string' && SLOT.test(ap.slot.trim()) ? ap.slot.trim() : '',
