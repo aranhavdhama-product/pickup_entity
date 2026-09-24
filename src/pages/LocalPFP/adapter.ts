@@ -209,6 +209,29 @@ export function legsOf(o: GrowOrder, stores: StoreLocation[]): Leg[] {
 export const legChainOf = (o: GrowOrder, stores: StoreLocation[]): string =>
   legsOf(o, stores).join('-')
 
+/** The leg the consignment is ON right now (owner, 2026-09-24): the Active Leg column. */
+export const ACTIVE_LEGS = ['First Mile', 'Mid Mile', 'Last Mile'] as const
+export type ActiveLeg = (typeof ACTIVE_LEGS)[number]
+
+/**
+ * Which of its legs the consignment is currently on — read off the status and
+ * the leg chain. A closed or cancelled consignment is on no leg ('').
+ */
+export function activeLegOf(o: GrowOrder, legs: Leg[]): ActiveLeg | '' {
+  if (o.isDraft || o.status === 'Cancelled') return ''
+  const first = legs.includes('FM') ? 'First Mile' : legs.includes('MM') ? 'Mid Mile' : 'Last Mile'
+  switch (o.status) {
+    case 'Order Created':
+    case 'Pickup Scheduled':
+    case 'Picked Up': return first
+    case 'In Transit': return legs.includes('MM') ? 'Mid Mile' : 'Last Mile'
+    case 'Out for Delivery':
+    case 'Delivered':
+    case 'Undelivered': return 'Last Mile'
+    default: return first
+  }
+}
+
 /**
  * How a pickup is carried: a dedicated vehicle is FTL, a handover of boxes is
  * LTL (less than truckload). `blind` is orthogonal — a booking made before the
@@ -244,6 +267,8 @@ export interface LocalConsignmentRow extends ConsignmentOrderRow {
   taskType: TaskType
   /** 'FM-MM-LM' — which legs this consignment actually generates */
   legChain: string
+  /** The leg it is on now — First Mile · Mid Mile · Last Mile ('' when closed). */
+  activeLeg: ActiveLeg | ''
   shipByDate: string
   dispatchDate: string
   volumeMm3: number
@@ -397,6 +422,7 @@ export function toConsignmentRow(
     orderTypeLabel: o.orderType === 'Reverse Order' ? 'Reverse' : 'Forward',
     taskType: taskTypeOf(o),
     legChain: legChainOf(o, db.stores),
+    activeLeg: activeLegOf(o, legsOf(o, db.stores)),
     shipByDate: shipBy,
     dispatchDate: pickup ? pickup.start : '',
     pieces,
@@ -618,6 +644,7 @@ export const CSV_COLUMNS: { label: string; value: (r: LocalConsignmentRow) => st
   { label: 'Reference Number', value: (r) => r.referenceNumber },
   { label: 'State', value: (r) => r.state },
   { label: 'Secondary State', value: (r) => r.secondaryState },
+  { label: 'Active Leg', value: (r) => r.activeLeg },
   { label: 'Weight', value: (r) => r.weightKg },
   { label: 'Volume', value: (r) => r.volumeMm3 },
   { label: 'Pallet Spaces', value: (r) => r.palletSpaces ?? 1 },

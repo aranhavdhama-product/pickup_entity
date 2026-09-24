@@ -77,6 +77,7 @@ const COLUMNS: Col[] = [
   { key: 'state', label: 'State', width: 120, value: (r) => r.state,
     cell: (r) => <StatusPill label={r.state} tone={stateChipTone(r.state)} /> },
   { key: 'secondaryState', label: 'Secondary State', width: 136, value: (r) => r.secondaryState },
+  { key: 'activeLeg', label: 'Active Leg', width: 100, value: (r) => r.activeLeg },
   { key: 'exception', label: 'Exception', width: 150, value: (r) => r.exception,
     cell: (r) => (r.exception
       ? <span className="flex min-w-0 items-center gap-1 text-danger-fg" title={r.exception}>
@@ -139,7 +140,7 @@ const COLUMNS: Col[] = [
 
 /* the console's default 18, in staging's order */
 const DEFAULT_KEYS = [
-  'orderNumber', 'referenceNumber', 'state', 'secondaryState', 'weight', 'volume', 'palletSpace', 'sku',
+  'orderNumber', 'referenceNumber', 'state', 'secondaryState', 'activeLeg', 'weight', 'volume', 'palletSpace', 'sku',
   'serviceTime', 'shipByDate', 'shipToName', 'shipToAddress', 'merchant', 'assignedDriver', 'orderType',
   'createdAt', 'ageing', 'attempts',
 ]

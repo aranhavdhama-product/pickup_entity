@@ -206,8 +206,6 @@ function SummarySection({ row, o, pieces }: { row: LocalConsignmentRow; o: GrowO
     { label: 'Pallet Spaces', align: 'right', render: (p) => p.palletSpaces },
     { label: 'L * B * H', render: (p) => <span className="whitespace-nowrap">{p.dims}</span> },
   ]
-  const activeLeg = o.status === 'Order Created' || o.status === 'Pickup Scheduled' ? 'First Mile'
-    : o.status === 'Picked Up' || o.status === 'In Transit' ? 'Middle Mile' : 'Last Mile'
   const party = (head: string, code: string, p: Party, w: { start: string; end: string } | null, right = false) => (
     <div className={`min-w-0 flex-1 ${right ? 'text-right' : ''}`}>
       <Eyebrow>{head}</Eyebrow>
@@ -242,7 +240,7 @@ function SummarySection({ row, o, pieces }: { row: LocalConsignmentRow; o: GrowO
       <Panel>
         <div className="grid grid-cols-5 gap-6 px-5 pt-4">
           {([
-            ['Active Leg', activeLeg], ['State', <StatusPill key="s" label={String(row.state)} tone={stateTone(String(row.state))} />],
+            ['Active Leg', row.activeLeg || '—'], ['State', <StatusPill key="s" label={String(row.state)} tone={stateTone(String(row.state))} />],
             ['Carrier', row.carrier.toUpperCase()], ['Service', row.serviceType], ['Delivery Attempt', String(row.deliveryAttempts)],
           ] as [string, ReactNode][]).map(([k, v]) => (
             <div key={k} className="min-w-0"><Eyebrow>{k}</Eyebrow><p className="mt-1 text-[15px] font-bold text-ink">{v}</p></div>

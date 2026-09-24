@@ -136,6 +136,7 @@ export default function LocalConsignments() {
     { key: 'Service Type', label: 'Service Type', options: uniq(all.map((r) => r.serviceType)) },
     { key: 'Destination', label: 'Destination', options: uniq(all.map((r) => r.destination)) },
     { key: 'Secondary State', label: 'Secondary State', options: uniq(all.map((r) => r.secondaryState)) },
+    { key: 'Active Leg', label: 'Active Leg', options: uniq(all.map((r) => r.activeLeg)) },
     { key: 'Tag', label: 'Tag', options: uniq(all.flatMap((r) => r.tag.split(', '))) },
   ], [all])
 
@@ -156,6 +157,7 @@ export default function LocalConsignments() {
       if (more['Service Type']?.length && !more['Service Type'].includes(r.serviceType)) return false
       if (more.Destination?.length && !more.Destination.includes(r.destination)) return false
       if (more['Secondary State']?.length && !more['Secondary State'].includes(r.secondaryState)) return false
+      if (more['Active Leg']?.length && !more['Active Leg'].includes(r.activeLeg)) return false
       if (more.Tag?.length && !more.Tag.some((t) => r.tag.includes(t))) return false
       if (needle) {
         const hay = `${r.consignmentNumber} ${r.referenceNumber} ${r.shipToName} ${r.merchant} ${r.address}`.toLowerCase()

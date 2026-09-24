@@ -45,6 +45,8 @@ export const CONSIGNMENT_COLUMN_DEFS: ConsignmentColumnDef[] = [
   { key: 'state', label: 'State', width: 130, defaultOn: true,
     value: (r) => String(r.state), cell: (r) => <StatusPill label={String(r.state)} tone={stateTone(String(r.state))} /> },
   { key: 'secondaryState', label: 'Secondary State', width: 150, defaultOn: true, value: (r) => r.secondaryState },
+  /* owner, 2026-09-24: the leg the consignment is on now */
+  { key: 'activeLeg', label: 'Active Leg', width: 104, defaultOn: true, value: (r) => r.activeLeg },
   { key: 'weight', label: 'Weight', width: 96, align: 'right', defaultOn: true, value: (r) => `${r.weightKg} kg` },
   { key: 'volume', label: 'Volume', width: 130, align: 'right', defaultOn: true, value: (r) => `${r.volumeMm3.toLocaleString()} mm³` },
   { key: 'palletSpaces', label: 'Pallet Spaces', width: 104, align: 'right', defaultOn: true, value: (r) => String(r.palletSpaces ?? 1) },
