@@ -23,7 +23,7 @@ import { toast } from './toast'
 import { fetchModuleSettings, saveModuleSettings, parseSettingJson, type ModuleSetting } from './settingsApi'
 import { BASE_MODULES } from './BaseModules'
 import {
-  readPickupModuleConfig, writePickupModuleConfig, normalizePickupModuleConfig, DEFAULT_PICKUP_MODULE_CONFIG,
+  readPickupModuleConfig, writePickupModuleConfig, normalizePickupModuleConfig, DEFAULT_PICKUP_MODULE_CONFIG, type AutoPickupConfig,
   type PickupModuleConfig, type PodLevel,
 } from '../config/pickupModule'
 import {
@@ -530,6 +530,11 @@ const MULTI_PR_OPTIONS = [
 ]
 const MULTI_PR_LABEL: Record<string, string> = Object.fromEntries(MULTI_PR_OPTIONS.map((o) => [o.code, o.name]))
 const INHERIT = '__inherit__'
+const PICKUP_MODE_OPTIONS = [{ name: 'Auto', code: 'auto' }, { name: 'Manual', code: 'manual' }]
+const AUTO_DATE_RULE_OPTIONS = [
+  { name: 'Same day, else next', code: 'same-day' }, { name: 'Next pickup day', code: 'next-business-day' }, { name: 'N days after', code: 'days-after-order' },
+]
+const DAY_OPTIONS = [{ code: 1, name: 'Mon' }, { code: 2, name: 'Tue' }, { code: 3, name: 'Wed' }, { code: 4, name: 'Thu' }, { code: 5, name: 'Fri' }, { code: 6, name: 'Sat' }, { code: 0, name: 'Sun' }]
 
 /** editable row of the Merchant rules table — blank cells inherit the global value */
 interface MerchantRuleDraft { code: string; sameDayCutoff: string; slots: string[]; multiPrPolicy: string; maxAttempts: string }
@@ -692,6 +697,8 @@ function PickupGeneralTab({ draft, patch }: {
   const numIn = (k: keyof PickupModuleConfig) => (v: string) => set(k, v === '' ? '' : Number(v))
   const str = (k: keyof PickupModuleConfig) => (fs[k] === undefined ? '' : String(fs[k]))
   const pod = { ...DEFAULT_PICKUP_MODULE_CONFIG.podRequirements, ...(fs.podRequirements as object) } as PickupModuleConfig['podRequirements']
+  const auto = { ...DEFAULT_PICKUP_MODULE_CONFIG.autoPickup, ...((fs.autoPickup ?? {}) as object) } as AutoPickupConfig
+  const setAuto = (p: Partial<AutoPickupConfig>) => set('autoPickup', { ...auto, ...p })
 
   return (
     <div className="space-y-6">
@@ -705,6 +712,37 @@ function PickupGeneralTab({ draft, patch }: {
           <FeatureRow label="Pickup module enabled" hint="Same switch as the Pickup Request card on Base Modules.">
             <Toggle checked={!!fs.enabled} onChange={(v) => set('enabled', v)} />
           </FeatureRow>
+          {/* owner, 2026-09-24: auto = raised at creation on a computed date; manual = booked by merchants / ops */}
+          <FeatureRow label="Pickup request mode" hint="Auto raises a request the moment a consignment is created; Manual keeps Schedule / Book / Create Pickup on the pages.">
+            <RadioRow options={PICKUP_MODE_OPTIONS} value={String(fs.mode ?? 'manual')} onChange={(v) => set('mode', v)} />
+          </FeatureRow>
+          {fs.mode === 'auto' && (
+            <>
+              <FeatureRow label="Auto pickup — date rule" hint="Which day the collection is booked for, counted from creation.">
+                <RadioRow options={AUTO_DATE_RULE_OPTIONS} value={String(auto.dateRule)} onChange={(v) => setAuto({ dateRule: v as AutoPickupConfig['dateRule'] })} />
+              </FeatureRow>
+              {auto.dateRule === 'days-after-order' && (
+                <FeatureRow label="Auto pickup — days after creation" hint="0 = same day, 1 = next day (0–14); rolls onto a pickup day.">
+                  <div className="w-28"><Input type="number" value={String(auto.daysAfterOrder)} onChange={(v) => setAuto({ daysAfterOrder: v === '' ? 0 : Number(v) })} /></div>
+                </FeatureRow>
+              )}
+              <FeatureRow label="Auto pickup — window" hint="One of the pickup slots; blank = the first slot.">
+                <div className="w-40"><Input value={auto.slot} placeholder={slotsFrom(slotsText(fs.slotDefinitions))[0] ?? '09:00-12:00'} onChange={(v) => setAuto({ slot: v })} /></div>
+              </FeatureRow>
+              <FeatureRow label="Auto pickup — pickup days" hint="Days a request may be raised for; others roll forward.">
+                <div className="flex flex-wrap gap-1.5">
+                  {DAY_OPTIONS.map((d) => {
+                    const on = auto.pickupDays.includes(d.code)
+                    return (
+                      <button key={d.code} type="button" aria-pressed={on}
+                        onClick={() => setAuto({ pickupDays: on ? auto.pickupDays.filter((x) => x !== d.code) : [...auto.pickupDays, d.code].sort() })}
+                        className={`rounded-full border px-2.5 py-0.5 text-[12px] ${on ? 'border-brand-500 bg-brand-50 font-bold text-brand-500' : 'border-line bg-surface text-ink-2'}`}>{d.name}</button>
+                    )
+                  })}
+                </div>
+              </FeatureRow>
+            </>
+          )}
           <FeatureRow label="Handover scan mode" hint="Who scans a picked-up consignment into the hub.">
             <RadioRow options={SCAN_MODE_OPTIONS} value={String(fs.scanMode ?? '')} onChange={(v) => set('scanMode', v)} />
           </FeatureRow>

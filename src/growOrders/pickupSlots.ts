@@ -10,7 +10,7 @@
  * `sameDayCutoff` is the booking cutoff these rules read — the older
  * `cutoffTime` setting is not consulted here.
  */
-import { configForMerchant, readPickupModuleConfig } from '../config/pickupModule'
+import { configForMerchant, readPickupModuleConfig, type AutoPickupConfig, type PickupModuleConfig } from '../config/pickupModule'
 
 export type MultiPrPolicy = 'ONE_OPEN_PER_LOCATION' | 'ONE_PER_SLOT' | 'UNLIMITED'
 
@@ -98,7 +98,7 @@ export function pickupPolicy(merchantCode?: string | null): PickupPolicy {
 
 /* ------------------------------------------------------------ date math ---- */
 
-type PolicyInput = Partial<PickupPolicy> | Record<string, unknown> | undefined
+type PolicyInput = Partial<PickupPolicy> | Partial<PickupModuleConfig> | Record<string, unknown> | undefined
 const pol = (cfg: PolicyInput): PickupPolicy => toPolicy(cfg ?? {})
 
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -185,4 +185,71 @@ export function violatesCutoff(startAt: string, now: Date, cfg?: PolicyInput): s
     return `${DOW[s.getDay()]} ${s.getDate()} ${MON[s.getMonth()]} is not a pickup day — earliest window ${earliest}`
   }
   return `Pickups need ${p.bookingLeadTimeMins} min notice — earliest window ${earliest}`
+}
+
+/* ------------------------------------------------------- auto pickup ---- */
+
+const DOW_LONG = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+/** The days chips read: 'Mon–Sat', 'Mon–Fri', or the list. */
+export function pickupDaysLabel(days: number[]): string {
+  const d = [...new Set(days)].sort()
+  if (!d.length) return '—'
+  const contiguous = d.every((x, i) => i === 0 || x === d[i - 1] + 1)
+  return contiguous && d.length > 2 ? `${DOW_LONG[d[0]]}–${DOW_LONG[d[d.length - 1]]}` : d.map((x) => DOW_LONG[x]).join(', ')
+}
+
+/**
+ * The window an AUTO-raised request takes for a consignment created at `now`
+ * (owner, 2026-09-24): the date comes from `autoPickup.dateRule`, rolled
+ * forward onto the next configured pickup day; the window is the chosen slot
+ * (else the first configured one). A same-day date is only kept when the
+ * consignment arrives before the same-day cutoff and the lead time still fits.
+ */
+export function autoPickupWindow(now: Date, cfg?: PolicyInput, auto?: Partial<AutoPickupConfig>): { startAt: string; endAt: string } {
+  const p = pol(cfg)
+  const a: AutoPickupConfig = {
+    dateRule: auto?.dateRule ?? 'next-business-day',
+    daysAfterOrder: auto?.daysAfterOrder ?? 1,
+    slot: auto?.slot ?? '',
+    pickupDays: auto?.pickupDays?.length ? auto.pickupDays : [1, 2, 3, 4, 5, 6],
+  }
+  const onPickupDay = (d: Date): Date => {
+    const x = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+    for (let i = 0; i < 14 && !a.pickupDays.includes(x.getDay()); i++) x.setDate(x.getDate() + 1)
+    return x
+  }
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  let day: Date
+  if (a.dateRule === 'days-after-order') {
+    day = new Date(today); day.setDate(day.getDate() + a.daysAfterOrder)
+  } else if (a.dateRule === 'same-day' && now.getHours() * 60 + now.getMinutes() < minsOf(p.sameDayCutoff)) {
+    day = today
+  } else {
+    day = new Date(today); day.setDate(day.getDate() + 1)
+  }
+  day = onPickupDay(day)
+  const pick = (date: string) => {
+    const all = slotsFor(date, p)
+    return all.find((s) => s.label.replace('–', '-') === a.slot.replace('–', '-')) ?? all[0]
+  }
+  let w = pick(ymd(day))
+  /* a same-day window the lead time no longer allows moves to the next pickup day */
+  if (w && ymd(day) === ymd(today) && toDate(w.startAt).getTime() < now.getTime() + p.bookingLeadTimeMins * 60_000) {
+    const later = slotsFor(ymd(day), p).find((s) => toDate(s.startAt).getTime() >= now.getTime() + p.bookingLeadTimeMins * 60_000)
+    if (later) w = later
+    else { const n = new Date(day); n.setDate(n.getDate() + 1); w = pick(ymd(onPickupDay(n))) }
+  }
+  if (!w) return earliestWindow(now, p)
+  return { startAt: w.startAt, endAt: w.endAt }
+}
+
+/** 'Auto pickup · next pickup day · 09:00–12:00 · Mon–Sat' — the pill the pages show in auto mode. */
+export function autoPickupSummary(cfg: Pick<PickupModuleConfig, 'autoPickup' | 'sameDayCutoff' | 'slotDefinitions'>): string {
+  const a = cfg.autoPickup
+  const rule = a.dateRule === 'same-day' ? `same day before ${cfg.sameDayCutoff}`
+    : a.dateRule === 'days-after-order' ? `${a.daysAfterOrder} day${a.daysAfterOrder === 1 ? '' : 's'} after creation`
+    : 'next pickup day'
+  const slot = a.slot || cfg.slotDefinitions[0] || ''
+  return ['Auto pickup', rule, slot.replace('-', '–'), pickupDaysLabel(a.pickupDays)].filter(Boolean).join(' · ')
 }

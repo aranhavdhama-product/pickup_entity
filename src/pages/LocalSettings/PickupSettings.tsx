@@ -12,11 +12,13 @@
  */
 import { useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Hand, Zap } from 'lucide-react'
 import { Button, Input, MenuSelect, PageHeader, Toggle } from '../../nueva/components'
+import { autoPickupSummary, autoPickupWindow, windowLabel } from '../../growOrders/pickupSlots'
 import { toast } from '../../nueva/toast'
 import {
   DEFAULT_PICKUP_MODULE_CONFIG, normalizePickupModuleConfig, usePickupModuleConfig, writePickupModuleConfig,
-  type PickupModuleConfig, type PodLevel,
+  type AutoPickupConfig, type PickupMode, type PickupModuleConfig, type PodLevel,
 } from '../../config/pickupModule'
 
 /* option lists — wording mirrors ModuleDetail's Pickup Request section */
@@ -30,6 +32,15 @@ const MULTI_PR_OPTIONS: Opt[] = [
   { name: 'One per slot', code: 'ONE_PER_SLOT' },
   { name: 'Unlimited', code: 'UNLIMITED' },
 ]
+const DATE_RULE_OPTIONS: Opt[] = [
+  { name: 'Same day (before the cutoff), else next pickup day', code: 'same-day' },
+  { name: 'Next pickup day', code: 'next-business-day' },
+  { name: 'N days after the consignment is created', code: 'days-after-order' },
+]
+const DAY_CHIPS: { code: number; name: string }[] = [
+  { code: 1, name: 'Mon' }, { code: 2, name: 'Tue' }, { code: 3, name: 'Wed' }, { code: 4, name: 'Thu' },
+  { code: 5, name: 'Fri' }, { code: 6, name: 'Sat' }, { code: 0, name: 'Sun' },
+]
 const INHERIT = '__inherit__'
 const SLOT_RE = /^([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d$/
 
@@ -39,7 +50,8 @@ const codes = (opts: Opt[]) => opts.map((o) => o.code)
 /* ---------- draft: the config with numbers / slots kept as editable text ---------- */
 
 interface MerchantRuleDraft { code: string; sameDayCutoff: string; slots: string; multiPrPolicy: string; maxAttempts: string }
-type Draft = Omit<PickupModuleConfig, 'maxAttempts' | 'rescheduleWindowDays' | 'bookingLeadTimeMins' | 'slotDefinitions' | 'merchantOverrides'> & {
+type Draft = Omit<PickupModuleConfig, 'maxAttempts' | 'rescheduleWindowDays' | 'bookingLeadTimeMins' | 'slotDefinitions' | 'merchantOverrides' | 'autoPickup'> & {
+  autoPickup: Omit<AutoPickupConfig, 'daysAfterOrder'> & { daysAfterOrder: string }
   maxAttempts: string
   rescheduleWindowDays: string
   bookingLeadTimeMins: string
@@ -56,6 +68,7 @@ function toDraft(c: PickupModuleConfig): Draft {
   return {
     ...rest,
     podRequirements: { ...c.podRequirements },
+    autoPickup: { ...c.autoPickup, daysAfterOrder: String(c.autoPickup.daysAfterOrder) },
     maxAttempts: String(c.maxAttempts),
     rescheduleWindowDays: String(c.rescheduleWindowDays),
     bookingLeadTimeMins: String(c.bookingLeadTimeMins),
@@ -122,6 +135,37 @@ function OptionSelect({ value, options, onChange }: { value: string; options: Op
   return <MenuSelect value={value} options={codes(options)} labels={labelOf(options)} onChange={onChange} />
 }
 
+/** The two ways requests are raised — one selected card (owner, 2026-09-24). */
+function ModeCards({ value, onChange, disabled }: { value: PickupMode; onChange: (m: PickupMode) => void; disabled?: boolean }) {
+  const cards: { code: PickupMode; icon: ReactNode; title: string; desc: string }[] = [
+    { code: 'auto', icon: <Zap size={18} />, title: 'Auto pickup request',
+      desc: 'A request is raised the moment a consignment is created, on the pickup date this page computes.' },
+    { code: 'manual', icon: <Hand size={18} />, title: 'Create pickup request manually',
+      desc: 'Merchants and ops book pickups themselves — Schedule Pickup, Book Pickup and Create Pickup stay on the pages.' },
+  ]
+  return (
+    <div className={`grid grid-cols-1 gap-3 sm:grid-cols-2 ${disabled ? 'pointer-events-none opacity-50' : ''}`} role="radiogroup" aria-label="Pickup request mode">
+      {cards.map((c) => {
+        const on = c.code === value
+        return (
+          <button key={c.code} type="button" role="radio" aria-checked={on} onClick={() => onChange(c.code)}
+            className={`flex items-start gap-3 rounded-xl border px-4 py-3.5 text-left transition-colors ${
+              on ? 'border-brand-500 bg-brand-50 shadow-ds-1' : 'border-line bg-surface hover:border-warm-300'}`}>
+            <span className={`mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${on ? 'bg-brand-500 text-white' : 'bg-warm-100 text-ink-2'}`}>{c.icon}</span>
+            <span className="min-w-0">
+              <span className="flex items-center gap-2 text-[14px] font-bold text-ink">
+                {c.title}
+                <span className={`inline-block h-3.5 w-3.5 rounded-full border-[4px] ${on ? 'border-brand-500' : 'border-warm-300'}`} aria-hidden />
+              </span>
+              <span className="mt-0.5 block text-[12.5px] text-ink-3">{c.desc}</span>
+            </span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 /* ---------- page ---------- */
 
 export default function PickupSettings() {
@@ -136,6 +180,8 @@ export default function PickupSettings() {
   const set = <K extends keyof Draft>(k: K, v: Draft[K]) => setDraft((d) => ({ ...d, [k]: v }))
   const setPod = (p: Partial<PickupModuleConfig['podRequirements']>) =>
     setDraft((d) => ({ ...d, podRequirements: { ...d.podRequirements, ...p } }))
+  const setAuto = (p: Partial<Draft['autoPickup']>) =>
+    setDraft((d) => ({ ...d, autoPickup: { ...d.autoPickup, ...p } }))
   const rules = draft.merchantRules
   const setRule = (i: number, p: Partial<MerchantRuleDraft>) =>
     set('merchantRules', rules.map((r, ri) => (ri === i ? { ...r, ...p } : r)))
@@ -176,27 +222,81 @@ export default function PickupSettings() {
           <LabeledField label="Pickup module enabled" hint="Same switch as the Pickup Request card on Base Modules.">
             <ToggleField checked={draft.enabled} onChange={(v) => set('enabled', v)} />
           </LabeledField>
+          <div className="py-3">
+            <div className="mb-2 text-[13.5px] text-ink">Pickup request mode</div>
+            <ModeCards value={draft.mode} disabled={!draft.enabled} onChange={(m) => set('mode', m)} />
+          </div>
         </SectionCard>
 
-        <SectionCard title="Booking & slots" hint="When merchants can book, and the windows they are offered.">
-          {/* no `cutoffTime` row — Same-day cutoff is the rule; the key stays for compatibility */}
-          <LabeledField label="Same-day cutoff" hint="Book before this for a same-day pickup; later bookings start next business day.">
-            <Input type="time" value={draft.sameDayCutoff} onChange={(v) => set('sameDayCutoff', v)} />
-          </LabeledField>
-          <LabeledField label="Booking lead time (minutes)" hint="Minimum gap between booking and the pickup window start.">
-            <Input type="number" value={draft.bookingLeadTimeMins} onChange={(v) => set('bookingLeadTimeMins', v)} />
-          </LabeledField>
-          <LabeledField label="Reschedule window (days)" hint="How far ahead a pickup can be rescheduled.">
-            <Input type="number" value={draft.rescheduleWindowDays} onChange={(v) => set('rescheduleWindowDays', v)} />
-          </LabeledField>
-          <LabeledField label="Pickup slots" wide
-            hint={globalBadSlots.length
-              ? `Not HH:mm-HH:mm, will be dropped: ${globalBadSlots.join(', ')}`
-              : 'Comma-separated windows, HH:mm-HH:mm.'}>
-            <Input value={draft.slotDefinitions} placeholder={slotsText(DEFAULT_PICKUP_MODULE_CONFIG.slotDefinitions)}
-              onChange={(v) => set('slotDefinitions', v)} />
-          </LabeledField>
-        </SectionCard>
+        {draft.mode === 'auto' ? (
+          <SectionCard title="Auto pickup — pickup dates" hint="How the raised request picks its date and window. Slots and the same-day cutoff come from the manual card's values.">
+            <LabeledField label="Pickup date rule" wide hint="Which day the collection is booked for, counted from the moment the consignment is created.">
+              <OptionSelect value={draft.autoPickup.dateRule} options={DATE_RULE_OPTIONS}
+                onChange={(v) => setAuto({ dateRule: v as AutoPickupConfig['dateRule'] })} />
+            </LabeledField>
+            {draft.autoPickup.dateRule === 'days-after-order' && (
+              <LabeledField label="Days after creation" hint="0 = the same day, 1 = the next day (0–14); rolls forward onto a pickup day.">
+                <Input type="number" value={draft.autoPickup.daysAfterOrder} onChange={(v) => setAuto({ daysAfterOrder: v })} />
+              </LabeledField>
+            )}
+            {draft.autoPickup.dateRule === 'same-day' && (
+              <LabeledField label="Same-day cutoff" hint="A consignment created before this is collected the same day; after it, the next pickup day.">
+                <Input type="time" value={draft.sameDayCutoff} onChange={(v) => set('sameDayCutoff', v)} />
+              </LabeledField>
+            )}
+            <LabeledField label="Pickup window" hint="One of the configured pickup slots; the first slot when none is chosen.">
+              <MenuSelect value={draft.autoPickup.slot || '__first__'} options={['__first__', ...slotsFrom(draft.slotDefinitions)]}
+                labels={(v) => (v === '__first__' ? `First slot (${slotsFrom(draft.slotDefinitions)[0] ?? '—'})` : v)}
+                onChange={(v) => setAuto({ slot: v === '__first__' ? '' : v })} />
+            </LabeledField>
+            <LabeledField label="Pickup days" wide hint="Requests are only raised for these days; other days roll forward.">
+              <div className="flex flex-wrap justify-end gap-1.5">
+                {DAY_CHIPS.map((d) => {
+                  const on = draft.autoPickup.pickupDays.includes(d.code)
+                  return (
+                    <button key={d.code} type="button" aria-pressed={on}
+                      onClick={() => setAuto({ pickupDays: on ? draft.autoPickup.pickupDays.filter((x) => x !== d.code) : [...draft.autoPickup.pickupDays, d.code].sort() })}
+                      className={`rounded-full border px-3 py-1 text-[12.5px] ${on ? 'border-brand-500 bg-brand-50 font-bold text-brand-500' : 'border-line bg-surface text-ink-2 hover:border-warm-300'}`}>
+                      {d.name}
+                    </button>
+                  )
+                })}
+              </div>
+            </LabeledField>
+            <LabeledField label="Booking lead time (minutes)" hint="A same-day window that starts sooner than this moves to the next slot or day.">
+              <Input type="number" value={draft.bookingLeadTimeMins} onChange={(v) => set('bookingLeadTimeMins', v)} />
+            </LabeledField>
+            <div className="py-3 text-[13px] text-ink-2">
+              <span className="font-bold text-ink">Preview:</span> a consignment created now would be collected{' '}
+              <span className="font-bold text-ink">{windowLabel(autoPickupWindow(new Date(), next, next.autoPickup))}</span>
+              <span className="text-ink-3"> · {autoPickupSummary(next)}</span>
+            </div>
+          </SectionCard>
+        ) : (
+          <SectionCard title="Manual booking & slots" hint="When merchants and ops can book, and the windows they are offered.">
+            {/* no `cutoffTime` row — Same-day cutoff is the rule; the key stays for compatibility */}
+            <LabeledField label="Same-day cutoff" hint="Book before this for a same-day pickup; later bookings start next business day.">
+              <Input type="time" value={draft.sameDayCutoff} onChange={(v) => set('sameDayCutoff', v)} />
+            </LabeledField>
+            <LabeledField label="Booking lead time (minutes)" hint="Minimum gap between booking and the pickup window start.">
+              <Input type="number" value={draft.bookingLeadTimeMins} onChange={(v) => set('bookingLeadTimeMins', v)} />
+            </LabeledField>
+            <LabeledField label="Reschedule window (days)" hint="How far ahead a pickup can be rescheduled.">
+              <Input type="number" value={draft.rescheduleWindowDays} onChange={(v) => set('rescheduleWindowDays', v)} />
+            </LabeledField>
+            <LabeledField label="Multiple pickup requests" hint="What happens when a merchant books again at the same location.">
+              <OptionSelect value={draft.multiPrPolicy} options={MULTI_PR_OPTIONS}
+                onChange={(v) => set('multiPrPolicy', v as PickupModuleConfig['multiPrPolicy'])} />
+            </LabeledField>
+            <LabeledField label="Pickup slots" wide
+              hint={globalBadSlots.length
+                ? `Not HH:mm-HH:mm, will be dropped: ${globalBadSlots.join(', ')}`
+                : 'Comma-separated windows, HH:mm-HH:mm.'}>
+              <Input value={draft.slotDefinitions} placeholder={slotsText(DEFAULT_PICKUP_MODULE_CONFIG.slotDefinitions)}
+                onChange={(v) => set('slotDefinitions', v)} />
+            </LabeledField>
+          </SectionCard>
+        )}
 
         <SectionCard title="Execution & proof of pickup" hint="What the driver and hub capture when parcels are collected.">
           <LabeledField label="Handover scan mode" hint="Who scans a picked-up consignment into the hub.">

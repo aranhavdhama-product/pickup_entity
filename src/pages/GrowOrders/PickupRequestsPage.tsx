@@ -21,9 +21,10 @@
 import { useMasters } from '../../growOrders/masters'
 import { useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { CalendarDays, PackageCheck, Plus, Printer, Truck, X } from 'lucide-react'
+import { CalendarDays, PackageCheck, Plus, Printer, Truck, X, Zap } from 'lucide-react'
 import { useGrowOrders } from '../../growOrders/store'
 import { usePickupModuleConfig } from '../../config/pickupModule'
+import { autoPickupSummary } from '../../growOrders/pickupSlots'
 import type { GrowPickupRequest } from '../../growOrders/types'
 import { PR_FLOW, atParts, isOpenPr } from '../../growOrders/tabs'
 import { canSchedulePickup } from '../LocalPFP/adapter'
@@ -97,7 +98,10 @@ export default function PickupRequestsPage() {
   const [scheduling, setScheduling] = useState<{ rows: ShipmentRow[]; clear: () => void } | null>(null)
   const [creating, setCreating] = useState(false)
   const merchant = usePortalMerchant()
-  const pickupOn = usePickupModuleConfig().enabled
+  const pickupCfg = usePickupModuleConfig()
+  const pickupOn = pickupCfg.enabled
+  /* owner, 2026-09-24: auto mode raises requests itself — no Add, no Eligible booking */
+  const manualPickup = pickupOn && pickupCfg.mode === 'manual'
 
   /* swapping the grid never carries a selection across (the table is re-keyed) */
   const swapView = (v: boolean) => { setEligibleView(v); setPage(1) }
@@ -214,10 +218,9 @@ export default function PickupRequestsPage() {
     ]
   }
 
-  const eligibleActions = (sel: ShipmentRow[], clear: () => void): SelectionAction[] => [
-    { label: 'Schedule Pickup', icon: <Truck size={14} />, disabled: !pickupOn,
-      onClick: pickupOn ? () => setScheduling({ rows: sel, clear }) : undefined },
-  ]
+  const eligibleActions = (sel: ShipmentRow[], clear: () => void): SelectionAction[] => (manualPickup ? [
+    { label: 'Schedule Pickup', icon: <Truck size={14} />, onClick: () => setScheduling({ rows: sel, clear }) },
+  ] : [])
 
   return (
     <LocalPage>
@@ -225,11 +228,17 @@ export default function PickupRequestsPage() {
         right={<>
           <SearchBox value={q} onChange={(v) => reset(() => setQ(v))} placeholder={eligibleView ? 'Search shipments' : 'Search pickups'} />
           {/* the eligible-for-pickup entry point: swaps the grid, independent of the funnel */}
-          <Button variant={eligibleView ? 'outline' : 'ghost'} icon={<PackageCheck size={15} />} onClick={() => swapView(!eligibleView)}>
-            Eligible ({eligible.length})
-          </Button>
+          {manualPickup && (
+            <Button variant={eligibleView ? 'outline' : 'ghost'} icon={<PackageCheck size={15} />} onClick={() => swapView(!eligibleView)}>
+              Eligible ({eligible.length})
+            </Button>
+          )}
           {eligibleView ? shipCols.chooser : prCols.chooser}
-          <Button icon={<Plus size={15} />} disabled={!pickupOn} onClick={() => setCreating(true)}>Add</Button>
+          {pickupCfg.mode === 'auto' && pickupOn
+            ? <span className="inline-flex h-8 items-center gap-1.5 rounded-md border border-info-bg bg-info-bg px-2.5 text-[12.5px] text-ink" title="Pickup requests are raised automatically when a consignment is created — see Settings → Pickup Request.">
+                <Zap size={13} className="text-brand-500" />{autoPickupSummary(pickupCfg)}
+              </span>
+            : <Button icon={<Plus size={15} />} disabled={!pickupOn} onClick={() => setCreating(true)}>Add</Button>}
         </>}>
         <DateRange start={from} end={to} onStart={(v) => reset(() => setFrom(v))} onEnd={(v) => reset(() => setTo(v))} />
         {!eligibleView && (

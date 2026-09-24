@@ -83,6 +83,10 @@ manually failed, reschedule, cancel, re-attempt now, add to route, reassign, swi
 3PL, close handover with a note.
 
 ## Account switches (Settings → Base Modules → Pickup Request)
+**Pickup request mode** (two cards under the module switch): *Auto* raises a request the moment
+a consignment is created, on a computed date (rule: same day before the cutoff · next pickup
+day · N days after creation; pickup window; pickup days) and replaces every Schedule / Book /
+Create Pickup button with an "Auto pickup · rule" pill; *Manual* keeps today's booking flow ·
 Module on/off (turning it off hides only the pickup additions; every current page keeps
 working) · auto-create · handover scan mode · max attempts + auto re-attempt · reschedule
 window · merchant cancel until · add-to-existing until · proof of pickup · overage policy ·

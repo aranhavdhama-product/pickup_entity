@@ -146,7 +146,10 @@ const STEP_OF: Record<GrowOrder['status'], number> = {
 }
 
 function Tracking({ o, onBook, canBook }: { o: GrowOrder; onBook: () => void; canBook: boolean }) {
-  const pickupOn = usePickupModuleConfig().enabled
+  const pickupCfg = usePickupModuleConfig()
+  const pickupOn = pickupCfg.enabled
+  /* owner, 2026-09-24: auto mode books at creation — no Book Pickup button */
+  const manualPickup = pickupOn && pickupCfg.mode === 'manual'
   const reached = STEP_OF[o.status]
   return (
     <ol className="flex flex-col px-5 pb-5 pt-2">
@@ -159,7 +162,7 @@ function Tracking({ o, onBook, canBook }: { o: GrowOrder; onBook: () => void; ca
               <span className={`text-[13px] ${done ? 'font-bold text-ink' : 'text-ink-3'}`}>{label}</span>
               {/* the ONE step a merchant can act on: an order that is paid and
                   has no courier booked yet */}
-              {i === 1 && canBook && (
+              {i === 1 && canBook && manualPickup && (
                 <span title={pickupOn ? undefined : 'Pickup module is off for this account'}>
                   <Button size="sm" disabled={!pickupOn} icon={<Truck size={13} />} onClick={onBook}>Book Pickup</Button>
                 </span>

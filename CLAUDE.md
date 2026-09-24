@@ -215,6 +215,15 @@ effects (a cancelled/rescheduled PR leaving its trip) flow through `onPickupRequ
 - Account config = `src/config/pickupModule.ts` (localStorage mirror written by the console
   Base Modules → **Pickup Request** page and the Pilot Driver App → Pickup Module card; the
   local app never calls `/staging`). `enabled:false` hides only the pickup additions.
+  **`mode` (owner, 2026-09-24): `manual` (default) = merchants/ops book; `auto` = a request is
+  raised the moment a consignment is created on the date `autoPickup` computes
+  (`dateRule` same-day | next-business-day | days-after-order, `daysAfterOrder`, `slot`,
+  `pickupDays`; `autoPickupWindow()` / `autoPickupSummary()` in `pickupSlots.ts`; the legacy
+  `autoCreateOnConsignment` is derived from it). `/local/settings/pickup` shows the module
+  toggle, then two selectable mode cards, and the card below switches with the mode (Auto:
+  pickup dates; Manual: booking & slots). In auto mode every manual booking control is
+  replaced by an "Auto pickup · rule" pill: Schedule Pickup (console + Grow), Book Pickup
+  (Grow view), Create Pickup (console Pickup page), Add + Eligible (Grow Pickup Requests).
 - Pages: `/local/consignments` (Merchant → Pickup Address filter, bulk **Schedule** →
   `SchedulePickupDialog`, no Create Pickup; **Add** → `/local/consignments/add[/vehicle]` = the
   SAME `AddOrderPage` with `portal="console"`: an Order Category card (4 Person · Stackable ·

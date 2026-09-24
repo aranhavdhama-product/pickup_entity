@@ -17,7 +17,7 @@ import {
 } from './tabs'
 import { blankHandover, PR_DEFAULTS, SIZE_CLASSES } from './types'
 import { cancelReasonLabel, failureReasonLabel, NO_ORDERS_REASON } from './pickupReasons'
-import { earliestWindow, nextBusinessDay, pickupPolicy } from './pickupSlots'
+import { nextBusinessDay, pickupPolicy, autoPickupWindow } from './pickupSlots'
 import { readPickupModuleConfig } from '../config/pickupModule'
 
 /** -v9: `Created` and `Requested` MERGED into the single entry status `Requested`. The key bump is
@@ -1088,10 +1088,11 @@ export const growOrderActions = {
    */
   autoBookOnConsignment(orderId: string, merchantCode?: string | null): (GrowPickupRequest & { merged: boolean }) | null {
     const cfg = readPickupModuleConfig()
-    if (!cfg.enabled || cfg.autoCreateOnConsignment !== 'always') return null
+    if (!cfg.enabled || cfg.mode !== 'auto') return null
     const o = db.orders.find((x) => x.id === orderId)
     if (!o || o.error || tabOf(o) !== 'Ready for Pickup') return null
-    const w = earliestWindow(new Date(), pickupPolicy(merchantCode))
+    /* the date rule is the account's (owner, 2026-09-24); slots and cutoff may be the merchant's */
+    const w = autoPickupWindow(new Date(), pickupPolicy(merchantCode), cfg.autoPickup)
     const ftl = o.shipmentType === 'FTL'
     return growOrderActions.createPickupRequest({
       storeCode: o.storeCode, destinationCode: ftl ? null : o.inboundHubCode, orderIds: [o.id], source: 'Auto',

@@ -80,7 +80,10 @@ export default function LocalConsignments() {
   const db = useGrowOrders()
   const plan = usePlanning()
   /* module off = the page as it was: no Schedule action, no Pickup Address filter */
-  const pickupOn = usePickupModuleConfig().enabled
+  const pickupCfg = usePickupModuleConfig()
+  const pickupOn = pickupCfg.enabled
+  /* owner, 2026-09-24: auto mode books at creation — ops schedule nothing by hand */
+  const manualPickup = pickupOn && pickupCfg.mode === 'manual'
 
   const [tab, setTab] = useState(1)
   const [q, setQ] = useState('')
@@ -205,7 +208,7 @@ export default function LocalConsignments() {
            Pickup Request module.
          - Schedule Routing = the console's own delivery schedule, as before;
            the row reads Secondary State "Scheduled". */
-      ...(pickupOn ? [{ label: 'Schedule Pickup', icon: <Truck size={14} />, onClick: () => setScheduling({ ids, clear }) }] : []),
+      ...(manualPickup ? [{ label: 'Schedule Pickup', icon: <Truck size={14} />, onClick: () => setScheduling({ ids, clear }) }] : []),
       { label: 'Schedule Routing', icon: <CalendarClock size={14} />, onClick: () => {
         const startAt = `${new Date().toISOString().slice(0, 10)}T09:00`
         planningActions.schedule(ids, { startAt, endAt: `${startAt.slice(0, 10)}T18:00`, reason: 'Scheduled from Consignment Order' })
@@ -316,7 +319,7 @@ export default function LocalConsignments() {
         )}
       </div>
 
-      {scheduling && pickupOn && (
+      {scheduling && manualPickup && (
         <SchedulePickupDialog
           orderIds={scheduling.ids}
           onClose={() => setScheduling(null)}

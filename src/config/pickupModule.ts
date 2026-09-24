@@ -11,7 +11,15 @@ import { useSyncExternalStore } from 'react'
 
 export interface PickupModuleConfig {
   enabled: boolean                       // default true
-  autoCreateOnConsignment: 'off' | 'always'   // default 'off'
+  /**
+   * HOW requests are raised (owner, 2026-09-24): `auto` = one is raised the
+   * moment a consignment is created, on the date `autoPickup` computes;
+   * `manual` = merchants and ops book them. The legacy
+   * `autoCreateOnConsignment` key is DERIVED from this on normalize.
+   */
+  mode: PickupMode                       // default 'manual'
+  autoPickup: AutoPickupConfig
+  autoCreateOnConsignment: 'off' | 'always'   // derived: mode === 'auto' ? 'always' : 'off'
   scanMode: 'driver' | 'hub' | 'both'    // default 'both'
   maxAttempts: number                    // default 3
   allowAddToExistingUntil: 'Requested' | 'Planned' | 'Assigned'   // default 'Planned'
@@ -38,12 +46,31 @@ export interface PickupModuleConfig {
 }
 
 export type PodLevel = 'required' | 'optional' | 'off'
+export type PickupMode = 'auto' | 'manual'
+/** How an auto-raised request picks its date and window. */
+export interface AutoPickupConfig {
+  /** same-day = today when created before the same-day cutoff, else the next pickup day;
+   *  next-business-day = always the next pickup day; days-after-order = created date + N, rolled onto a pickup day */
+  dateRule: 'same-day' | 'next-business-day' | 'days-after-order'   // default 'next-business-day'
+  daysAfterOrder: number                 // default 1 (1–14), read only by 'days-after-order'
+  /** 'HH:mm-HH:mm' — one of `slotDefinitions`; '' = the first configured slot */
+  slot: string                           // default ''
+  /** 0 = Sunday … 6 = Saturday — the days a pickup may be raised on */
+  pickupDays: number[]                   // default Mon–Sat
+}
+export const PICKUP_MODES: PickupMode[] = ['auto', 'manual']
+export const AUTO_DATE_RULES = ['same-day', 'next-business-day', 'days-after-order'] as const
+export const DEFAULT_AUTO_PICKUP: AutoPickupConfig = Object.freeze({
+  dateRule: 'next-business-day', daysAfterOrder: 1, slot: '', pickupDays: Object.freeze([1, 2, 3, 4, 5, 6]) as unknown as number[],
+}) as AutoPickupConfig
 export type MerchantOverride = Partial<Pick<PickupModuleConfig, 'sameDayCutoff' | 'slotDefinitions' | 'multiPrPolicy' | 'maxAttempts'>>
 
 export const PICKUP_MODULE_KEY = 'fareye-pickup-module-config-v1'
 
 export const DEFAULT_PICKUP_MODULE_CONFIG: PickupModuleConfig = Object.freeze({
   enabled: true,
+  mode: 'manual',
+  autoPickup: DEFAULT_AUTO_PICKUP,
   autoCreateOnConsignment: 'off',
   scanMode: 'both',
   maxAttempts: 3,
@@ -121,9 +148,22 @@ function normalize(raw: unknown): PickupModuleConfig {
   const d = DEFAULT_PICKUP_MODULE_CONFIG
   const o = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
   const pod = o.podRequirements && typeof o.podRequirements === 'object' ? (o.podRequirements as Record<string, unknown>) : {}
+  /* a blob written before `mode` existed keeps its meaning: 'always' was auto */
+  const mode: PickupMode = oneOf(o.mode, PICKUP_MODES, o.autoCreateOnConsignment === 'always' ? 'auto' : d.mode)
+  const ap = o.autoPickup && typeof o.autoPickup === 'object' ? (o.autoPickup as Record<string, unknown>) : {}
+  const days = Array.isArray(ap.pickupDays)
+    ? [...new Set(ap.pickupDays.filter((x): x is number => Number.isInteger(x) && x >= 0 && x <= 6))].sort()
+    : []
   return {
     enabled: typeof o.enabled === 'boolean' ? o.enabled : d.enabled,
-    autoCreateOnConsignment: oneOf(o.autoCreateOnConsignment, ['off', 'always'] as const, d.autoCreateOnConsignment),
+    mode,
+    autoPickup: {
+      dateRule: oneOf(ap.dateRule, AUTO_DATE_RULES, d.autoPickup.dateRule),
+      daysAfterOrder: int(ap.daysAfterOrder, d.autoPickup.daysAfterOrder, 0, 14),
+      slot: typeof ap.slot === 'string' && SLOT.test(ap.slot.trim()) ? ap.slot.trim() : '',
+      pickupDays: days.length ? days : d.autoPickup.pickupDays,
+    },
+    autoCreateOnConsignment: mode === 'auto' ? 'always' : 'off',
     scanMode: oneOf(o.scanMode, ['driver', 'hub', 'both'] as const, d.scanMode),
     maxAttempts: int(o.maxAttempts, d.maxAttempts, 1, 5),
     allowAddToExistingUntil: oneOf(o.allowAddToExistingUntil, STAGES, d.allowAddToExistingUntil),

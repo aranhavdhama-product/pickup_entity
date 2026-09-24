@@ -126,7 +126,10 @@ export default function OrdersListPage() {
   const nav = useNavigate()
   const merchant = usePortalMerchant()
   /* module off = no NEW pickup bookings; existing requests stay readable */
-  const pickupOn = usePickupModuleConfig().enabled
+  const pickupCfg = usePickupModuleConfig()
+  const pickupOn = pickupCfg.enabled
+  /* owner, 2026-09-24: in auto mode the request is raised at creation — no manual booking here */
+  const manualPickup = pickupOn && pickupCfg.mode === 'manual'
   const [params, setParams] = useSearchParams()
   const tab = tabIndexOf(params.get('tab'))
   const drawerId = params.get('order')
@@ -208,7 +211,7 @@ export default function OrdersListPage() {
     const anyDraft = sel.some((r) => r.draft)
     const anyClosed = sel.some((r) => CLOSED_STATES.includes(r.state))
     /* Schedule Pickup: FarEye's rule — Created / Ready To Ship, no open pickup (spec §14) */
-    const bookable = pickupOn && sel.length > 0 && sel.every((r) => canSchedulePickup(r.order, db.pickupRequests))
+    const bookable = manualPickup && sel.length > 0 && sel.every((r) => canSchedulePickup(r.order, db.pickupRequests))
     const rtoable = sel.length > 0 && !anyDraft && !anyClosed && sel.every((r) => !r.secondaryState.includes('RTO'))
     /* a shipment inside a pickup the driver already owns is ops' call, not the merchant's */
     const lockedByPickup = sel.some((r) => {
@@ -225,10 +228,10 @@ export default function OrdersListPage() {
           ? () => nav(sel[0].draft ? `/grow/orders/add?draft=${sel[0].orderId}` : `/grow/orders/${sel[0].orderId}`)
           : undefined,
       },
-      {
+      ...(manualPickup ? [{
         label: 'Schedule Pickup', icon: <Truck size={14} />, disabled: !bookable,
         onClick: bookable ? () => setBooking({ rows: sel, clear }) : undefined,
-      },
+      }] : []),
       {
         label: 'Initiate Return to Origin', icon: <RotateCcw size={14} />, disabled: !rtoable,
         onClick: rtoable ? () => { planningActions.initiateRto(ids); done(`Return to origin initiated for ${plural(ids.length)}.`) } : undefined,

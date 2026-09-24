@@ -12,7 +12,7 @@ import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   Ban, CalendarClock, CircleAlert, CircleCheck, Download, Merge, PackagePlus, PackageSearch, Plus,
-  Route as RouteIcon, Settings, Truck, Layers, XCircle,
+  Route as RouteIcon, Settings, Truck, Layers, XCircle, Zap
 } from 'lucide-react'
 import {
   Button, DataTable, EmptyState, PageHeader,
@@ -28,6 +28,7 @@ import {
   LOCAL_PR_TAB_SLUG, inLocalPrTab, localPrTabCounts, localPrTabFromSlug, isPickupEligible, type LocalPrTab,
 } from '../../growOrders/tabs'
 import { usePickupModuleConfig } from '../../config/pickupModule'
+import { autoPickupSummary } from '../../growOrders/pickupSlots'
 import { csvOf, downloadCsv, toConsignmentRow, type LocalConsignmentRow, executionOverlay } from '../LocalPFP/adapter'
 import { usePlanning } from '../LocalPFP/planningStore'
 import { useConsignmentColumns } from '../LocalConsignments/columns'
@@ -88,6 +89,7 @@ export default function LocalPickup() {
 function PickupRequestsList() {
   const nav = useNavigate()
   const db = useGrowOrders()
+  const cfg = usePickupModuleConfig()
   const plan = usePlanning()
   const [params, setParams] = useSearchParams()
   /* `/local/pickup/view/:prId` = the list with the request's drawer over it —
@@ -321,7 +323,11 @@ function PickupRequestsList() {
         active={tab} onChange={(id) => setTab(TAB_ORDER.indexOf(id as LocalPrTab))}
         right={<>
           <IconBtn title="Pickup settings" onClick={() => nav('/local/settings/pickup')}><Settings size={16} /></IconBtn>
-          <Button icon={<Plus size={15} />} onClick={() => setDialog({ kind: 'create' })}>Create Pickup</Button>
+          {cfg.mode === 'auto'
+            ? <span className="inline-flex h-8 items-center gap-1.5 rounded-md border border-info-bg bg-info-bg px-2.5 text-[12.5px] text-ink" title="Pickup requests are raised automatically when a consignment is created — Settings → Pickup Request.">
+                <Zap size={13} className="text-brand-500" />{autoPickupSummary(cfg)}
+              </span>
+            : <Button icon={<Plus size={15} />} onClick={() => setDialog({ kind: 'create' })}>Create Pickup</Button>}
         </>} />
       <FilterLine
         right={<>
