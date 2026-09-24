@@ -137,7 +137,7 @@ Proof-of-pickup capture is mocked.
 ## What changed after you went to sleep (for the morning)
 - All local pages (Shipments, Pickup, Control Tower, Inbound) now share the Pending for
   Planning chrome: canvas title bar, tabs on the canvas, one filter line, funnel panel as a
-  list of selects. Nav item reads "Shipments"; the page title stays "Consignment Order".
+  list of selects. Nav item and page title both read "Consignment Order" (owner, 24 Sep).
 - Create Pickup (FTL): Service type → Vehicle type; Ship to hidden behind "+ Add ship-to
   address"; per-vehicle "Deliver to" only when addresses exist. The cutoff hint line is gone
   (the error still blocks a bad window).

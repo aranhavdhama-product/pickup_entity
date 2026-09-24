@@ -33,7 +33,7 @@ interface LocalNavItem extends ShellNavItem {
 const LOCAL_NAV: LocalNavItem[] = [
   {
     id: 'consignments',
-    label: 'Shipments',
+    label: 'Consignment Order',
     icon: Package,
     path: '/local/consignments',
     owns: '/local/consignments',
