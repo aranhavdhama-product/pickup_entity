@@ -26,7 +26,7 @@ import {
 } from 'lucide-react'
 import {
   AddUpload, DataTable, EmptyState,
-  PageSize, Pagination, Panel, StatusPill, Tabs,
+  PageSize, Pagination, Panel,
   type SelectionAction,
 } from '../../nueva/components'
 import {
@@ -37,7 +37,7 @@ import { toast } from '../../nueva/toast'
 import { useGrowOrders, growOrderActions } from '../../growOrders/store'
 import { isOpenPr } from '../../growOrders/tabs'
 import {
-  csvOf, downloadCsv, executionOverlay, stateTone, toConsignmentRow, type LocalConsignmentRow,
+  csvOf, downloadCsv, executionOverlay, toConsignmentRow, type LocalConsignmentRow,
 } from '../LocalPFP/adapter'
 import { planningActions, usePlanning } from '../LocalPFP/planningStore'
 import { merchantsOf } from '../LocalPFP/merchants'
@@ -45,8 +45,7 @@ import { usePickupModuleConfig } from '../../config/pickupModule'
 import { SchedulePickupDialog, type ScheduleResult } from './SchedulePickupDialog'
 import { useConsignmentColumns } from './columns'
 import { BulkUploadDialog } from '../GrowOrders/bulkUploadDialog'
-import { Section } from '../LocalPFP/overlayBits'
-import { dash, stamp } from '../LocalPFP/overlayFormat'
+import ConsignmentView from './ConsignmentView'
 
 /* ------------------------------------------------------------------ tabs --- */
 
@@ -67,7 +66,6 @@ const TABS: { label: string; test: (r: LocalConsignmentRow) => boolean }[] = [
 ]
 const TAB_ICONS = [ShieldAlert, RouteIcon, Handshake, AlertTriangle, Undo2, Package]
 
-const DRAWER_TABS = ['Details', 'SKU / Package', 'Tracking', 'Notes']
 
 /** The secondary state of a consignment inside an open pickup request. */
 const PICKUP_SCHEDULED = 'Pickup Scheduled'
@@ -340,138 +338,9 @@ export default function LocalConsignments() {
           onCreated={(n: number) => { setUploading(false); toast.success(`${n} shipments created.`) }} />
       )}
 
-      {drawerId && <ConsignmentDrawer row={drawerRow} onClose={() => nav('/local/consignments')} />}
+      {drawerId && <ConsignmentView row={drawerRow} onClose={() => nav('/local/consignments')} />}
     </LocalPage>
   )
 }
 
 /* ----------------------------------------------------------- the drawer ---- */
-
-function ConsignmentDrawer({ row, onClose }: { row: LocalConsignmentRow | null; onClose: () => void }) {
-  const [tab, setTab] = useState(0)
-  const plan = usePlanning()
-
-  if (!row) {
-    return (
-      <>
-        <div className="fixed inset-0 z-[60] bg-warm-900/40" onClick={onClose} />
-        <aside className="fixed inset-y-0 right-0 z-[61] flex w-[62%] min-w-[720px] flex-col bg-surface shadow-ds-overlay">
-          <header className="flex items-center gap-3 border-b border-line px-4 py-4">
-            <span className="text-[16px] font-bold text-ink">Shipment</span>
-            <button onClick={onClose} className="ml-auto text-ink-3 hover:text-ink"><X size={18} /></button>
-          </header>
-          <div className="p-6"><EmptyState title="This shipment no longer exists." /></div>
-        </aside>
-      </>
-    )
-  }
-
-  const o = row.order
-  const notes = plan.notes[row.orderId] ?? []
-
-  return (
-    <>
-      <div className="fixed inset-0 z-[60] bg-warm-900/40" onClick={onClose} />
-      <aside className="fixed inset-y-0 right-0 z-[61] flex w-[62%] min-w-[720px] flex-col bg-surface shadow-ds-overlay"
-        role="dialog" aria-label={`Consignment ${row.consignmentNumber}`}>
-        <header className="flex items-center gap-3 border-b border-line px-4 py-4">
-          <span className="font-mono text-[16px] font-bold text-ink">{row.consignmentNumber}</span>
-          <StatusPill label={String(row.state)} tone={stateTone(String(row.state))} />
-          {row.exception && <StatusPill label={row.exception} tone="danger" />}
-          <button onClick={onClose} className="ml-auto text-ink-3 hover:text-ink"><X size={18} /></button>
-        </header>
-
-        <div className="px-4"><Tabs tabs={DRAWER_TABS} active={tab} onChange={setTab} /></div>
-
-        <div className="flex-1 overflow-auto p-4">
-          <div className="flex flex-col gap-3">
-            {DRAWER_TABS[tab] === 'Details' && (
-              <>
-                <Section title="Shipment" pairs={[
-                  ['Consignment Number', row.consignmentNumber],
-                  ['Reference Number', row.referenceNumber],
-                  ['Order Number', row.orderNumber],
-                  ['Type', row.taskType],
-                  ['State', String(row.state)],
-                  ['Secondary State', dash(row.secondaryState)],
-                  ['Exception', dash(row.exception)],
-                  ['Merchant', row.merchant],
-                  ['Carrier', dash(row.carrier)],
-                  ['Service Type', dash(row.serviceType)],
-                  ['Created At', stamp(o.createdAt)],
-                  ['Ageing', `${row.ageingDays} days`],
-                ]} />
-                <Section title="Ship From" pairs={[
-                  ['Location', row.origin],
-                  ['Code', dash(row.shipFromCode)],
-                  ['Pickup Window', row.pickupWindow ? `${stamp(row.pickupWindow.start)} → ${stamp(row.pickupWindow.end)}` : '—'],
-                  ['Booked Under', o.pickupRequestId && row.pickupRequestNumber
-                    ? <Link to={`/local/pickup/${o.pickupRequestId}`} className="font-mono text-brand-500 hover:underline">{row.pickupRequestNumber}</Link>
-                    : '—'],
-                  ['Picked In', o.pickedInRequestId && row.pickedInNumber
-                    ? <Link to={`/local/pickup/${o.pickedInRequestId}`} className="font-mono text-brand-500 hover:underline">{row.pickedInNumber}</Link>
-                    : '—'],
-                ]} />
-                <Section title="Ship To" pairs={[
-                  ['Name', dash(row.shipToName)],
-                  ['Address', dash(row.address)],
-                  ['City', dash(row.shipToCity)],
-                  ['Pin Code', dash(row.shipToPincode)],
-                  ['Destination Hub', dash(row.destination)],
-                  ['Delivery Window', row.deliveryWindow ? `${stamp(row.deliveryWindow.start)} → ${stamp(row.deliveryWindow.end)}` : '—'],
-                ]} />
-              </>
-            )}
-
-            {DRAWER_TABS[tab] === 'SKU / Package' && (
-              <Section title="Package" pairs={[
-                ['Kind', o.pkg.kind],
-                ['Pieces', String(row.pieces)],
-                ['Weight', `${row.weightKg} kg`],
-                ['Volume', `${row.volumeMm3.toLocaleString()} mm³`],
-                ['Pallet Spaces', String(row.palletSpaces ?? 1)],
-                ['Dimensions', `${o.pkg.lengthCm} × ${o.pkg.widthCm} × ${o.pkg.heightCm} cm`],
-                ['Description', dash(o.pkg.description)],
-                ['Declared Value', `${o.currency} ${o.pkg.declaredValue.toLocaleString()}`],
-              ]} />
-            )}
-
-            {DRAWER_TABS[tab] === 'Tracking' && (
-              row.shipments.length === 0
-                ? <EmptyState title="No packages tracked yet" />
-                : (
-                  <Panel title={`Packages (${row.shipments.length})`}>
-                    <div className="px-5 pb-4">
-                      {row.shipments.map((s) => (
-                        <div key={s.id} className="flex items-center gap-3 border-b border-line py-2 last:border-0 text-[13px]">
-                          <span className="font-mono font-bold text-ink">{s.trackingNumber}</span>
-                          <span className="ml-auto text-ink-3">{s.outcome ?? 'In progress'}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </Panel>
-                )
-            )}
-
-            {DRAWER_TABS[tab] === 'Notes' && (
-              notes.length === 0
-                ? <EmptyState title="No notes" hint="Notes added from the planning pages appear here." />
-                : (
-                  <Panel title={`Notes (${notes.length})`}>
-                    <div className="px-5 pb-4">
-                      {notes.map((n, i) => (
-                        <div key={i} className="border-b border-line py-2 last:border-0">
-                          <p className="text-[13px] text-ink">{n.text}</p>
-                          <p className="text-[11.5px] text-ink-3">{stamp(n.at)}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </Panel>
-                )
-            )}
-          </div>
-        </div>
-      </aside>
-    </>
-  )
-}

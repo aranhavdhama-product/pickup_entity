@@ -220,7 +220,12 @@ effects (a cancelled/rescheduled PR leaving its trip) flow through `onPickupRequ
   SAME `AddOrderPage` with `portal="console"`: an Order Category card (4 Person · Stackable ·
   Fragile · VIP · Hazmat · Heavy Weight → `consignment.category`, which then drives the row's
   flags) below VAS, no checkout and no drafts — ops create outright; the Grow form never shows
-  that card), `/local/pickup` (+ `/:id`, `LocalPickup/*`),
+  that card; **row click** → `/local/consignments/:id` = `ConsignmentView.tsx`, the staging
+  View Consignment overlay: 62% right drawer, section rail Summary · Order · Piece · Tracking ·
+  SKU · VAS · Load · Attempt · Customer Feedback · Notes, "View Events" widens it and docks an
+  Event Logs timeline; every list is DERIVED in `viewModel.ts` from the order, its pickup
+  requests, its trips and its notes, since no event/load/attempt service exists locally),
+  `/local/pickup` (+ `/:id`, `LocalPickup/*`),
   `/local/pending-for-planning` (tabs All · Consignments · Pickups; Plan Collection routes
   onto trips), `/local/control-tower` (+ `/trips/:id`; `AddToRouteDialog` is shared),
   `/local/inbound` (+ `/scanner`), `/driver` (FarEye Pilot look; login as a seeded driver).

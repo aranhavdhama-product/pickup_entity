@@ -328,7 +328,8 @@ export function executionOverlay(o: GrowOrder, trips: TripLike[]): Pick<RowOverl
   for (const t of trips) {
     for (const x of t.stops) {
       if (x.kind === 'delivery' && x.orderId === o.id) {
-        if (x.status === 'Done' || x.status === 'Failed') attempts += 1
+        /* a closed stop is an attempt; so is the one the driver is out on now */
+        if (x.status === 'Done' || x.status === 'Failed' || t.status === 'In Transit') attempts += 1
         if (t.driverName && t.status !== 'Completed') driverName = t.driverName
         else if (t.driverName && !driverName) driverName = t.driverName
       } else if (x.kind === 'pickup' && o.pickupRequestId && x.prId === o.pickupRequestId && t.driverName && !driverName) {
@@ -336,7 +337,7 @@ export function executionOverlay(o: GrowOrder, trips: TripLike[]): Pick<RowOverl
       }
     }
   }
-  if (attempts === 0 && (o.status === 'Delivered' || o.status === 'Undelivered')) attempts = 1
+  if (attempts === 0 && (o.status === 'Delivered' || o.status === 'Undelivered' || o.status === 'Out for Delivery')) attempts = 1
   return { driverName, deliveryAttempts: attempts }
 }
 
@@ -407,7 +408,7 @@ export function toConsignmentRow(
     ageingDays: daysSince(o.createdAt),
     address: addressOf(o),
     assignedDriver: overlay.driverName ?? '',
-    deliveryAttempts: overlay.deliveryAttempts ?? ((o.status === 'Delivered' || o.status === 'Undelivered') ? 1 : 0),
+    deliveryAttempts: overlay.deliveryAttempts ?? ((o.status === 'Delivered' || o.status === 'Undelivered' || o.status === 'Out for Delivery') ? 1 : 0),
     flags: flagsOf(o),
     /* a raised exception wins; then the order's own validation error; then the
        one exception the data itself proves — no postcode means the console
