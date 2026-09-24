@@ -20,7 +20,7 @@ export default function LocalSettings() {
           desc="Columns, filters and their order on the Pending for Planning listing."
           onClick={() => navigate('/local/columns')} />
         <ListCard icon={<Truck size={18} />} title="Pickup Request"
-          desc="Booking windows, cutoffs, attempts, proof of pickup and per-merchant rules."
+          desc="Whether pickups run, and how requests are raised — auto or manual."
           onClick={() => navigate('/local/settings/pickup')} />
       </div>
     </div>

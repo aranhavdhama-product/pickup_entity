@@ -224,9 +224,10 @@ effects (a cancelled/rescheduled PR leaving its trip) flow through `onPickupRequ
   `autoPickupWindowFor()` else the fallback rule; in auto mode the settings page asks ONLY
   auto-relevant options — add-to-existing, merchant-cancel and merchant rules are manual-only; `dateRule`
   same-day | next-business-day | days-after-order, `daysAfterOrder`, `slot`, `pickupDays`; `autoPickupWindow()` / `autoPickupSummary()` in `pickupSlots.ts`; the legacy
-  `autoCreateOnConsignment` is derived from it). `/local/settings/pickup` shows the module
-  toggle, then two selectable mode cards, and the card below switches with the mode (Auto:
-  pickup dates; Manual: booking & slots). In auto mode every manual booking control is
+  `autoCreateOnConsignment` is derived from it). `/local/settings/pickup` asks ONLY the module
+  toggle and the two selectable mode cards (owner, 2026-09-24 — nothing else on that page; the
+  other keys keep their stored/default values and stay editable on the console's Base Modules →
+  Pickup Request twin). In auto mode every manual booking control is
   replaced by an "Auto pickup · rule" pill: Schedule Pickup (console + Grow), Book Pickup
   (Grow view), Create Pickup (console Pickup page), Add + Eligible (Grow Pickup Requests).
 - Pages: `/local/consignments` (Merchant → Pickup Address filter, bulk **Schedule** →
