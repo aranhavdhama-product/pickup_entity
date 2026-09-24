@@ -250,6 +250,10 @@ export interface LocalConsignmentRow extends ConsignmentOrderRow {
   specialInstructions: string
   ageingDays: number
   address: string
+  /** The driver of the trip carrying this consignment ('' when none / a 3PL). */
+  assignedDriver: string
+  /** Delivery stops the driver has closed (Done or Failed) for this consignment. */
+  deliveryAttempts: number
   flags: CategoryFlag[]
   /** Non-empty when the order carries a validation error or a raised exception. */
   exception: string
@@ -296,6 +300,40 @@ export interface RowOverlay {
   secondaryState?: string
   schedule?: { startAt: string; endAt: string; reason: string }
   exception?: { type: string; at: string }
+  /** From `executionOverlay` — the trip side of the row. */
+  driverName?: string | null
+  deliveryAttempts?: number
+}
+
+/** The shape `executionOverlay` needs from a trip — the planning store's own, kept structural so this file never imports it. */
+export interface TripLike {
+  driverName: string | null
+  status: string
+  stops: { kind: 'delivery' | 'pickup'; prId: string | null; orderId: string | null; status: string }[]
+}
+
+/**
+ * The trip side of a consignment row: who is assigned to it (its delivery
+ * trip's driver, else the trip collecting its pickup request) and how many
+ * delivery attempts the driver has closed. The seed marks delivered /
+ * undelivered orders without a trip, so those count as one attempt.
+ */
+export function executionOverlay(o: GrowOrder, trips: TripLike[]): Pick<RowOverlay, 'driverName' | 'deliveryAttempts'> {
+  let driverName: string | null = null
+  let attempts = 0
+  for (const t of trips) {
+    for (const x of t.stops) {
+      if (x.kind === 'delivery' && x.orderId === o.id) {
+        if (x.status === 'Done' || x.status === 'Failed') attempts += 1
+        if (t.driverName && t.status !== 'Completed') driverName = t.driverName
+        else if (t.driverName && !driverName) driverName = t.driverName
+      } else if (x.kind === 'pickup' && o.pickupRequestId && x.prId === o.pickupRequestId && t.driverName && !driverName) {
+        driverName = t.driverName
+      }
+    }
+  }
+  if (attempts === 0 && (o.status === 'Delivered' || o.status === 'Undelivered')) attempts = 1
+  return { driverName, deliveryAttempts: attempts }
 }
 
 export function toConsignmentRow(
@@ -364,6 +402,8 @@ export function toConsignmentRow(
     specialInstructions: o.remarks || '',
     ageingDays: daysSince(o.createdAt),
     address: addressOf(o),
+    assignedDriver: overlay.driverName ?? '',
+    deliveryAttempts: overlay.deliveryAttempts ?? ((o.status === 'Delivered' || o.status === 'Undelivered') ? 1 : 0),
     flags: flagsOf(o),
     /* a raised exception wins; then the order's own validation error; then the
        one exception the data itself proves — no postcode means the console
@@ -567,25 +607,31 @@ export function isPendingForPlanning(o: GrowOrder, left: ReadonlySet<string>): b
 
 /* ------------------------------------------------------------------ csv ----- */
 
+/** The console's default columns (staging's Consignment Order grid, 2026-09-24), in its order. */
 export const CSV_COLUMNS: { label: string; value: (r: LocalConsignmentRow) => string | number }[] = [
   { label: 'Order Number', value: (r) => r.orderNumber },
   { label: 'Reference Number', value: (r) => r.referenceNumber },
-  { label: 'Ship By Date', value: (r) => r.shipByDate },
   { label: 'State', value: (r) => r.state },
-  { label: 'Carrier', value: (r) => r.carrier },
   { label: 'Secondary State', value: (r) => r.secondaryState },
-  { label: 'Dispatch Date', value: (r) => r.dispatchDate },
   { label: 'Weight', value: (r) => r.weightKg },
   { label: 'Volume', value: (r) => r.volumeMm3 },
   { label: 'Pallet Spaces', value: (r) => r.palletSpaces ?? 1 },
   { label: 'SKU', value: (r) => r.skuCount },
   { label: 'Service Time (min)', value: (r) => r.serviceTimeMin },
+  { label: 'Ship By Date', value: (r) => r.shipByDate },
+  { label: 'Ship to Name', value: (r) => r.shipToName },
+  { label: 'Ship To Address', value: (r) => r.address },
+  { label: 'Merchant', value: (r) => r.merchant },
+  { label: 'Assigned To Driver', value: (r) => r.assignedDriver },
+  { label: 'Order Type', value: (r) => r.orderTypeLabel },
+  { label: 'Created At', value: (r) => r.order.createdAt },
+  { label: 'Ageing (days)', value: (r) => r.ageingDays },
+  { label: 'Delivery Attempt Count', value: (r) => r.deliveryAttempts },
+  { label: 'Exception', value: (r) => r.exception },
+  { label: 'Type', value: (r) => r.taskType },
+  { label: 'Carrier', value: (r) => r.carrier },
   { label: 'Tag', value: (r) => r.tag },
   { label: 'Special Instructions', value: (r) => r.specialInstructions },
-  { label: 'Merchant', value: (r) => r.merchant },
-  { label: 'Type', value: (r) => r.taskType },
-  { label: 'Ageing (days)', value: (r) => r.ageingDays },
-  { label: 'Address', value: (r) => r.address },
 ]
 
 const cell = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`

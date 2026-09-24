@@ -38,7 +38,7 @@ import { usePickupModuleConfig } from '../../config/pickupModule'
 import {
   CATEGORY_FLAGS, csvOf, downloadCsv, isPendingForPlanning, isPendingPickup, isPickupRow,
   pickupLoadOf, toConsignmentRow, toPickupRow,
-  type CategoryFlag, type LocalConsignmentRow, type LocalPickupRow, type UnifiedRow,
+  type CategoryFlag, type LocalConsignmentRow, type LocalPickupRow, type UnifiedRow, executionOverlay,
 } from './adapter'
 import { hiddenStagingColumns } from './columnConfig'
 import { ROW_TYPES, type RowType } from './fieldRegistry'
@@ -322,6 +322,7 @@ export default function LocalPendingForPlanning({ variant = 'current' }: { varia
         secondaryState: plan.secondaryState[o.id],
         schedule: plan.scheduleOverrides[o.id],
         exception: plan.exceptions[o.id],
+        ...executionOverlay(o, plan.trips),
       }))
     const pickups = pickupsOn ? db.pickupRequests.filter(isPendingPickup).map((p) => toPickupRow(p, db)) : []
     return [...consignments, ...pickups].sort((a, b) => (sortKey(a) < sortKey(b) ? 1 : -1))

@@ -37,13 +37,13 @@ import { toast } from '../../nueva/toast'
 import { useGrowOrders, growOrderActions } from '../../growOrders/store'
 import { isOpenPr } from '../../growOrders/tabs'
 import {
-  csvOf, downloadCsv, stateTone, toConsignmentRow, type LocalConsignmentRow,
+  csvOf, downloadCsv, executionOverlay, stateTone, toConsignmentRow, type LocalConsignmentRow,
 } from '../LocalPFP/adapter'
 import { planningActions, usePlanning } from '../LocalPFP/planningStore'
 import { merchantsOf } from '../LocalPFP/merchants'
 import { usePickupModuleConfig } from '../../config/pickupModule'
 import { SchedulePickupDialog, type ScheduleResult } from './SchedulePickupDialog'
-import { consignmentColumns } from './columns'
+import { useConsignmentColumns } from './columns'
 import { BulkUploadDialog } from '../GrowOrders/bulkUploadDialog'
 import { Section } from '../LocalPFP/overlayBits'
 import { dash, stamp } from '../LocalPFP/overlayFormat'
@@ -111,6 +111,7 @@ export default function LocalConsignments() {
       secondaryState: plan.secondaryState[o.id] ?? (openPrIds.has(o.pickupRequestId ?? '') ? PICKUP_SCHEDULED : undefined),
       schedule: plan.scheduleOverrides[o.id],
       exception: plan.exceptions[o.id],
+      ...executionOverlay(o, plan.trips),
     }))
     .sort((a, b) => (a.order.createdAt < b.order.createdAt ? 1 : -1)), [db, plan, openPrIds])
 
@@ -173,7 +174,8 @@ export default function LocalConsignments() {
 
   /* ---------------------------------------------------------- the columns -- */
 
-  const columns = consignmentColumns
+  /* staging's default 18 + the ⚙ chooser; persists per browser */
+  const { columns, chooser } = useConsignmentColumns('local-consignments-columns-v1')
 
   /* ----------------------------------------------------------- the actions - */
 
@@ -255,6 +257,7 @@ export default function LocalConsignments() {
       <FilterLine
         right={<>
           <SearchBox value={q} onChange={(v) => { setQ(v); setPage(1) }} placeholder="Search shipments" />
+          {chooser}
           <IconBtn title="Download all (CSV)"
             onClick={() => { downloadCsv('consignments.csv', csvOf(rows)); toast.success(`${rows.length} rows exported.`) }}>
             <DownloadGlyph size={16} />

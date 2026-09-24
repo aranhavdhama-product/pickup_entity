@@ -151,7 +151,7 @@ export default function OrdersListPage() {
   const all = useMemo(() => shipmentRowsOf(db, plan), [db, plan])
   const inTab = useMemo(() => all.filter(TABS[tab].test), [all, tab])
   const tabCounts = useMemo(() => TABS.map((t) => all.filter(t.test).length), [all])
-  const { columns, chooser } = useShipmentColumns('grow-shipments-columns-v1', all)
+  const { columns, chooser } = useShipmentColumns('grow-shipments-columns-v2', all)
 
   /* FarEye's own vocabulary, always the full list (spec §14) — plus Draft / Save
      for later, the portal's one addition */

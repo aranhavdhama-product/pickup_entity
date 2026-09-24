@@ -119,7 +119,7 @@ export default function PickupRequestsPage() {
   }, [shipments])
 
   const prCols = usePickupRequestColumns({ allRequests: db.pickupRequests, orders: db.orders, stores: db.stores, exceptionsOf: flagsOf, tagsOf })
-  const shipCols = useShipmentColumns('grow-eligible-columns-v1', eligible)
+  const shipCols = useShipmentColumns('grow-eligible-columns-v2', eligible)
 
   /* the pickup POINTS actually in use — a booking collected from a typed-in
      address must be filterable by the name its own row shows */

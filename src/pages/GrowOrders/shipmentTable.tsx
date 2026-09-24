@@ -5,16 +5,19 @@
  * by Pickup Requests' "Eligible" view, so a shipment reads the same wherever it
  * is listed.
  *
- *  - DEFAULT columns: Order Number (→ forward / ↩ reverse) · Reference Number ·
- *    State · Secondary State · Exception · Tags · Ship By Date · Service Type ·
- *    Carrier · Ship To Name · Ship To Address · Weight · Volume · Pallet Space ·
- *    Pickup Request · Delivery Window · Attempts · Created At;
- *  - OPTIONAL (the ⚙ chooser in the header): Consignment Type · Order Type ·
- *    Total Quantity · SKU Codes · Tracking Number · Origin / Destination
- *    Facility · Pickup Window · Payment Mode · COD Amount · Special
- *    Instructions · Scheduling Confirmed · Ageing;
- *  - a column no row has a value for is hidden (e.g. Attempts: the local store
- *    records no delivery attempts), so the grid never shows a wall of dashes;
+ *  - DEFAULT columns = the console's / staging's default 18, in that order
+ *    (owner, 2026-09-24): Order Number (→ forward / ↩ reverse) · Reference
+ *    Number · State · Secondary State · Weight · Volume · Pallet Spaces · SKU ·
+ *    Service Time (min) · Ship By Date · Ship to Name · Ship To Address ·
+ *    Merchant · Assigned To Driver · Order Type · Created At · Ageing (days) ·
+ *    Delivery Attempt Count;
+ *  - OPTIONAL (the ⚙ chooser in the header): Exception · Tags · Service Type ·
+ *    Carrier · Pickup Request · Delivery Window · Consignment Type · Total
+ *    Quantity · SKU Codes · Tracking Number · Origin / Destination Facility ·
+ *    Pickup Window · Payment Mode · COD Amount · Special Instructions ·
+ *    Scheduling Confirmed;
+ *  - a column no row has a value for is hidden, so the grid never shows a wall
+ *    of dashes;
  *  - the choice persists per grid (`storageKey`) in localStorage.
  *
  * Rendered by the console's own Nueva `DataTable` (spec §15): this module only
@@ -84,21 +87,24 @@ const COLUMNS: Col[] = [
   { key: 'shipByDate', label: 'Ship By Date', width: 104, value: (r) => (r.shipByDate ? fmtDate(r.shipByDate) : '') },
   { key: 'serviceType', label: 'Service Type', width: 140, value: (r) => r.serviceType },
   { key: 'carrier', label: 'Carrier', width: 120, value: (r) => r.carrier },
-  { key: 'shipToName', label: 'Ship To Name', width: 150, value: (r) => r.shipToName },
+  { key: 'shipToName', label: 'Ship to Name', width: 150, value: (r) => r.shipToName },
   { key: 'shipToAddress', label: 'Ship To Address', width: 230, value: (r) => r.address },
   { key: 'weight', label: 'Weight', width: 84, align: 'right', value: (r) => `${r.weightKg.toLocaleString()} kg`,
     cell: (r) => `${short(r.weightKg)} kg` },
   { key: 'volume', label: 'Volume', width: 104, align: 'right', value: (r) => `${r.volumeMm3.toLocaleString()} mm³`,
     cell: (r) => <>{short(r.volumeMm3)}<span className="text-[11px] text-ink-3"> mm³</span></> },
-  { key: 'palletSpace', label: 'Pallet Space', width: 84, align: 'right', value: (r) => String(r.palletSpaces ?? 1) },
+  { key: 'palletSpace', label: 'Pallet Spaces', width: 100, align: 'right', value: (r) => String(r.palletSpaces ?? 1) },
+  { key: 'sku', label: 'SKU', width: 70, align: 'right', value: (r) => String(r.skuCount) },
+  { key: 'serviceTime', label: 'Service Time (min)', width: 124, align: 'right', value: (r) => String(r.serviceTimeMin) },
+  { key: 'merchant', label: 'Merchant', width: 150, value: (r) => r.merchant },
+  { key: 'assignedDriver', label: 'Assigned To Driver', width: 150, value: (r) => r.assignedDriver },
   { key: 'pickupRequest', label: 'Pickup Request', width: 120, value: (r) => r.pickupRequestNumber,
     cell: (r) => (r.order.pickupRequestId && r.pickupRequestNumber
       ? <Link to={`/grow/orders/pickups/${r.order.pickupRequestId}`} onClick={(e) => e.stopPropagation()}
           className="truncate font-mono text-[12px] font-bold text-brand-500 hover:text-brand-600">{r.pickupRequestNumber}</Link>
       : dash) },
   { key: 'deliveryWindow', label: 'Delivery Window', width: 250, value: (r) => windowText(r.deliveryWindow) },
-  /* the local store records no delivery attempts — hidden until a row has one */
-  { key: 'attempts', label: 'Attempts', width: 84, align: 'right', value: () => '' },
+  { key: 'attempts', label: 'Delivery Attempt Count', width: 130, align: 'right', value: (r) => String(r.deliveryAttempts) },
   { key: 'createdAt', label: 'Created At', width: 104, value: (r) => fmtDate(r.order.createdAt),
     cell: (r) => (
       <>
@@ -128,13 +134,14 @@ const COLUMNS: Col[] = [
   { key: 'specialInstructions', label: 'Special Instructions', width: 220, value: (r) => r.specialInstructions },
   { key: 'schedulingConfirmed', label: 'Scheduling Confirmed', width: 110,
     value: (r) => (r.secondaryState === 'Scheduled' ? 'Yes' : '') },
-  { key: 'ageing', label: 'Ageing', width: 84, align: 'right', value: (r) => `${r.ageingDays} d` },
+  { key: 'ageing', label: 'Ageing (days)', width: 100, align: 'right', value: (r) => String(r.ageingDays) },
 ]
 
+/* the console's default 18, in staging's order */
 const DEFAULT_KEYS = [
-  'orderNumber', 'referenceNumber', 'state', 'secondaryState', 'exception', 'tags', 'shipByDate', 'serviceType',
-  'carrier', 'shipToName', 'shipToAddress', 'weight', 'volume', 'palletSpace', 'pickupRequest', 'deliveryWindow',
-  'attempts', 'createdAt',
+  'orderNumber', 'referenceNumber', 'state', 'secondaryState', 'weight', 'volume', 'palletSpace', 'sku',
+  'serviceTime', 'shipByDate', 'shipToName', 'shipToAddress', 'merchant', 'assignedDriver', 'orderType',
+  'createdAt', 'ageing', 'attempts',
 ]
 const ALL_KEYS = COLUMNS.map((c) => c.key)
 
@@ -162,7 +169,9 @@ function cellOf(c: Col): Column {
  */
 export function useShipmentColumns(storageKey: string, dataRows: ShipmentRow[]): { columns: Column[]; chooser: ReactNode } {
   const [picked, setPicked] = useColumnPrefs(storageKey, DEFAULT_KEYS, ALL_KEYS)
-  const withData = COLUMNS.filter((c) => dataRows.some((r) => c.value(r)))
+  /* the default set leads in staging's order; the optional columns follow in their own */
+  const rank = (k: string) => { const i = DEFAULT_KEYS.indexOf(k); return i === -1 ? DEFAULT_KEYS.length + ALL_KEYS.indexOf(k) : i }
+  const withData = COLUMNS.filter((c) => dataRows.some((r) => c.value(r))).sort((a, b) => rank(a.key) - rank(b.key))
   const cols = withData.filter((c) => picked.includes(c.key))
   return {
     columns: cols.map(cellOf),

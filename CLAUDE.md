@@ -121,12 +121,12 @@ Product changes layered on the replica (deliberate departures from the live port
   RTO · Print Label · Download CSV · Cancel Shipment) → Pagination/PageSize. Rows =
   `shipmentRows.ts` (`toConsignmentRow` + the console planning overlay; drafts = State `Draft` /
   Secondary `Save for later`); columns = `shipmentTable.tsx` `useShipmentColumns` (persisted
-  `grow-shipments-columns-v1`; empty columns hidden). Row click → drawer `?order=<id>` in the
+  `grow-shipments-columns-v2`; empty columns hidden). Row click → drawer `?order=<id>` in the
   console drawer's markup (Details · SKU / Package · Tracking · Notes; Resume for drafts).
 - **Pickup Requests page** (`/grow/orders/pickups`) — same grammar, NO tabs; old `?tab=` slugs
   become filter presets. Filter line: pickup-window range · Status `FilterMultiSelect` · funnel
   (Pickup Address, Exception, Type, Carrier/Driver, Source, Reserved) · Clear Filters; right:
-  search · "Eligible (n)" toggle (swaps in the shipments columns, `grow-eligible-columns-v1`,
+  search · "Eligible (n)" toggle (swaps in the shipments columns, `grow-eligible-columns-v2`,
   with Schedule Pickup) · ⚙ · **Add** (Create Pickup Request dialog). Columns
   (`pickupRequestColumns.tsx`, formatting from `LocalPickup/prModel.ts`, persisted
   `grow-pickup-columns-v1`) = the `/local/pickup` grid minus Merchant: Reference · Status ·

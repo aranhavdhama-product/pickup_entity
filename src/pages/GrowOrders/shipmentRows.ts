@@ -15,7 +15,7 @@
  * address, not an unfinished form).
  */
 import type { GrowOrder, GrowOrdersDb } from '../../growOrders/types'
-import { csvOf, stateTone, toConsignmentRow, type LocalConsignmentRow } from '../LocalPFP/adapter'
+import { csvOf, executionOverlay, stateTone, toConsignmentRow, type LocalConsignmentRow } from '../LocalPFP/adapter'
 import type { PlanningDb } from '../LocalPFP/planningStore'
 
 export const DRAFT_STATE = 'Draft'
@@ -34,7 +34,7 @@ export const isDraftOrder = (o: GrowOrder) => o.isDraft || o.paymentStatus === '
 export function toShipmentRow(
   o: GrowOrder,
   db: Pick<GrowOrdersDb, 'stores' | 'pickupRequests'>,
-  plan: Pick<PlanningDb, 'secondaryState' | 'scheduleOverrides' | 'exceptions'>,
+  plan: Pick<PlanningDb, 'secondaryState' | 'scheduleOverrides' | 'exceptions' | 'trips'>,
 ): ShipmentRow {
   const base = toConsignmentRow(o, db, {
     /* the adapter derives FarEye's pickup secondary itself; the console overlay
@@ -42,6 +42,7 @@ export function toShipmentRow(
     secondaryState: plan.secondaryState[o.id],
     schedule: plan.scheduleOverrides[o.id],
     exception: plan.exceptions[o.id],
+    ...executionOverlay(o, plan.trips),
   })
   const draft = isDraftOrder(o)
   const tags = [...new Set([...base.flags, ...(o.tags ?? []), ...(o.additionalServices ?? [])].filter(Boolean))]

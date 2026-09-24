@@ -28,9 +28,9 @@ import {
   LOCAL_PR_TAB_SLUG, inLocalPrTab, localPrTabCounts, localPrTabFromSlug, isPickupEligible, type LocalPrTab,
 } from '../../growOrders/tabs'
 import { usePickupModuleConfig } from '../../config/pickupModule'
-import { csvOf, downloadCsv, toConsignmentRow, type LocalConsignmentRow } from '../LocalPFP/adapter'
+import { csvOf, downloadCsv, toConsignmentRow, type LocalConsignmentRow, executionOverlay } from '../LocalPFP/adapter'
 import { usePlanning } from '../LocalPFP/planningStore'
-import { consignmentColumns } from '../LocalConsignments/columns'
+import { useConsignmentColumns } from '../LocalConsignments/columns'
 import {
   AssignCarrierDialog, BookConsignmentsDialog, CreatePickupDialog, ReasonDialog, RescheduleDialog,
 } from './dialogs'
@@ -115,7 +115,9 @@ function PickupRequestsList() {
     secondaryState: plan.secondaryState[o.id],
     schedule: plan.scheduleOverrides[o.id],
     exception: plan.exceptions[o.id],
+    ...executionOverlay(o, plan.trips),
   })).sort((a, b) => (a.order.createdAt < b.order.createdAt ? 1 : -1)), [eligibleOrders, db, plan])
+  const eligibleGrid = useConsignmentColumns('local-eligible-columns-v1')
   const storeNameOf = useMemo(() => {
     const names = new Map(db.stores.map((x) => [x.code, x.name]))
     return (code: string | undefined) => (code && names.get(code)) || code || ''
@@ -324,6 +326,7 @@ function PickupRequestsList() {
       <FilterLine
         right={<>
           <SearchBox value={q} onChange={(v) => { setQ(v); setPage(1) }} placeholder={eligibleTab ? 'Search shipments' : 'Search pickups'} />
+          {eligibleTab && eligibleGrid.chooser}
           <IconBtn title="Download filtered rows (CSV)" onClick={exportAll}><Download size={16} /></IconBtn>
         </>}>
         <DateRange start={from} end={to} onStart={(v) => { setFrom(v); setPage(1) }} onEnd={(v) => { setTo(v); setPage(1) }} />
@@ -345,7 +348,7 @@ function PickupRequestsList() {
         ) : (
           <>
             {eligibleTab ? (
-              <DataTable key="eligible" columns={consignmentColumns} rows={slice(eRows)} rowKey="orderId" selectable
+              <DataTable key="eligible" columns={eligibleGrid.columns} rows={slice(eRows)} rowKey="orderId" selectable
                 selectionActions={(s, clear) => eligibleActions(s as LocalConsignmentRow[], clear)}
                 onRowClick={(r) => nav(`/local/consignments/${(r as LocalConsignmentRow).orderId}`)} />
             ) : (
