@@ -210,6 +210,8 @@ export function autoPickupWindow(now: Date, cfg?: PolicyInput, auto?: Partial<Au
   const p = pol(cfg)
   const a: AutoPickupConfig = {
     afterState: auto?.afterState ?? 'Ready To Ship',
+    userSelectsWindow: auto?.userSelectsWindow ?? false,
+    maxDaysAhead: auto?.maxDaysAhead ?? 7,
     dateRule: auto?.dateRule ?? 'next-business-day',
     daysAfterOrder: auto?.daysAfterOrder ?? 1,
     slot: auto?.slot ?? '',
@@ -259,6 +261,37 @@ export function autoPickupEligible(
   return afterState === 'Label Generated' || !o.error     // Ready To Ship = validated too
 }
 
+/**
+ * Why a window the USER picked breaks the slot rules — or null when it is
+ * bookable. Read only when `userSelectsWindow` is on: the horizon
+ * (`maxDaysAhead`), then the same cutoff / lead-time / pickup-day rules as a
+ * manual booking.
+ */
+export function userWindowError(startAt: string, now: Date, cfg?: PolicyInput, auto?: Partial<AutoPickupConfig>): string | null {
+  if (!startAt) return null
+  const max = auto?.maxDaysAhead ?? 7
+  const s = toDate(startAt)
+  const limit = new Date(now.getFullYear(), now.getMonth(), now.getDate() + max, 23, 59)
+  if (s.getTime() > limit.getTime()) return `Pickups can be booked up to ${max} day${max === 1 ? '' : 's'} ahead`
+  const days = auto?.pickupDays?.length ? auto.pickupDays : [1, 2, 3, 4, 5, 6]
+  if (!days.includes(s.getDay())) return `${DOW[s.getDay()]} ${s.getDate()} ${MON[s.getMonth()]} is not a pickup day`
+  return violatesCutoff(startAt, now, cfg)
+}
+
+/**
+ * The window an auto-raised request takes when the user MAY choose: their
+ * choice when it passes the slot rules, else the rule's own window.
+ */
+export function autoPickupWindowFor(
+  now: Date, cfg: PolicyInput, auto: Partial<AutoPickupConfig> | undefined,
+  chosen: { startAt?: string | null; endAt?: string | null } | null | undefined,
+): { startAt: string; endAt: string; chosen: boolean } {
+  if (auto?.userSelectsWindow && chosen?.startAt && chosen?.endAt && !userWindowError(chosen.startAt, now, cfg, auto)) {
+    return { startAt: chosen.startAt, endAt: chosen.endAt, chosen: true }
+  }
+  return { ...autoPickupWindow(now, cfg, auto), chosen: false }
+}
+
 /** 'Auto pickup · after Ready To Ship · next pickup day · 09:00–12:00 · Mon–Sat' — the pill the pages show in auto mode. */
 export function autoPickupSummary(cfg: Pick<PickupModuleConfig, 'autoPickup' | 'sameDayCutoff' | 'slotDefinitions'>): string {
   const a = cfg.autoPickup
@@ -266,5 +299,5 @@ export function autoPickupSummary(cfg: Pick<PickupModuleConfig, 'autoPickup' | '
     : a.dateRule === 'days-after-order' ? `${a.daysAfterOrder} day${a.daysAfterOrder === 1 ? '' : 's'} after creation`
     : 'next pickup day'
   const slot = a.slot || cfg.slotDefinitions[0] || ''
-  return ['Auto pickup', `after ${a.afterState}`, rule, slot.replace('-', '–'), pickupDaysLabel(a.pickupDays)].filter(Boolean).join(' · ')
+  return ['Auto pickup', `after ${a.afterState}`, a.userSelectsWindow ? `user picks (≤ ${a.maxDaysAhead} d)` : '', rule, slot.replace('-', '–'), pickupDaysLabel(a.pickupDays)].filter(Boolean).join(' · ')
 }

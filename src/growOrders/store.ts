@@ -17,7 +17,7 @@ import {
 } from './tabs'
 import { blankHandover, PR_DEFAULTS, SIZE_CLASSES } from './types'
 import { cancelReasonLabel, failureReasonLabel, NO_ORDERS_REASON } from './pickupReasons'
-import { nextBusinessDay, pickupPolicy, autoPickupWindow, autoPickupEligible } from './pickupSlots'
+import { nextBusinessDay, pickupPolicy, autoPickupWindowFor, autoPickupEligible } from './pickupSlots'
 import { readPickupModuleConfig } from '../config/pickupModule'
 
 /** -v9: `Created` and `Requested` MERGED into the single entry status `Requested`. The key bump is
@@ -1100,7 +1100,8 @@ export const growOrderActions = {
     /* the trigger STATE is configurable (Created · Label Generated · Ready To Ship) */
     if (!o || !autoPickupEligible(o, cfg.autoPickup.afterState)) return null
     /* the date rule is the account's (owner, 2026-09-24); slots and cutoff may be the merchant's */
-    const w = autoPickupWindow(new Date(), pickupPolicy(merchantCode), cfg.autoPickup)
+    /* the user's own pickup window (Ship From window on the form) counts when the module lets them choose */
+    const w = autoPickupWindowFor(new Date(), pickupPolicy(merchantCode), cfg.autoPickup, { startAt: o.sender.windowStart, endAt: o.sender.windowEnd })
     const ftl = o.shipmentType === 'FTL'
     return growOrderActions.createPickupRequest({
       storeCode: o.storeCode, destinationCode: ftl ? null : o.inboundHubCode, orderIds: [o.id], source: 'Auto',

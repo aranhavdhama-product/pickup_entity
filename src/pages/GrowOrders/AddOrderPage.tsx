@@ -36,7 +36,7 @@ import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowRight, Barcode, CalendarCheck, CircleDot, CircleMinus, ClipboardList, FileCheck, MapPin, Package,
-  Package as PackageIcon, Pencil, Plus, ScanBarcode, ScanLine, ShieldPlus, Tags, Truck, Undo2, User, Warehouse, Wrench, X,
+  Package as PackageIcon, Pencil, Plus, ScanBarcode, ScanLine, ShieldPlus, Tags, Truck, Undo2, User, Warehouse, Wrench, X, Zap
 } from 'lucide-react'
 import { blankParty, CURRENCY } from '../../growOrders/seed'
 import { growOrderActions, orderById, pickupRequestById, useGrowOrders } from '../../growOrders/store'
@@ -47,6 +47,8 @@ import {
 } from '../../growOrders/masters'
 import { ORIGIN_COUNTRIES } from '../../data/originCountries'
 import { toast } from '../../nueva/toast'
+import { autoPickupWindow, slotsFor, userWindowError, windowLabel } from '../../growOrders/pickupSlots'
+import { usePickupModuleConfig } from '../../config/pickupModule'
 import {
   Button, Checkbox, DateInput, IconButton, Input, MenuSelect, MultiSelect, MultiSelectDropdown, PageHeader, Panel,
   SearchInput, StatusPill, Toggle,
@@ -890,6 +892,22 @@ export default function AddOrderPage({ portal = 'grow' }: { portal?: 'grow' | 'c
     formMode,
   })
 
+  /* auto pickup — the window the user may pick (see the Consignment Details section) */
+  const pickupCfg = usePickupModuleConfig()
+  const pickupSlotOf = (p: Party) => {
+    const d = dateOf(p.windowStart ?? '') || today()
+    const all = slotsFor(d, pickupCfg)
+    return all.find((x) => x.startAt === p.windowStart) ?? all[0] ?? { label: '', startAt: `${d}T09:00`, endAt: `${d}T12:00` }
+  }
+  const pickupSlotOptions: Opt[] = slotsFor(dateOf(sender.windowStart ?? '') || today(), pickupCfg).map((x) => ({ value: x.label, label: x.label }))
+  const pickupSlotLabel = slotsFor(dateOf(sender.windowStart ?? '') || today(), pickupCfg).find((x) => x.startAt === sender.windowStart)?.label ?? ''
+  const pickupWindowError = sender.windowStart ? userWindowError(sender.windowStart, new Date(), pickupCfg, pickupCfg.autoPickup) : null
+  const pickupWindowHint = pickupWindowError
+    ? <span className="text-danger-fg">{pickupWindowError} — the fallback window will be used</span>
+    : sender.windowStart
+      ? `Booked for ${windowLabel({ startAt: sender.windowStart, endAt: sender.windowEnd ?? sender.windowStart })}`
+      : `Leave blank for the fallback: ${windowLabel(autoPickupWindow(new Date(), pickupCfg, pickupCfg.autoPickup))} · up to ${pickupCfg.autoPickup.maxDaysAhead} days ahead`
+
   const backTo = fromPr ? prPath(fromPr.id)
     : fromOverage ? prPath(fromOverage.pr.id)
     : draftId && !console_ ? `${base}?tab=drafts`
@@ -1028,6 +1046,36 @@ export default function AddOrderPage({ portal = 'grow' }: { portal?: 'grow' | 'c
               </Fld>
             )}
           </Grid>
+          {/* AUTO pickup (owner, 2026-09-24): the module raises the request itself — the form
+              only asks for a window when the account lets the user pick one, under the slot rules */}
+          {pickupCfg.enabled && pickupCfg.mode === 'auto' && (
+            pickupCfg.autoPickup.userSelectsWindow ? (
+              <>
+                <SubHead label="Pickup window" />
+                <Grid>
+                  <F label="Pickup date" type="date" value={dateOf(sender.windowStart ?? '')}
+                    helper={pickupWindowHint}
+                    onChange={(d) => setSender((p) => {
+                      if (!d) return { ...p, windowStart: '', windowEnd: '' }
+                      /* keep the slot the user had, on the new date */
+                      const cur = pickupSlotOf(p)
+                      const next = slotsFor(d, pickupCfg).find((x) => x.label === cur.label) ?? slotsFor(d, pickupCfg)[0]
+                      return next ? { ...p, windowStart: next.startAt, windowEnd: next.endAt } : p
+                    })} />
+                  <F label="Pickup slot" value={pickupSlotLabel} options={pickupSlotOptions}
+                    onChange={(v) => setSender((p) => {
+                      const s = slotsFor(dateOf(p.windowStart ?? '') || today(), pickupCfg).find((x) => x.label === v)
+                      return s ? { ...p, windowStart: s.startAt, windowEnd: s.endAt } : p
+                    })} />
+                </Grid>
+              </>
+            ) : (
+              <p className="mb-4 flex items-center gap-2 rounded-md border border-info-bg bg-info-bg px-3.5 py-2 text-[12.5px] text-ink">
+                <Zap size={13} className="shrink-0 text-brand-500" />
+                Pickup is booked automatically once this consignment is {pickupCfg.autoPickup.afterState}: {windowLabel(autoPickupWindow(new Date(), pickupCfg, pickupCfg.autoPickup))}.
+              </p>
+            )
+          )}
           {/* handling toggles — the console's chip row; Total Loading Time rides with Dedicate Truck */}
           <SubHead label="Handling" />
           <div className="flex flex-wrap items-center gap-3">

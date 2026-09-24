@@ -56,6 +56,16 @@ export interface AutoPickupConfig {
    * labelled and free of validation issues. Later states never raise one.
    */
   afterState: AutoPickupAfterState       // default 'Ready To Ship'
+  /**
+   * Whether the person creating the consignment may pick its pickup window
+   * (owner, 2026-09-24). Off = the rule below decides. On = the form offers a
+   * date + slot under the slot rules (`slotDefinitions`, `sameDayCutoff`,
+   * `bookingLeadTimeMins`, `maxDaysAhead`); a consignment created without a
+   * choice, or with one outside the rules, falls back to the rule.
+   */
+  userSelectsWindow: boolean             // default false
+  /** how far ahead the user may pick, in days (1–30) */
+  maxDaysAhead: number                   // default 7
   /** same-day = today when created before the same-day cutoff, else the next pickup day;
    *  next-business-day = always the next pickup day; days-after-order = created date + N, rolled onto a pickup day */
   dateRule: 'same-day' | 'next-business-day' | 'days-after-order'   // default 'next-business-day'
@@ -70,7 +80,7 @@ export const AUTO_AFTER_STATES = ['Created', 'Label Generated', 'Ready To Ship']
 export type AutoPickupAfterState = (typeof AUTO_AFTER_STATES)[number]
 export const AUTO_DATE_RULES = ['same-day', 'next-business-day', 'days-after-order'] as const
 export const DEFAULT_AUTO_PICKUP: AutoPickupConfig = Object.freeze({
-  afterState: 'Ready To Ship', dateRule: 'next-business-day', daysAfterOrder: 1, slot: '', pickupDays: Object.freeze([1, 2, 3, 4, 5, 6]) as unknown as number[],
+  afterState: 'Ready To Ship', userSelectsWindow: false, maxDaysAhead: 7, dateRule: 'next-business-day', daysAfterOrder: 1, slot: '', pickupDays: Object.freeze([1, 2, 3, 4, 5, 6]) as unknown as number[],
 }) as AutoPickupConfig
 export type MerchantOverride = Partial<Pick<PickupModuleConfig, 'sameDayCutoff' | 'slotDefinitions' | 'multiPrPolicy' | 'maxAttempts'>>
 
@@ -168,6 +178,8 @@ function normalize(raw: unknown): PickupModuleConfig {
     mode,
     autoPickup: {
       afterState: oneOf(ap.afterState, AUTO_AFTER_STATES, d.autoPickup.afterState),
+      userSelectsWindow: typeof ap.userSelectsWindow === 'boolean' ? ap.userSelectsWindow : d.autoPickup.userSelectsWindow,
+      maxDaysAhead: int(ap.maxDaysAhead, d.autoPickup.maxDaysAhead, 1, 30),
       dateRule: oneOf(ap.dateRule, AUTO_DATE_RULES, d.autoPickup.dateRule),
       daysAfterOrder: int(ap.daysAfterOrder, d.autoPickup.daysAfterOrder, 0, 14),
       slot: typeof ap.slot === 'string' && SLOT.test(ap.slot.trim()) ? ap.slot.trim() : '',

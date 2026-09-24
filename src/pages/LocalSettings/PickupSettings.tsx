@@ -43,6 +43,7 @@ const AFTER_STATE_OPTIONS: Opt[] = [
   { name: 'Label Generated — once it is paid and labelled', code: 'Label Generated' },
   { name: 'Ready To Ship — paid, labelled, no validation issues', code: 'Ready To Ship' },
 ]
+const YES_NO: Opt[] = [{ name: 'No', code: 'no' }, { name: 'Yes', code: 'yes' }]
 const DAY_CHIPS: { code: number; name: string }[] = [
   { code: 1, name: 'Mon' }, { code: 2, name: 'Tue' }, { code: 3, name: 'Wed' }, { code: 4, name: 'Thu' },
   { code: 5, name: 'Fri' }, { code: 6, name: 'Sat' }, { code: 0, name: 'Sun' },
@@ -57,7 +58,7 @@ const codes = (opts: Opt[]) => opts.map((o) => o.code)
 
 interface MerchantRuleDraft { code: string; sameDayCutoff: string; slots: string; multiPrPolicy: string; maxAttempts: string }
 type Draft = Omit<PickupModuleConfig, 'maxAttempts' | 'rescheduleWindowDays' | 'bookingLeadTimeMins' | 'slotDefinitions' | 'merchantOverrides' | 'autoPickup'> & {
-  autoPickup: Omit<AutoPickupConfig, 'daysAfterOrder'> & { daysAfterOrder: string }
+  autoPickup: Omit<AutoPickupConfig, 'daysAfterOrder' | 'maxDaysAhead'> & { daysAfterOrder: string; maxDaysAhead: string }
   maxAttempts: string
   rescheduleWindowDays: string
   bookingLeadTimeMins: string
@@ -74,7 +75,7 @@ function toDraft(c: PickupModuleConfig): Draft {
   return {
     ...rest,
     podRequirements: { ...c.podRequirements },
-    autoPickup: { ...c.autoPickup, daysAfterOrder: String(c.autoPickup.daysAfterOrder) },
+    autoPickup: { ...c.autoPickup, daysAfterOrder: String(c.autoPickup.daysAfterOrder), maxDaysAhead: String(c.autoPickup.maxDaysAhead) },
     maxAttempts: String(c.maxAttempts),
     rescheduleWindowDays: String(c.rescheduleWindowDays),
     bookingLeadTimeMins: String(c.bookingLeadTimeMins),
@@ -139,6 +140,24 @@ function ToggleField({ checked, onChange }: { checked: boolean; onChange: (v: bo
 
 function OptionSelect({ value, options, onChange }: { value: string; options: Opt[]; onChange: (v: string) => void }) {
   return <MenuSelect value={value} options={codes(options)} labels={labelOf(options)} onChange={onChange} />
+}
+
+/** Mon…Sun chips for the pickup days. */
+function DayChips({ value, onChange }: { value: number[]; onChange: (d: number[]) => void }) {
+  return (
+    <div className="flex flex-wrap justify-end gap-1.5">
+      {DAY_CHIPS.map((d) => {
+        const on = value.includes(d.code)
+        return (
+          <button key={d.code} type="button" aria-pressed={on}
+            onClick={() => onChange(on ? value.filter((x) => x !== d.code) : [...value, d.code].sort())}
+            className={`rounded-full border px-3 py-1 text-[12.5px] ${on ? 'border-brand-500 bg-brand-50 font-bold text-brand-500' : 'border-line bg-surface text-ink-2 hover:border-warm-300'}`}>
+            {d.name}
+          </button>
+        )
+      })}
+    </div>
+  )
 }
 
 /** The two ways requests are raised — one selected card (owner, 2026-09-24). */
@@ -242,12 +261,42 @@ export default function PickupSettings() {
             The pickup module is off. Switch it on to choose how requests are raised and to see booking, execution and merchant rules.
           </p>
         ) : draft.mode === 'auto' ? (
-          <SectionCard title="Auto pickup — pickup dates" hint="How the raised request picks its date and window. Slots and the same-day cutoff come from the manual card's values.">
+          <SectionCard title="Auto pickup" hint="Only what an automatic request needs: the state that raises it, and how its window is decided.">
             <LabeledField label="Raise the request after state" wide
               hint="The consignment state that raises the request. Later states (Picked Up, At Facility…) never do; a consignment that reaches this state later — validation fixed, payment made — is booked at that moment.">
               <OptionSelect value={draft.autoPickup.afterState} options={AFTER_STATE_OPTIONS}
                 onChange={(v) => setAuto({ afterState: v as AutoPickupConfig['afterState'] })} />
             </LabeledField>
+            <LabeledField label="Let the user pick the pickup window" hint="No = the rule below decides every window. Yes = the consignment form offers a date and slot under the slot rules; the rule below is the fallback.">
+              <OptionSelect value={draft.autoPickup.userSelectsWindow ? 'yes' : 'no'} options={YES_NO}
+                onChange={(v) => setAuto({ userSelectsWindow: v === 'yes' })} />
+            </LabeledField>
+            {draft.autoPickup.userSelectsWindow && (
+              <>
+                <div className="pt-3 text-[12px] font-bold uppercase tracking-wide text-ink-3">Slot rules</div>
+                <LabeledField label="Pickup slots" wide
+                  hint={globalBadSlots.length
+                    ? `Not HH:mm-HH:mm, will be dropped: ${globalBadSlots.join(', ')}`
+                    : 'The windows the user may choose from — comma-separated, HH:mm-HH:mm.'}>
+                  <Input value={draft.slotDefinitions} placeholder={slotsText(DEFAULT_PICKUP_MODULE_CONFIG.slotDefinitions)}
+                    onChange={(v) => set('slotDefinitions', v)} />
+                </LabeledField>
+                <LabeledField label="Same-day cutoff" hint="A same-day slot may be chosen only before this time.">
+                  <Input type="time" value={draft.sameDayCutoff} onChange={(v) => set('sameDayCutoff', v)} />
+                </LabeledField>
+                <LabeledField label="Book up to (days ahead)" hint="The furthest date the user may pick (1–30).">
+                  <Input type="number" value={draft.autoPickup.maxDaysAhead} onChange={(v) => setAuto({ maxDaysAhead: v })} />
+                </LabeledField>
+                <LabeledField label="Pickup days" wide hint="Only these days can be chosen; the fallback rule also rolls onto them.">
+                  <DayChips value={draft.autoPickup.pickupDays} onChange={(d) => setAuto({ pickupDays: d })} />
+                </LabeledField>
+                <LabeledField label="Minimum notice before the window (minutes)"
+                  hint="The courier needs this much notice: a chosen window that starts sooner than this is refused, and the fallback moves to the next slot or day.">
+                  <Input type="number" value={draft.bookingLeadTimeMins} onChange={(v) => set('bookingLeadTimeMins', v)} />
+                </LabeledField>
+                <div className="pt-3 text-[12px] font-bold uppercase tracking-wide text-ink-3">Fallback window — when the user does not pick</div>
+              </>
+            )}
             <LabeledField label="Pickup date rule" wide hint="Which day the collection is booked for, counted from the moment the consignment reaches that state.">
               <OptionSelect value={draft.autoPickup.dateRule} options={DATE_RULE_OPTIONS}
                 onChange={(v) => setAuto({ dateRule: v as AutoPickupConfig['dateRule'] })} />
@@ -257,7 +306,7 @@ export default function PickupSettings() {
                 <Input type="number" value={draft.autoPickup.daysAfterOrder} onChange={(v) => setAuto({ daysAfterOrder: v })} />
               </LabeledField>
             )}
-            {draft.autoPickup.dateRule === 'same-day' && (
+            {draft.autoPickup.dateRule === 'same-day' && !draft.autoPickup.userSelectsWindow && (
               <LabeledField label="Same-day cutoff" hint="A consignment created before this is collected the same day; after it, the next pickup day.">
                 <Input type="time" value={draft.sameDayCutoff} onChange={(v) => set('sameDayCutoff', v)} />
               </LabeledField>
@@ -267,26 +316,19 @@ export default function PickupSettings() {
                 labels={(v) => (v === '__first__' ? `First slot (${slotsFrom(draft.slotDefinitions)[0] ?? '—'})` : v)}
                 onChange={(v) => setAuto({ slot: v === '__first__' ? '' : v })} />
             </LabeledField>
-            <LabeledField label="Pickup days" wide hint="Requests are only raised for these days; other days roll forward.">
-              <div className="flex flex-wrap justify-end gap-1.5">
-                {DAY_CHIPS.map((d) => {
-                  const on = draft.autoPickup.pickupDays.includes(d.code)
-                  return (
-                    <button key={d.code} type="button" aria-pressed={on}
-                      onClick={() => setAuto({ pickupDays: on ? draft.autoPickup.pickupDays.filter((x) => x !== d.code) : [...draft.autoPickup.pickupDays, d.code].sort() })}
-                      className={`rounded-full border px-3 py-1 text-[12.5px] ${on ? 'border-brand-500 bg-brand-50 font-bold text-brand-500' : 'border-line bg-surface text-ink-2 hover:border-warm-300'}`}>
-                      {d.name}
-                    </button>
-                  )
-                })}
-              </div>
-            </LabeledField>
-            <LabeledField label="Minimum notice before the window (minutes)"
-              hint="The courier needs this much notice: if the computed window would start sooner than this after the request is raised, the pickup moves to the next slot, or the next pickup day. Shared with manual booking as its lead time.">
-              <Input type="number" value={draft.bookingLeadTimeMins} onChange={(v) => set('bookingLeadTimeMins', v)} />
-            </LabeledField>
+            {!draft.autoPickup.userSelectsWindow && (
+              <>
+                <LabeledField label="Pickup days" wide hint="Requests are only raised for these days; other days roll forward.">
+                  <DayChips value={draft.autoPickup.pickupDays} onChange={(d) => setAuto({ pickupDays: d })} />
+                </LabeledField>
+                <LabeledField label="Minimum notice before the window (minutes)"
+                  hint="The courier needs this much notice: if the computed window would start sooner than this after the request is raised, the pickup moves to the next slot, or the next pickup day.">
+                  <Input type="number" value={draft.bookingLeadTimeMins} onChange={(v) => set('bookingLeadTimeMins', v)} />
+                </LabeledField>
+              </>
+            )}
             <div className="py-3 text-[13px] text-ink-2">
-              <span className="font-bold text-ink">Preview:</span> a consignment reaching <span className="font-bold text-ink">{draft.autoPickup.afterState}</span> now would be collected{' '}
+              <span className="font-bold text-ink">Preview:</span> a consignment reaching <span className="font-bold text-ink">{draft.autoPickup.afterState}</span> now{draft.autoPickup.userSelectsWindow ? ', with no window picked,' : ''} would be collected{' '}
               <span className="font-bold text-ink">{windowLabel(autoPickupWindow(new Date(), next, next.autoPickup))}</span>
               <span className="text-ink-3"> · {autoPickupSummary(next)}</span>
             </div>
@@ -347,16 +389,22 @@ export default function PickupSettings() {
           <LabeledField label="Auto-reschedule on failure" hint="Re-raise a failed pickup for the next business day while attempts remain.">
             <ToggleField checked={draft.autoRescheduleOnFail} onChange={(v) => set('autoRescheduleOnFail', v)} />
           </LabeledField>
-          <LabeledField label="Allow add-to-existing until" hint="Last status at which consignments can join an existing request.">
-            <OptionSelect value={draft.allowAddToExistingUntil} options={STAGE_OPTIONS}
-              onChange={(v) => set('allowAddToExistingUntil', v as PickupModuleConfig['allowAddToExistingUntil'])} />
-          </LabeledField>
-          <LabeledField label="Merchant can cancel until" hint="Last status at which a merchant may cancel a request.">
-            <OptionSelect value={draft.merchantCancelUntil} options={STAGE_OPTIONS}
-              onChange={(v) => set('merchantCancelUntil', v as PickupModuleConfig['merchantCancelUntil'])} />
-          </LabeledField>
+          {/* manual-booking rules only (owner, 2026-09-24): an auto request has no one adding to it or cancelling it from the portal */}
+          {draft.mode === 'manual' && (
+            <>
+              <LabeledField label="Allow add-to-existing until" hint="Last status at which consignments can join an existing request.">
+                <OptionSelect value={draft.allowAddToExistingUntil} options={STAGE_OPTIONS}
+                  onChange={(v) => set('allowAddToExistingUntil', v as PickupModuleConfig['allowAddToExistingUntil'])} />
+              </LabeledField>
+              <LabeledField label="Merchant can cancel until" hint="Last status at which a merchant may cancel a request.">
+                <OptionSelect value={draft.merchantCancelUntil} options={STAGE_OPTIONS}
+                  onChange={(v) => set('merchantCancelUntil', v as PickupModuleConfig['merchantCancelUntil'])} />
+              </LabeledField>
+            </>
+          )}
         </SectionCard>
 
+        {draft.mode === 'manual' && (
         <section className="bg-surface border border-line rounded-xl shadow-ds-1 px-5 py-4">
           <div className="text-[15px] font-bold text-ink">Merchant rules</div>
           <p className="mt-0.5 text-[13px] text-ink-3">
@@ -404,6 +452,7 @@ export default function PickupSettings() {
             </Button>
           </div>
         </section>
+        )}
         </>)}
       </div>
     </div>

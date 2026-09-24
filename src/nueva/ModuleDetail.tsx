@@ -724,6 +724,14 @@ function PickupGeneralTab({ draft, patch }: {
               <FeatureRow label="Auto pickup — raise after state" hint="The consignment state that raises the request; later states never do.">
                 <RadioRow options={AUTO_AFTER_STATE_OPTIONS} value={String(auto.afterState)} onChange={(v) => setAuto({ afterState: v as AutoPickupConfig['afterState'] })} />
               </FeatureRow>
+              <FeatureRow label="Auto pickup — user picks the window" hint="On: the consignment form offers a date + slot under the slot rules; the date rule below is the fallback.">
+                <Toggle checked={!!auto.userSelectsWindow} onChange={(v) => setAuto({ userSelectsWindow: v })} />
+              </FeatureRow>
+              {auto.userSelectsWindow && (
+                <FeatureRow label="Auto pickup — book up to (days ahead)" hint="The furthest date the user may pick (1–30).">
+                  <div className="w-28"><Input type="number" value={String(auto.maxDaysAhead)} onChange={(v) => setAuto({ maxDaysAhead: v === '' ? 7 : Number(v) })} /></div>
+                </FeatureRow>
+              )}
               <FeatureRow label="Auto pickup — date rule" hint="Which day the collection is booked for, counted from creation.">
                 <RadioRow options={AUTO_DATE_RULE_OPTIONS} value={String(auto.dateRule)} onChange={(v) => setAuto({ dateRule: v as AutoPickupConfig['dateRule'] })} />
               </FeatureRow>
@@ -755,9 +763,11 @@ function PickupGeneralTab({ draft, patch }: {
           <FeatureRow label="Max attempts" hint="Pickup attempts before a failed request closes (1–5).">
             <div className="w-28"><Input type="number" value={str('maxAttempts')} onChange={numIn('maxAttempts')} /></div>
           </FeatureRow>
+          {fs.mode !== 'auto' && (
           <FeatureRow label="Allow add-to-existing until" hint="Last status at which consignments can join an existing request.">
             <RadioRow options={STAGE_OPTIONS} value={String(fs.allowAddToExistingUntil ?? '')} onChange={(v) => set('allowAddToExistingUntil', v)} />
           </FeatureRow>
+          )}
           <FeatureRow label="Reschedule window (days)" hint="How far ahead a pickup can be rescheduled.">
             <div className="w-28"><Input type="number" value={str('rescheduleWindowDays')} onChange={numIn('rescheduleWindowDays')} /></div>
           </FeatureRow>
@@ -776,16 +786,18 @@ function PickupGeneralTab({ draft, patch }: {
             <div className="w-72"><Input value={slotsText(fs.slotDefinitions)} onChange={(v) => set('slotDefinitions', v ? slotsFrom(v) : [])} /></div>
           </FeatureRow>
           <ProofOfPickupRows value={pod} onChange={(next) => set('podRequirements', next)} />
+          {fs.mode !== 'auto' && (
           <FeatureRow label="Merchant can cancel until" hint="Last status at which a merchant may cancel a request.">
             <RadioRow options={STAGE_OPTIONS} value={String(fs.merchantCancelUntil ?? '')} onChange={(v) => set('merchantCancelUntil', v)} />
           </FeatureRow>
+          )}
           <FeatureRow label="Auto-reschedule on failure" hint="Re-raise a failed pickup for the next business day while attempts remain.">
             <Toggle checked={!!fs.autoRescheduleOnFail} onChange={(v) => set('autoRescheduleOnFail', v)} />
           </FeatureRow>
           </>)}
         </div>
       </div>
-      {!!fs.enabled && <MerchantRulesTable rules={rules} global={fs} onChange={(next) => patch({ merchantRules: next })} />}
+      {!!fs.enabled && fs.mode !== 'auto' && <MerchantRulesTable rules={rules} global={fs} onChange={(next) => patch({ merchantRules: next })} />}
     </div>
   )
 }

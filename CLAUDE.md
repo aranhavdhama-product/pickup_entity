@@ -218,7 +218,11 @@ effects (a cancelled/rescheduled PR leaving its trip) flow through `onPickupRequ
   **`mode` (owner, 2026-09-24): `manual` (default) = merchants/ops book; `auto` = a request is
   raised the moment a consignment is created on the date `autoPickup` computes
   (`afterState` Created | Label Generated | Ready To Ship = the consignment state that raises it —
-  `autoPickupEligible()`; a consignment reaching it LATER is booked from `update()`; `dateRule`
+  `autoPickupEligible()`; a consignment reaching it LATER is booked from `update()`;
+  `userSelectsWindow` + `maxDaysAhead` = the consignment form offers a date + slot under the slot
+  rules (`userWindowError()`), stored as the sender's window and honoured by
+  `autoPickupWindowFor()` else the fallback rule; in auto mode the settings page asks ONLY
+  auto-relevant options — add-to-existing, merchant-cancel and merchant rules are manual-only; `dateRule`
   same-day | next-business-day | days-after-order, `daysAfterOrder`, `slot`, `pickupDays`; `autoPickupWindow()` / `autoPickupSummary()` in `pickupSlots.ts`; the legacy
   `autoCreateOnConsignment` is derived from it). `/local/settings/pickup` shows the module
   toggle, then two selectable mode cards, and the card below switches with the mode (Auto:
