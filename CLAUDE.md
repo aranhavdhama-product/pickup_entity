@@ -102,11 +102,14 @@ removed from `src/index.css` and `GrowOrders/ui.tsx` is RETIRED (nothing imports
 it, never import it again). Grow keeps its routes, stores and behaviour; only rendering changed.
 Non-component helpers live in `utils.ts` (window spans, overdue/duplicate selectors,
 `groupForPickup`); data is the local `src/growOrders` store (types/seed/store/tabs/draft/hubs,
-localStorage key `fareye-grow-orders-v14`, every persisted record is normalized on load — bump
+localStorage key `fareye-grow-orders-v15`, every persisted record is normalized on load — bump
 the key when a required field is added). `hubs.ts` holds `INBOUND_HUBS` + `inboundHubFor()`:
-every parcel order carries an `inboundHubCode` derived from its receiver. The seed is ~80
-orders / ~30 pickup requests, built from deterministic index math (never `Math.random`) so a
-reload shows the same data. Runs with no session.
+every parcel order carries an `inboundHubCode` derived from its receiver. The seed is ~80 demo
+orders / ~30 pickup requests, built from deterministic index math (never `Math.random`), PLUS
+150 LIVE consignments pulled from staging (`src/growOrders/stagingConsignments.ts` — company
+20106 Chicago network, generated 2026-09-24 through `POST /staging/sbs/graphql`; regenerate,
+never hand-edit; their stores and the ORD/CHICAGO hubs ride along), so a reload shows the same
+data. Runs with no session.
 
 Product changes layered on the replica (deliberate departures from the live portal):
 - **Consignment Order page** (`/grow/orders`, nav "Shipments") — the `/local/consignments`
@@ -213,7 +216,11 @@ effects (a cancelled/rescheduled PR leaving its trip) flow through `onPickupRequ
   Base Modules → **Pickup Request** page and the Pilot Driver App → Pickup Module card; the
   local app never calls `/staging`). `enabled:false` hides only the pickup additions.
 - Pages: `/local/consignments` (Merchant → Pickup Address filter, bulk **Schedule** →
-  `SchedulePickupDialog`, no Create Pickup), `/local/pickup` (+ `/:id`, `LocalPickup/*`),
+  `SchedulePickupDialog`, no Create Pickup; **Add** → `/local/consignments/add[/vehicle]` = the
+  SAME `AddOrderPage` with `portal="console"`: an Order Category card (4 Person · Stackable ·
+  Fragile · VIP · Hazmat · Heavy Weight → `consignment.category`, which then drives the row's
+  flags) below VAS, no checkout and no drafts — ops create outright; the Grow form never shows
+  that card), `/local/pickup` (+ `/:id`, `LocalPickup/*`),
   `/local/pending-for-planning` (tabs All · Consignments · Pickups; Plan Collection routes
   onto trips), `/local/control-tower` (+ `/trips/:id`; `AddToRouteDialog` is shared),
   `/local/inbound` (+ `/scanner`), `/driver` (FarEye Pilot look; login as a seeded driver).

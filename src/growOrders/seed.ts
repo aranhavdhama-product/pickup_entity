@@ -6,6 +6,7 @@ import type {
   PickupSource, PickupStatusEvent, ShipmentType, SizeClass, StoreLocation,
 } from './types'
 import { blankHandover, PR_DEFAULTS } from './types'
+import { STAGING_CONSIGNMENTS, STAGING_STORES } from './stagingConsignments'
 
 export const MERCHANT = { code: '2GO_PH', name: '2GO_PH' }
 export const CURRENCY = '₱'
@@ -771,5 +772,6 @@ export function seed(): GrowOrdersDb {
       ? { ...p, pickedOrderIds: [...p.orderIds] }
       : p))
     .map(withExecution)
-  return { stores: STORES, orders: allOrders, pickupRequests: allRequests, hubOverages: [] }
+  /* the live staging pull (owner, 2026-09-24) sits under the demo rows, newest first */
+  return { stores: [...STORES, ...STAGING_STORES], orders: [...allOrders, ...STAGING_CONSIGNMENTS], pickupRequests: allRequests, hubOverages: [] }
 }

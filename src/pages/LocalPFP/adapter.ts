@@ -38,6 +38,10 @@ const HEAVY_KG = 25
 const FRAGILE_VALUE = 5000
 
 function flagsOf(o: GrowOrder): CategoryFlag[] {
+  /* the console's Add form records Order Category explicitly (owner, 2026-09-24);
+     a merchant order has no such record and keeps the derived flags */
+  const explicit = o.consignment?.category
+  if (explicit) return CATEGORY_FLAGS.filter((f) => explicit.includes(f))
   const out: CategoryFlag[] = []
   const total = totalWeightKg(o)
   if (o.codAmount > 0) out.push('VIP')

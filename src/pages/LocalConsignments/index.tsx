@@ -196,7 +196,7 @@ export default function LocalConsignments() {
         disabled: sel.length !== 1,
         onClick: sel.length === 1
           /* reopens the order in the merchant's own Add Order flow */
-          ? () => nav(`/grow/orders/add?draft=${sel[0].orderId}`)
+          ? () => nav(`/local/consignments/add?draft=${sel[0].orderId}`)
           : undefined,
       },
       /* TWO different schedules, two different statuses:
@@ -252,7 +252,7 @@ export default function LocalConsignments() {
       <LocalTabs
         tabs={TABS.map((t, i) => ({ id: String(i), label: t.label, count: tabCounts[i], icon: TAB_ICONS[i] }))}
         active={String(tab)} onChange={(id) => { setTab(Number(id)); setPage(1) }}
-        right={<AddUpload onAdd={() => nav('/grow/orders/add')} onUpload={() => setUploading(true)} />} />
+        right={<AddUpload onAdd={() => nav('/local/consignments/add')} onUpload={() => setUploading(true)} />} />
 
       <FilterLine
         right={<>

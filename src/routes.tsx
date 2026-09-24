@@ -63,6 +63,7 @@ import ConsignmentsPage from './pages/GrowPortal/ConsignmentsPage'
 import GrowOrdersLayout from './pages/GrowOrders/GrowOrdersLayout'
 import OrdersListPage from './pages/GrowOrders/OrdersListPage'
 import AddOrderPage from './pages/GrowOrders/AddOrderPage'
+import LocalAddConsignment from './pages/LocalConsignments/AddConsignment'
 import OrderViewPage from './pages/GrowOrders/OrderViewPage'
 import CheckoutPage from './pages/GrowOrders/CheckoutPage'
 import PickupRequestsPage from './pages/GrowOrders/PickupRequestsPage'
@@ -114,6 +115,8 @@ export default function AppRoutes() {
         <Route path="/local/pending-for-planning-replica/:id" element={<LocalPendingForPlanning key="replica" variant="replica" />} />
         {/* the detail is a drawer over the list, so the SAME element answers both */}
         <Route path="/local/consignments" element={<LocalConsignments />} />
+        <Route path="/local/consignments/add" element={<LocalAddConsignment />} />
+        <Route path="/local/consignments/add/vehicle" element={<LocalAddConsignment />} />
         <Route path="/local/consignments/:id" element={<LocalConsignments />} />
         {/* first-mile pickup: requests → trips (Control Tower) → handover (Inbound) */}
         <Route path="/local/pickup" element={<LocalPickup />} />

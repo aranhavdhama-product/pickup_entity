@@ -36,7 +36,7 @@ import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ArrowRight, Barcode, CalendarCheck, CircleDot, CircleMinus, ClipboardList, FileCheck, MapPin, Package,
-  Package as PackageIcon, Pencil, Plus, ScanBarcode, ScanLine, ShieldPlus, Truck, Undo2, User, Warehouse, Wrench, X,
+  Package as PackageIcon, Pencil, Plus, ScanBarcode, ScanLine, ShieldPlus, Tags, Truck, Undo2, User, Warehouse, Wrench, X,
 } from 'lucide-react'
 import { blankParty, CURRENCY } from '../../growOrders/seed'
 import { growOrderActions, orderById, pickupRequestById, useGrowOrders } from '../../growOrders/store'
@@ -544,11 +544,24 @@ const jumpTo = (id: string) => document.getElementById(id)?.scrollIntoView({ beh
 const ICON = 'text-brand-500'
 
 /* -------------------------------------------------------------------- page ---- */
-export default function AddOrderPage() {
+/** Order Category — the console's six switches, in staging's order. */
+const ORDER_CATEGORIES = ['4 Person', 'Stackable', 'Fragile', 'VIP', 'Hazmat', 'Heavy Weight'] as const
+
+/**
+ * `portal` = whose shell the form is in. The CONSOLE variant (`/local/consignments/add`)
+ * adds the Order Category card below VAS, creates the consignment outright (no
+ * checkout, no drafts — payment is the merchant's gate, not ops') and returns to
+ * the Consignment Order list; the Grow variant is unchanged.
+ */
+export default function AddOrderPage({ portal = 'grow' }: { portal?: 'grow' | 'console' } = {}) {
+  const console_ = portal === 'console'
+  const base = console_ ? '/local/consignments' : '/grow/orders'
+  const prPath = (id: string) => (console_ ? `/local/pickup/${id}` : `/grow/orders/pickups/${id}`)
   const nav = useNavigate()
   const db = useGrowOrders()
   const masters = useMasters()
-  const merchant = currentMerchant(masters.merchants, useMerchantCode())
+  const merchantCode = useMerchantCode()
+  const merchant = currentMerchant(masters.merchants, merchantCode)
   const pickup = usePickupLocations(db.stores)
   const stores = pickup.stores
   const packageTypes = useMemo(
@@ -616,6 +629,8 @@ export default function AddOrderPage() {
       clearanceRequired: false, scannable: false, splittable: false,
       specialInstructions: '', rtoMode: RTO_MODES[0], vas: [],
       carrier: qa ? (ftlFirst ? CARRIERS[1].code : CARRIERS[0].code) : '',
+      /* the console records Order Category explicitly — an empty list is a choice */
+      ...(console_ ? { category: [] } : {}),
       ...saved?.consignment,
       /* an older FTL draft kept its extras in additionalServices — they are VAS rows now */
       ...(saved && !saved.consignment?.vas?.length && saved.additionalServices?.length
@@ -875,10 +890,10 @@ export default function AddOrderPage() {
     formMode,
   })
 
-  const backTo = fromPr ? `/grow/orders/pickups/${fromPr.id}`
-    : fromOverage ? `/grow/orders/pickups/${fromOverage.pr.id}`
-    : draftId ? '/grow/orders?tab=drafts'
-    : '/grow/orders'
+  const backTo = fromPr ? prPath(fromPr.id)
+    : fromOverage ? prPath(fromOverage.pr.id)
+    : draftId && !console_ ? `${base}?tab=drafts`
+    : base
 
   const persistTypedSender = () => {
     if (senderStore === OTHER_ADDRESS && saveSender && partyOk(sender)) {
@@ -892,14 +907,16 @@ export default function AddOrderPage() {
 
   /* ---- the sections, in each tier's staging order ---- */
   const pkgIds = isFtl ? ['sec-vehicle'] : full ? ['sec-sku', 'sec-piece'] : ['sec-package']
+  /* Order Category sits below VAS on the console only (owner, 2026-09-24) */
+  const categoryIds = console_ ? ['sec-category'] : []
   const sections = full
-    ? ['sec-consignment', 'sec-ship-from', 'sec-rto', 'sec-ship-to', ...pkgIds, 'sec-vas', 'sec-carriers']
-    : ['sec-consignment', 'sec-ship', ...pkgIds, ...(isFtl ? ['sec-vas'] : []), 'sec-carriers']
+    ? ['sec-consignment', 'sec-ship-from', 'sec-rto', 'sec-ship-to', ...pkgIds, 'sec-vas', ...categoryIds, 'sec-carriers']
+    : ['sec-consignment', 'sec-ship', ...pkgIds, ...(isFtl ? ['sec-vas'] : []), ...categoryIds, 'sec-carriers']
   const doneOf: Record<string, boolean> = {
     'sec-consignment': done(consignmentReq), 'sec-ship': done(fromReq) && done(toReq),
     'sec-ship-from': done(fromReq), 'sec-ship-to': done(toReq), 'sec-rto': done(rtoReq),
     'sec-package': done(pieceReq) && done(skuReq), 'sec-sku': done(skuReq), 'sec-piece': done(pieceReq), 'sec-vehicle': done(pieceReq),
-    'sec-vas': done(vasReq), 'sec-carriers': done(carrierReq),
+    'sec-vas': done(vasReq), 'sec-category': true, 'sec-carriers': done(carrierReq),
   }
 
   const proceed = () => {
@@ -912,6 +929,21 @@ export default function AddOrderPage() {
       return
     }
     persistTypedSender()
+    if (console_) {
+      /* ops create the consignment outright — there is no payment gate on this side */
+      const o = growOrderActions.saveDraft(buildDraft(), draftId ?? undefined)
+      growOrderActions.markPaid(o.id)
+      clearDraftKeys()
+      if (fromPr && growOrderActions.attachOrdersToPickup(fromPr.id, [o.id]).length > 0) {
+        toast.success(`Consignment ${o.orderNumber} created and added to ${fromPr.number}`)
+        nav(prPath(fromPr.id))
+        return
+      }
+      const auto = growOrderActions.autoBookOnConsignment(o.id, merchantCode)
+      toast.success(auto ? `Consignment ${o.orderNumber} created · Pickup Request ${auto.number} scheduled` : `Consignment ${o.orderNumber} created`)
+      nav(base)
+      return
+    }
     sessionStorage.setItem(DRAFT_KEY, JSON.stringify(buildDraft()))
     setDraftSidecar({
       pickupId: fromPr?.id ?? null,
@@ -924,7 +956,7 @@ export default function AddOrderPage() {
     const o = growOrderActions.saveDraft(buildDraft(), draftId ?? undefined)
     clearDraftKeys()
     toast.success(`Consignment ${o.orderNumber} saved to Drafts`)
-    nav('/grow/orders?tab=drafts')
+    nav(`${base}?tab=drafts`)
   }
 
   /* ------------------------------------------------------------ sections */
@@ -1466,6 +1498,24 @@ export default function AddOrderPage() {
     </div>
   )
 
+  /* Order Category — console only: six switches on one line, as staging's card */
+  const categories = c.category ?? []
+  const toggleCategory = (name: string, on: boolean) =>
+    setC({ category: on ? [...categories.filter((x) => x !== name), name] : categories.filter((x) => x !== name) })
+  const categorySection = console_ ? (
+    <SectionCard id="sec-category" title="Order Category" icon={<Tags size={15} className={ICON} />}
+      caption="Handling categories ops and the driver see on the consignment.">
+      <div className="flex flex-wrap items-center gap-x-8 gap-y-3 pt-1">
+        {ORDER_CATEGORIES.map((name) => (
+          <label key={name} className="flex cursor-pointer items-center gap-3 text-[13px] text-ink">
+            <span>{name}</span>
+            <Toggle checked={categories.includes(name)} onChange={(v) => toggleCategory(name, v)} />
+          </label>
+        ))}
+      </div>
+    </SectionCard>
+  ) : null
+
   const carrierSection = (
     <SectionCard id="sec-carriers" title="Carriers" count={CARRIERS.length} done={doneOf['sec-carriers']}
       icon={<Truck size={15} className={ICON} />}
@@ -1497,7 +1547,7 @@ export default function AddOrderPage() {
   const byId: Record<string, ReactNode> = {
     'sec-consignment': consignmentSection, 'sec-ship': shipSimplified, 'sec-ship-from': shipFromSection,
     'sec-rto': rtoSection, 'sec-ship-to': shipToSection, 'sec-package': packageSimplified, 'sec-sku': skuSection,
-    'sec-piece': pieceSection, 'sec-vehicle': vehicleSection, 'sec-vas': vasSection, 'sec-carriers': carrierSection,
+    'sec-piece': pieceSection, 'sec-vehicle': vehicleSection, 'sec-vas': vasSection, 'sec-category': categorySection, 'sec-carriers': carrierSection,
   }
   const pct = Math.round((filledCount / allReq.length) * 100)
 
@@ -1573,7 +1623,7 @@ export default function AddOrderPage() {
         {showErrors && !canSubmit && (
           <span className="text-[13px] text-brand-500">{missingCount} required field{missingCount === 1 ? '' : 's'} remaining</span>
         )}
-        <Button variant="ghost" onClick={saveForLater}>Save for Later</Button>
+        {!console_ && <Button variant="ghost" onClick={saveForLater}>Save for Later</Button>}
         <Button variant="outline" onClick={() => { clearDraftKeys(); nav(backTo) }}>Go Back</Button>
         <Button onClick={proceed}>Create Consignment</Button>
       </div>

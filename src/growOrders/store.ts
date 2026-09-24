@@ -44,7 +44,7 @@ import { readPickupModuleConfig } from '../config/pickupModule'
 /* v14: seed clean-up (one inbound hub per parcel PR, FTL orders on their own
    PRs 138/139, PR-000129's auto re-attempt PR-000140, PR-000104 back to
    Requested) + `carrierPickupRef`; bumped TOGETHER with planningStore's v4. */
-const KEY = 'fareye-grow-orders-v14'
+const KEY = 'fareye-grow-orders-v15'
 
 /** Explicit field defaults — deliberately NOT derived from a seed row, so what a
  *  persisted blob inherits can never drift with the seed data. */
