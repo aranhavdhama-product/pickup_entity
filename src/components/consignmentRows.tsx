@@ -38,8 +38,8 @@ import type { MasterRecord, SkuMasterRow } from '../nueva/settingsApi'
 /* ------------------------------------------------------------- shared chrome ---- */
 
 /** Same label anatomy as the address sections' fields, so all sections read alike. */
-function Fld({ label, required, children, className }: {
-  label: string; required?: boolean; children: React.ReactNode; className?: string
+export function Fld({ label, required, helper, children, className }: {
+  label: string; required?: boolean; helper?: React.ReactNode; children: React.ReactNode; className?: string
 }) {
   return (
     <div className={`min-w-0 ${className ?? ''}`}>
@@ -48,12 +48,13 @@ function Fld({ label, required, children, className }: {
         {required && <span className="shrink-0 text-brand-500">*</span>}
       </label>
       {children}
+      {helper && <div className="mt-1">{helper}</div>}
     </div>
   )
 }
 
 /** Read-only derived value (e.g. volume from L×W×H) presented at input height. */
-function DerivedBox({ value }: { value: string }) {
+export function DerivedBox({ value }: { value: string }) {
   return (
     <div className="flex h-8 items-center rounded-md border border-warm-200 bg-warm-100/70 px-3 text-[13px] text-ink-2">
       {value}
@@ -64,7 +65,7 @@ function DerivedBox({ value }: { value: string }) {
 /** inline unit chooser that lives INSIDE a composite control ("10 x 10 x 10 [cm]").
  * The menu is PORTALED — accordion rows are overflow-hidden, which would clip
  * an absolutely-positioned dropdown into invisibility. */
-function UnitPick({ value, options, onChange }: {
+export function UnitPick({ value, options, onChange }: {
   value: string; options: string[]; onChange: (v: string) => void
 }) {
   const [open, setOpen] = useState(false)
@@ -119,7 +120,7 @@ function UnitPick({ value, options, onChange }: {
 }
 
 /** one small bordered box holding a single MiniNum — for side-by-side L | B | H */
-function MiniBox({ children }: { children: React.ReactNode }) {
+export function MiniBox({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-8 min-w-0 flex-1 items-center rounded-md border border-warm-300 bg-surface transition-shadow
                     focus-within:border-brand-500 focus-within:ring-[3px] focus-within:ring-brand-500/20">
@@ -129,7 +130,7 @@ function MiniBox({ children }: { children: React.ReactNode }) {
 }
 
 /** non-interactive unit tag — for composites whose unit is derived elsewhere */
-function UnitTag({ value }: { value: string }) {
+export function UnitTag({ value }: { value: string }) {
   return (
     <span className="flex h-full shrink-0 items-center rounded-r-[5px] border-l border-warm-200 bg-warm-50 px-1.5
                      text-[11px] font-bold uppercase text-ink-3">
@@ -139,7 +140,7 @@ function UnitTag({ value }: { value: string }) {
 }
 
 /** borderless number cell inside a composite control */
-function MiniNum({ value, placeholder, onChange }: {
+export function MiniNum({ value, placeholder, onChange }: {
   value: string; placeholder: string; onChange: (v: string) => void
 }) {
   return (
@@ -154,7 +155,7 @@ function MiniNum({ value, placeholder, onChange }: {
 }
 
 /** the composite shell — one input-height border, orange focus ring for whatever is inside */
-function Composite({ children }: { children: React.ReactNode }) {
+export function Composite({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-8 items-center rounded-md border border-warm-300 bg-surface transition-shadow
                     focus-within:border-brand-500 focus-within:ring-[3px] focus-within:ring-brand-500/20">
@@ -163,7 +164,7 @@ function Composite({ children }: { children: React.ReactNode }) {
   )
 }
 
-function TotalsStrip({ items }: { items: [string, string][] }) {
+export function TotalsStrip({ items }: { items: [string, string][] }) {
   return (
     <div className="mt-4 flex flex-wrap items-center gap-x-8 gap-y-2 border-t border-line pt-3">
       {items.map(([label, value]) => (
@@ -176,7 +177,7 @@ function TotalsStrip({ items }: { items: [string, string][] }) {
 }
 
 /** A dim separator between summary facts, so a collapsed row reads as one line. */
-function Facts({ items }: { items: (string | null | undefined)[] }) {
+export function Facts({ items }: { items: (string | null | undefined)[] }) {
   const shown = items.filter(Boolean) as string[]
   if (!shown.length) return <span className="text-[13px] text-ink-3">Not filled in yet</span>
   return (

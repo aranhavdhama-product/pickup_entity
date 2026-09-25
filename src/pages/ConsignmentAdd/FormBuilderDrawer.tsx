@@ -15,7 +15,7 @@ import { useState } from 'react'
 import { GripVertical, Lock, RotateCcw, X, Eye, EyeOff } from 'lucide-react'
 import { Button } from '../../nueva/components'
 import {
-  FIELD_SECTIONS, orderedSectionFields, byKeyMandatory,
+  FIELD_SECTIONS, orderedSectionFields, byKeyMandatory, fieldTier,
   type FieldConfig, type FieldSection, type FormBehavior,
 } from './fieldConfig'
 
@@ -87,7 +87,7 @@ export function FormBuilderDrawer({ open, onClose, cfg, onChange, onReset, behav
                           onChange={(e) => patch(f.key, { label: e.target.value || undefined })}
                           className="min-w-0 flex-1 border-0 bg-transparent text-[13px] text-ink outline-none placeholder:text-warm-400"
                         />
-                        {f.form === 'full' && <span className="shrink-0 rounded bg-warm-100 px-1.5 py-0.5 text-[10px] font-bold text-ink-3">FULL</span>}
+                        {fieldTier(f.key) === 'advanced' && <span className="shrink-0 rounded bg-warm-100 px-1.5 py-0.5 text-[10px] font-bold text-ink-3">ADVANCED</span>}
                         {mandatory
                           ? <span title="Required — can't be hidden" className="shrink-0 text-warm-400"><Lock size={14} /></span>
                           : (

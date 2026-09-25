@@ -31,7 +31,7 @@ import { cssVars } from '../LocalPFP/stagingTokens'
 const OFF = 'Not part of this prototype'
 const NAV: ShellNavItem[] = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, title: OFF },
-  { id: 'shipments', label: 'Shipments', icon: ShoppingCart, path: '/grow/orders' },
+  { id: 'shipments', label: 'Consignments', icon: ShoppingCart, path: '/grow/orders' },
   { id: 'pickups', label: 'Pickup Requests', icon: PackageCheck, path: '/grow/orders/pickups' },
   { id: 'tracking', label: 'Tracking', icon: MapPinned, title: OFF },
   { id: 'quote', label: 'Get Quote', icon: Truck, title: OFF },

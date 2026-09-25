@@ -108,8 +108,8 @@ export function Select({
  * Select untouched.
  */
 export function MenuSelect({
-  value, placeholder = 'Select', options = [], onChange, size = 'sm', labels, searchable, creatable,
-}: { value?: string; placeholder?: string; options?: string[]; onChange?: (v: string) => void; size?: 'sm' | 'lg'; labels?: (v: string) => string; searchable?: boolean; creatable?: boolean }) {
+  value, placeholder = 'Select', options = [], onChange, size = 'sm', labels, searchable, creatable, disabled,
+}: { value?: string; placeholder?: string; options?: string[]; onChange?: (v: string) => void; size?: 'sm' | 'lg'; labels?: (v: string) => string; searchable?: boolean; creatable?: boolean; disabled?: boolean }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
   // menu geometry, measured from the trigger when opening; flips up when the
@@ -156,10 +156,11 @@ export function MenuSelect({
   return (
     <div ref={ref} className="relative">
       <button
-        type="button" onClick={() => (open ? setOpen(false) : openMenu())}
+        type="button" disabled={disabled} onClick={() => (open ? setOpen(false) : openMenu())}
         aria-haspopup="listbox" aria-expanded={open}
         className={`flex w-full items-center justify-between gap-2 border border-warm-300 bg-surface text-left
                    focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/20 focus:outline-none transition-shadow
+                   disabled:bg-warm-50 disabled:text-ink-3 disabled:cursor-not-allowed
                    ${lg ? 'h-11 rounded-lg text-[14px] pl-3 pr-3' : 'h-8 rounded-md text-[13px] pl-3 pr-2.5'}`}>
         <span className={`truncate ${shown ? 'text-ink' : 'text-warm-400'}`}>
           {shown || (placeholder.trim() ? placeholder : 'Select')}

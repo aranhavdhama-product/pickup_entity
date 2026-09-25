@@ -155,8 +155,6 @@ export interface OrderDraft {
   parcels: Parcel[]; authority: string; instructions: string; secure: boolean; service: string; rate: number; etaDays: number
   /** The consignment-form fields with no older home — optional, see ConsignmentFields. */
   consignment?: ConsignmentFields
-  /** Which form tier the draft was saved from, so Resume reopens it the same way. */
-  formMode?: 'simplified' | 'full'
 }
 export const DRAFT_KEY = 'grow-order-draft'
 /**
@@ -331,6 +329,7 @@ export const EXTRA_DROP_RATE = 650 // per delivery address after the first
 export interface ParcelService { code: string; days: number; price: number }
 export const PARCEL_SERVICES: ParcelService[] = [
   { code: 'Standard Delivery', days: 2, price: 90 },
+  { code: 'Express Delivery', days: 1, price: 150 },
 ]
 
 /** Checkout adds this on top of every quote. */

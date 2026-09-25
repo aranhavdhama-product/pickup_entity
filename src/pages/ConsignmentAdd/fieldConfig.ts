@@ -8,10 +8,17 @@
  *  2. DEPENDENCY fields follow their parent: hiding the parent hides the
  *     dependent field too (e.g. Order Amount depends on Payment Mode).
  *
- * `form` marks which tier a field belongs to: 'simplified' fields appear in
- * both forms; 'full' fields only in the full form. API-mandatory fields are
- * all in the simplified tier by construction. `section` groups fields both on
- * the form and in the Configure Fields modal.
+ * `tier` marks which disclosure group a field sits in on the merged form:
+ * 'core' fields render inline always; 'advanced' fields sit behind a
+ * "Show more" affordance in their section, collapsed by default (or expanded,
+ * per FormBehavior.defaultMode) — advanced is a UI grouping, NOT a hide: a
+ * mandatory+advanced field just means it ships with a sensible auto-default
+ * so it's never a blocking ask. `section` groups fields both on the form and
+ * in the Form Builder drawer.
+ *
+ * SKU and Package fields are no longer modelled here — the merged form's
+ * Packages widget (./packageSku.tsx) nests SKU lines inside each package and
+ * manages its own field disclosure locally instead of through this registry.
  */
 
 export const FIELD_SECTIONS = [
@@ -21,8 +28,6 @@ export const FIELD_SECTIONS = [
   'Handling & scheduling',
   'Instructions',
   'Address details',
-  'SKU fields',
-  'Package fields',
 ] as const
 export type FieldSection = (typeof FIELD_SECTIONS)[number]
 
@@ -34,116 +39,89 @@ export interface FieldDef {
   mandatory?: 'api' | 'account'
   /** key of the field this one depends on — hidden automatically with its parent */
   dependsOn?: string
-  form: 'simplified' | 'full'
+  tier: 'core' | 'advanced'
   apiPath: string
   note?: string
 }
 
 export const CONSIGNMENT_FIELDS: FieldDef[] = [
   /* ------------------------------------------------------ identifiers & core */
-  { key: 'orderNumber', defaultLabel: 'Order Number', section: 'Identifiers & core', mandatory: 'api', form: 'simplified',
+  { key: 'orderNumber', defaultLabel: 'Order Number', section: 'Identifiers & core', mandatory: 'api', tier: 'core',
     apiPath: 'consignmentDetails.orderNumber', note: 'Customer-visible order number, 4–64 chars; need not be unique.' },
-  { key: 'referenceNumber', defaultLabel: 'Reference Number', section: 'Identifiers & core', mandatory: 'api', form: 'simplified',
-    apiPath: 'consignmentDetails.referenceNumber', note: 'Primary key in FarEye — unique per order; update/cancel/track key on it.' },
-  { key: 'consignmentNumber', defaultLabel: 'Consignment Number', section: 'Identifiers & core', form: 'full',
+  { key: 'referenceNumber', defaultLabel: 'Reference Number', section: 'Identifiers & core', mandatory: 'api', tier: 'advanced',
+    apiPath: 'consignmentDetails.referenceNumber', note: 'Primary key in FarEye — unique per order. Mirrors Order Number by default so it is never a blocking ask; open "More identifiers" to set a distinct one.' },
+  { key: 'consignmentNumber', defaultLabel: 'Consignment Number', section: 'Identifiers & core', tier: 'advanced',
     apiPath: 'consignmentDetails.consignmentNumber', note: 'Optional — defaults to Reference Number when blank.' },
-  { key: 'exchangeOrderNumber', defaultLabel: 'Exchange Order Number', section: 'Identifiers & core', form: 'full',
+  { key: 'exchangeOrderNumber', defaultLabel: 'Exchange Order Number', section: 'Identifiers & core', tier: 'advanced',
     apiPath: 'consignmentDetails.exchangeOrderNumber', note: 'Only shown when Consignment Type is Exchange.' },
-  { key: 'consignmentType', defaultLabel: 'Consignment Type', section: 'Identifiers & core', mandatory: 'api', form: 'simplified',
+  { key: 'consignmentType', defaultLabel: 'Consignment Type', section: 'Identifiers & core', mandatory: 'api', tier: 'core',
     apiPath: 'consignmentDetails.consignmentType' },
-  { key: 'task', defaultLabel: 'Task', section: 'Identifiers & core', form: 'simplified',
+  { key: 'task', defaultLabel: 'Task', section: 'Identifiers & core', tier: 'core',
     apiPath: '(UI only — derives pickup/delivery orderType)' },
-  { key: 'shipByDate', defaultLabel: 'Ship By Date', section: 'Identifiers & core', mandatory: 'api', form: 'simplified',
-    apiPath: 'consignmentDetails.shipByDate' },
-  { key: 'merchant', defaultLabel: 'Merchant', section: 'Identifiers & core', mandatory: 'account', form: 'simplified',
+  { key: 'shipByDate', defaultLabel: 'Ship By Date', section: 'Identifiers & core', mandatory: 'api', tier: 'advanced',
+    apiPath: 'consignmentDetails.shipByDate', note: 'Defaults to today so it is never a blocking ask; open "More identifiers" to change it.' },
+  { key: 'merchant', defaultLabel: 'Merchant', section: 'Identifiers & core', mandatory: 'account', tier: 'core',
     apiPath: 'businessUnit / account mapping', note: 'Required by account configuration, not by the public API spec.' },
 
   /* ----------------------------------------------------------- order details */
-  { key: 'tags', defaultLabel: 'Tags', section: 'Order details', form: 'full', apiPath: 'consignmentDetails.routingTags[]' },
-  { key: 'serviceType', defaultLabel: 'Service Type', section: 'Order details', form: 'simplified',
-    apiPath: 'consignmentDetails.serviceType', note: "Staging's simplified form includes Service Type." },
-  { key: 'labelFormat', defaultLabel: 'Label Format', section: 'Order details', form: 'full',
+  { key: 'tags', defaultLabel: 'Tags', section: 'Order details', tier: 'advanced', apiPath: 'consignmentDetails.routingTags[]' },
+  { key: 'serviceType', defaultLabel: 'Service Type', section: 'Order details', tier: 'core',
+    apiPath: 'consignmentDetails.serviceType' },
+  { key: 'labelFormat', defaultLabel: 'Label Format', section: 'Order details', tier: 'advanced',
     apiPath: 'consignmentDetails.labelFormat' },
-  { key: 'routingType', defaultLabel: 'Routing Type', section: 'Order details', form: 'full',
+  { key: 'routingType', defaultLabel: 'Routing Type', section: 'Order details', tier: 'advanced',
     apiPath: 'consignmentDetails.routingType',
     note: "Staging's options: Same/Next Day, LTL/FTL, Scheduled, Hyperlocal." },
 
   /* ----------------------------------------------------------------- payment */
-  { key: 'paymentMode', defaultLabel: 'Payment Mode', section: 'Payment', form: 'full',
+  { key: 'paymentMode', defaultLabel: 'Payment Mode', section: 'Payment', tier: 'advanced',
     apiPath: 'consignmentDetails.paymentTobeCollected.paymentMode' },
-  { key: 'orderAmount', defaultLabel: 'Order Amount', section: 'Payment', dependsOn: 'paymentMode', form: 'full',
+  { key: 'orderAmount', defaultLabel: 'Order Amount', section: 'Payment', dependsOn: 'paymentMode', tier: 'advanced',
     apiPath: 'consignmentDetails.paymentTobeCollected.amount',
     note: 'Dependency: only meaningful with a Payment Mode — API requires paymentMode+amount+currency together.' },
 
   /* --------------------------------------------------- handling & scheduling */
-  { key: 'schedulingConfirmation', defaultLabel: 'Scheduling Confirmation Required', section: 'Handling & scheduling', form: 'full',
+  { key: 'schedulingConfirmation', defaultLabel: 'Scheduling Confirmation Required', section: 'Handling & scheduling', tier: 'advanced',
     apiPath: 'consignmentDetails.schedulingConfirmationRequired (v3)' },
-  { key: 'dedicateTruck', defaultLabel: 'Dedicate Truck', section: 'Handling & scheduling', form: 'full',
+  { key: 'dedicateTruck', defaultLabel: 'Dedicate Truck', section: 'Handling & scheduling', tier: 'advanced',
     apiPath: 'consignmentDetails.dedicatedTruck (v3)' },
-  { key: 'totalLoadingTime', defaultLabel: 'Total Loading Time (minutes)', section: 'Handling & scheduling', dependsOn: 'dedicateTruck', form: 'full',
+  { key: 'totalLoadingTime', defaultLabel: 'Total Loading Time (minutes)', section: 'Handling & scheduling', dependsOn: 'dedicateTruck', tier: 'advanced',
     apiPath: 'consignmentDetails.totalLoadingTime (v3)',
     note: 'Dependency: loading time only applies when a dedicated truck is requested.' },
-  { key: 'clearanceRequired', defaultLabel: 'Clearance Required', section: 'Handling & scheduling', form: 'full',
+  { key: 'clearanceRequired', defaultLabel: 'Clearance Required', section: 'Handling & scheduling', tier: 'advanced',
     apiPath: 'consignmentDetails.clearanceRequired (v3)' },
-  { key: 'scannable', defaultLabel: 'Scannable', section: 'Handling & scheduling', form: 'full',
+  { key: 'scannable', defaultLabel: 'Scannable', section: 'Handling & scheduling', tier: 'advanced',
     apiPath: 'consignmentDetails.scannable (v3)' },
-  { key: 'splittable', defaultLabel: 'Splittable', section: 'Handling & scheduling', form: 'full',
+  { key: 'splittable', defaultLabel: 'Splittable', section: 'Handling & scheduling', tier: 'advanced',
     apiPath: 'consignmentDetails.splittable (v3)' },
 
   /* ------------------------------------------------------------ instructions */
-  { key: 'specialInstructions', defaultLabel: 'Special Instructions', section: 'Instructions', form: 'full',
+  { key: 'specialInstructions', defaultLabel: 'Special Instructions', section: 'Instructions', tier: 'core',
     apiPath: 'consignmentDetails.specialInstructions' },
-  { key: 'deliveryInstructions', defaultLabel: 'Delivery Instructions', section: 'Instructions', form: 'full',
+  { key: 'deliveryInstructions', defaultLabel: 'Delivery Instructions', section: 'Instructions', tier: 'core',
     apiPath: 'consignmentDetails.deliveryInstructions' },
 
   /* -------------------------------------------------- address details (both
      parties; grouped keys hide their whole composite together) */
-  { key: 'addrCompanyName', defaultLabel: 'Company Name', section: 'Address details', form: 'simplified',
+  { key: 'addrCompanyName', defaultLabel: 'Company Name', section: 'Address details', tier: 'core',
     apiPath: 'shipFrom/shipTo.contact.companyName' },
-  { key: 'addrEmail', defaultLabel: 'Email', section: 'Address details', form: 'simplified',
+  { key: 'addrEmail', defaultLabel: 'Email', section: 'Address details', tier: 'core',
     apiPath: 'shipFrom/shipTo.contact.email' },
-  { key: 'addrLines23', defaultLabel: 'Address Lines 2 & 3', section: 'Address details', form: 'simplified',
+  { key: 'addrLines23', defaultLabel: 'Address Lines 2 & 3', section: 'Address details', tier: 'core',
     apiPath: 'address.line2 / line3', note: 'Grouped — both extra address lines hide together.' },
-  { key: 'addrLandmark', defaultLabel: 'Landmark', section: 'Address details', form: 'simplified',
+  { key: 'addrLandmark', defaultLabel: 'Landmark', section: 'Address details', tier: 'core',
     apiPath: 'address.landmark' },
-  { key: 'addrSuburb', defaultLabel: 'Suburb / County', section: 'Address details', form: 'simplified',
+  { key: 'addrSuburb', defaultLabel: 'Suburb / County', section: 'Address details', tier: 'core',
     apiPath: 'address.county' },
-  { key: 'addrCoordinates', defaultLabel: 'Latitude & Longitude', section: 'Address details', form: 'simplified',
+  { key: 'addrCoordinates', defaultLabel: 'Latitude & Longitude', section: 'Address details', tier: 'advanced',
     apiPath: 'address.latitude / longitude', note: 'Grouped — both coordinates hide together.' },
-  { key: 'addrFloorLift', defaultLabel: 'Floor Number & Lift', section: 'Address details', form: 'full',
+  { key: 'addrFloorLift', defaultLabel: 'Floor Number & Lift', section: 'Address details', tier: 'advanced',
     apiPath: 'address floor / lift', note: 'Grouped — floor number and lift availability hide together.' },
-  { key: 'addrWindow', defaultLabel: 'Pickup / Delivery Window', section: 'Address details', form: 'simplified',
-    apiPath: 'pickupWindow / deliveryWindow' },
-
-  /* ------------------------------------------------------------- SKU fields */
-  { key: 'skuCategory', defaultLabel: 'SKU Category', section: 'SKU fields', form: 'simplified',
-    apiPath: 'skuDetails[].category' },
-  { key: 'skuDescription', defaultLabel: 'SKU Description', section: 'SKU fields', form: 'simplified',
-    apiPath: 'skuDetails[].description' },
-  { key: 'skuHsn', defaultLabel: 'HSN Code', section: 'SKU fields', form: 'simplified',
-    apiPath: 'skuDetails[].hsnName' },
-  { key: 'skuImage', defaultLabel: 'Image Url', section: 'SKU fields', form: 'simplified',
-    apiPath: 'skuDetails[].imageUrl' },
-  { key: 'skuDimensions', defaultLabel: 'Dimensions (L × B × H + UOM)', section: 'SKU fields', form: 'simplified',
-    apiPath: 'skuDetails[].length/breadth/height/uom',
-    note: 'Grouped — the whole dimensions control hides together; values still auto-fill from the SKU master.' },
-  { key: 'skuWeight', defaultLabel: 'Weight (+ UOM)', section: 'SKU fields', form: 'simplified',
-    apiPath: 'skuDetails[].weight/weightUom', note: 'Grouped — weight and its unit hide together.' },
-  { key: 'skuUnitCost', defaultLabel: 'Unit Cost', section: 'SKU fields', form: 'simplified',
-    apiPath: 'skuDetails[].unitCost' },
-
-  /* --------------------------------------------------------- package fields */
-  { key: 'pkgTracking', defaultLabel: 'Tracking Number', section: 'Package fields', form: 'simplified',
-    apiPath: 'packageDetails[].trackingDetails', note: 'Auto-generated when hidden or empty.' },
-  { key: 'pkgPalletSpace', defaultLabel: 'Pallet Space', section: 'Package fields', form: 'simplified',
-    apiPath: 'packageDetails[].palletSpace' },
-  { key: 'pkgDescription', defaultLabel: 'Package Description', section: 'Package fields', form: 'simplified',
-    apiPath: 'packageDetails[].description' },
-  { key: 'pkgDimensions', defaultLabel: 'Dimensions (L × W × H)', section: 'Package fields', form: 'simplified',
-    apiPath: 'packageDetails[].length/width/height',
-    note: 'Grouped — hides together; values still auto-fill from the package type master.' },
-  { key: 'pkgWeight', defaultLabel: 'Weight', section: 'Package fields', form: 'simplified',
-    apiPath: 'packageDetails[].weight' },
+  { key: 'addrWindow', defaultLabel: 'Pickup / Delivery Window', section: 'Address details', tier: 'advanced',
+    apiPath: 'pickupWindow / deliveryWindow', note: 'Most shipments do not need one specified.' },
+  { key: 'addrFacilityCode', defaultLabel: 'Facility / Hub Code', section: 'Address details', tier: 'advanced',
+    apiPath: 'originFacilityCode / destinationFacilityCode / returnFacilityCode',
+    note: 'Manual override — the search-and-pick address flow sets this automatically.' },
 ]
 
 export interface FieldOverride {
@@ -167,8 +145,8 @@ export function orderedSectionFields(section: FieldSection, cfg: FieldConfig): F
 }
 
 /** visible fields of a section, in configured order — what the form renders */
-export function visibleSectionFields(section: FieldSection, cfg: FieldConfig, mode: 'simplified' | 'full', behavior?: FormBehavior): FieldDef[] {
-  return orderedSectionFields(section, cfg).filter((f) => !fieldHidden(f.key, cfg, mode, behavior))
+export function visibleSectionFields(section: FieldSection, cfg: FieldConfig, behavior?: FormBehavior): FieldDef[] {
+  return orderedSectionFields(section, cfg).filter((f) => !fieldHidden(f.key, cfg, behavior))
 }
 
 /* -------- form behavior — configured in Base Modules → Consignment Order ----
@@ -176,7 +154,9 @@ export function visibleSectionFields(section: FieldSection, cfg: FieldConfig, mo
  * so it is REAL account configuration; mirrored to localStorage so the Add
  * form can read it synchronously on first paint. */
 export interface FormBehavior {
-  /** which form tier Add Consignment opens in */
+  /** whether the merged form's "Show more" advanced disclosures start open
+   * ('full') or collapsed ('simplified') — same key/values as the old
+   * page-tier toggle, reinterpreted now that there is one form, not two. */
   defaultMode: 'simplified' | 'full'
   /** 'both' shows the pair; otherwise only the chosen one shows and the other
    * silently copies its value */
@@ -186,7 +166,7 @@ export interface FormBehavior {
   hidden: string[]
 }
 
-export const DEFAULT_FORM_BEHAVIOR: FormBehavior = { defaultMode: 'full', identifier: 'both', hidden: [] }
+export const DEFAULT_FORM_BEHAVIOR: FormBehavior = { defaultMode: 'simplified', identifier: 'both', hidden: [] }
 
 const BEHAVIOR_KEY = 'fe-consignment-form-behavior'
 
@@ -252,26 +232,31 @@ export function byKeyMandatory(key: string): 'api' | 'account' | undefined {
   return byKey.get(key)?.mandatory
 }
 
+/** which disclosure group a field belongs to — 'core' if unknown */
+export function fieldTier(key: string): 'core' | 'advanced' {
+  return byKey.get(key)?.tier ?? 'core'
+}
+
 export function fieldLabel(key: string, cfg: FieldConfig): string {
   const def = byKey.get(key)
   return cfg[key]?.label?.trim() || def?.defaultLabel || key
 }
 
-/** hidden if switched off (page config OR Base Modules behavior), if its
- * parent is hidden, or if it's a full-form field in simplified mode */
-export function fieldHidden(key: string, cfg: FieldConfig, mode: 'simplified' | 'full', behavior?: FormBehavior): boolean {
+/** hidden if switched off (page config OR Base Modules behavior), or if its
+ * parent is hidden. Disclosure tier ('core'/'advanced') is a UI grouping,
+ * NOT a hide — an advanced field is still reachable, just collapsed. */
+export function fieldHidden(key: string, cfg: FieldConfig, behavior?: FormBehavior): boolean {
   const def = byKey.get(key)
   if (!def) return false
-  if (mode === 'simplified' && def.form === 'full') return true
   if (def.mandatory) return false
   if (cfg[key]?.hidden) return true
   if (behavior?.hidden.includes(key)) return true
-  if (def.dependsOn) return fieldHidden(def.dependsOn, cfg, mode, behavior)
+  if (def.dependsOn) return fieldHidden(def.dependsOn, cfg, behavior)
   return false
 }
 
 /** a section disappears entirely once every one of its fields is hidden */
-export function sectionVisible(section: FieldSection, cfg: FieldConfig, mode: 'simplified' | 'full', behavior?: FormBehavior): boolean {
+export function sectionVisible(section: FieldSection, cfg: FieldConfig, behavior?: FormBehavior): boolean {
   return CONSIGNMENT_FIELDS.filter((f) => f.section === section)
-    .some((f) => !fieldHidden(f.key, cfg, mode, behavior))
+    .some((f) => !fieldHidden(f.key, cfg, behavior))
 }

@@ -1,33 +1,32 @@
 /**
  * Create Consignment — the Grow merchant portal's add form.
  *
- * THE SAME FORM as staging's Add form, rendered from THE SAME COMPONENTS as
- * the console's Add Consignment page (pages/ConsignmentAdd, spec §15): the
- * SectionCard chrome, the labelled 4-column field grid (Nueva Input /
- * MenuSelect / DateInput / Toggle, components/consignmentForm), the
- * RepeatableList rows for Package & SKU / SKU / Piece / VAS
- * (components/consignmentRows), the console vehicles table, the header tier
- * switch and the sticky required-fields footer. Section order, labels,
- * captions and required marks follow the staging captures in
- * docs/superpowers/research/staging-add-form/ (01–02 Simplified, 10–14 Regular).
+ * ONE merged form (no more Simplified/Regular tier toggle) — rendered from
+ * THE SAME COMPONENTS as the console's Add Consignment page
+ * (pages/ConsignmentAdd, spec §15): the SectionCard chrome, the labelled
+ * 4-column field grid (Nueva Input / MenuSelect / DateInput / Toggle,
+ * components/consignmentForm), the RepeatableList rows for Packages / VAS
+ * (components/consignmentRows), the console vehicles table and the sticky
+ * required-fields footer.
  *
- *  Simplified — Consignment Details (Order Number* · Consignment Type* ·
- *    Service Type · Ship By Date* · Start Time* · End Time* · Tags) · Ship From
- *    (location card + edit pencil) → Ship To (Location Code · Add Manually ·
- *    Full Name* · Email · Phone*) · Package & SKU (Package ID · Package Type ·
- *    Quantity · Tracking ID · SKU Code · SKU Name · HSN Code · Origin Country,
- *    Add More Package) · Carriers.
- *  Regular — Consignment Details (Order Number* · Reference Number* ·
- *    Consignment Number · Consignment Type* / Ship By Date* · Tags · Payment
- *    Mode / Order Amount · Service Type · Label Format / Scannable · Scheduling
- *    Confirmation Required · Dedicate Truck · Clearance Required · Total Loading
- *    Time / Special Instructions / Delivery Instructions) · Ship From · Return
- *    To Origin (RTO) · Ship To · SKU · Piece · Value Added Services · Carriers.
+ * Fields that are rarely a per-order decision (Reference Number, Consignment
+ * Number, Ship By Date, Tags, Payment, Label Format) sit behind a "Show more"
+ * disclosure in Consignment Details instead of a second page tier — Reference
+ * Number mirrors Order Number by default and Ship By Date defaults to today,
+ * so neither is a blocking ask. Handling toggles (incl. `Dedicate Truck`, the
+ * FTL switch) stay in the open, since Dedicate Truck fundamentally changes
+ * the form — on, Vehicle Details takes the Packages slot.
+ *
+ * Ship From leads with the pickup-location dropdown as a compact card + edit
+ * pencil (was Simplified-only); Ship To keeps its multi-drop address-book
+ * search (was Regular-only) — both now the ONE experience regardless of
+ * order complexity. Packages is the ONE list: each package's SKU contents
+ * are optional, nested enrichment (was a separate SKU section cross-
+ * referenced into Piece specs) — a package with no SKU lines ships as-is.
  *
  * Labels (incl. Form Builder relabels) and Form Builder hides come from the
  * console registry ConsignmentAdd/fieldConfig.ts (pure helpers only). Merchant
  * is never a field — it is the signed-in merchant, carried silently.
- * FTL = `Dedicate Truck`: on, Vehicle Details takes the SKU / Piece slot.
  * Deep links kept: `?draft=`, `?fromPickup=`, `?fromOverage=`, `?step=1|2`
  * (&type=FTL), `/add/vehicle`.
  */
@@ -35,8 +34,9 @@ import { useEffect, useMemo, useRef, useState, type ComponentProps, type Keyboar
 import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  ArrowRight, Barcode, CalendarCheck, CircleDot, CircleMinus, ClipboardList, FileCheck, MapPin, Package,
-  Package as PackageIcon, Pencil, Plus, ScanBarcode, ScanLine, ShieldPlus, Truck, Undo2, User, Warehouse, Wrench, X,
+  CalendarCheck, ChevronDown, ChevronRight, CircleDot, CircleMinus, ClipboardList, FileCheck,
+  Package, Package as PackageIcon, Pencil, Plus, ScanBarcode, ScanLine, Truck, Undo2, User,
+  Warehouse, Wrench, X,
 } from 'lucide-react'
 import { blankParty, CURRENCY } from '../../growOrders/seed'
 import { growOrderActions, orderById, pickupRequestById, useGrowOrders } from '../../growOrders/store'
@@ -48,44 +48,32 @@ import {
 import { ORIGIN_COUNTRIES } from '../../data/originCountries'
 import { toast } from '../../nueva/toast'
 import {
-  Button, Checkbox, DateInput, IconButton, Input, MenuSelect, MultiSelect, MultiSelectDropdown, PageHeader, Panel,
+  Button, Checkbox, DateInput, IconButton, Input, MenuSelect, MultiSelectDropdown, PageHeader, Panel,
   SearchInput, StatusPill, Toggle,
 } from '../../nueva/components'
 import { DateTimeRangeInput } from '../../nueva/DateRangeFilter'
 import { RepeatableList } from '../../components/consignmentRows'
 import {
-  ChipToggle, Fld, Grid, InlineToggle, SectionCard, Segmented, SubHead, TierSwitch, UnitBox,
+  ChipToggle, Fld, Grid, InlineToggle, SectionCard, Segmented, SubHead, UnitBox,
 } from '../../components/consignmentForm'
 import { money, OTHER_ADDRESS, partyLine, partyOk, prWindow, storeOptionLabel } from './utils'
 import { useReceiverBook, usePickupLocations, type BookEntry } from './pickupLocations'
 import {
   ADDITIONAL_SERVICES, DEFAULT_FTL_SERVICE, DRAFT_KEY, FTL_SERVICE_CODES, PARCEL_SERVICES, clearDraftKeys,
   coerceVehicleType, ftlQuoteVehicles, ftlServiceType, setDraftSidecar, totalLoadKg, vehicleSpec, vehiclesFor,
-  vehiclesOf, volKg, type ConsignmentFields, type FtlVehicle, type OrderDraft, type Parcel, type ParcelItem, type VasLine,
+  vehiclesOf, volKg, type ConsignmentFields, type FtlVehicle, type OrderDraft, type Parcel, type ParcelItem,
+  type ParcelService, type VasLine,
 } from '../../growOrders/draft'
 /* the console's field registry — pure module, read-only here */
 import { fieldHidden, fieldLabel, loadFieldConfig, loadFormBehavior } from '../ConsignmentAdd/fieldConfig'
 
-type FormMode = 'simplified' | 'full'
-const TIER_KEY = 'grow-consignment-form-tier'
-const lastTier = (): FormMode => {
-  try { return localStorage.getItem(TIER_KEY) === 'full' ? 'full' : 'simplified' } catch { return 'simplified' }
-}
-
 /* ---- option lists ---- */
 const CONSIGNMENT_TYPES = ['Forward', 'Reverse', 'Exchange', 'Transfer', 'Service']
 const PAYMENT_MODES = ['Prepaid', 'COD', 'To Pay']
-const LABEL_FORMATS = ['PDF', 'ZPL']
-/** sample Tag Master — the portal has no tag API */
-const TAG_OPTIONS = ['Ambient', 'Priority', 'Gift', 'B2B', 'Weekend Delivery', 'Bulky']
 const RTO_MODES = ['Same As Ship From', 'Use Different Address']
 const DIAL_CODES = ['+63', '+27', '+264', '+267', '+1', '+44', '+91']
 const DIM_UOMS = ['CM', 'IN', 'M']
 const WEIGHT_UOMS = ['KG', 'LB', 'G']
-const CARRIERS = [
-  { code: '2GO Express', sub: 'Parcel network · LTL' },
-  { code: '2GO Logistics', sub: 'Dedicated trucks · FTL' },
-]
 const VAS_LEVELS: VasLine['level'][] = ['SKU', 'PACKAGE', 'CONSIGNMENT']
 /** sample VAS master — the portal has no vas API */
 const VAS_SERVICES = ['Installation', 'Assembly', 'Unboxing', 'Old Item Pickup', 'Gift Wrapping', 'Wall Mounting',
@@ -128,10 +116,11 @@ const today = () => {
 /** staging mints the package id on insert */
 const newPackageId = () => `PKG${Math.random().toString(36).slice(2, 8).toUpperCase()}`
 const blankItem = (): ParcelItem => ({ skuCode: null, name: '', quantity: 1, weightKg: 0 })
+/** Packages ship as-is by default — SKU contents are optional, added only when the merchant wants to record them. */
 const newParcel = (): Parcel => ({
   packageId: newPackageId(),
   cargoType: CARGO_TYPES[0], packageTypeCode: CUSTOM_PACKAGE, packageTypeName: CUSTOM_PACKAGE_NAME,
-  items: [blankItem()], itemInfo: '', quantity: 1, weight: 1, l: 10, w: 10, h: 10, weightMode: 'auto',
+  items: [], itemInfo: '', quantity: 1, weight: 1, l: 10, w: 10, h: 10, weightMode: 'auto',
   trackingNumber: '', palletSpace: '', description: '',
 })
 const newVas = (): VasLine => ({ level: 'SKU', skuCode: '', service: '', serviceTimeMin: 0, remark: '' })
@@ -161,7 +150,24 @@ const codeFor = (p: Party) => (p.businessName || p.name || p.city || 'store')
   .toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 14) || 'STORE'
 const itemInfoOf = (p: Parcel) =>
   (p.items?.length ? p.items.map((it) => it.name.trim()).filter(Boolean).join(', ') : p.itemInfo)
-const addressOk = (p: Party) => [p.line1, p.country, p.city, p.state].every(filled)
+
+/* ---- Services — one carrier runs parcel bookings, another runs dedicated trucks ---- */
+const PARCEL_CARRIER = '2GO Express'
+const FTL_CARRIER = '2GO Logistics'
+/** same state = the fast local lane; anything else = the interisland lane — the
+ * only distance signal this portal has, so it stands in for a real rate-by-lane API. */
+type Lane = 'local' | 'regional'
+const laneOf = (from: Party, to: Party): Lane => (from.state && to.state && from.state === to.state ? 'local' : 'regional')
+const REGIONAL_SURCHARGE = 60
+const REGIONAL_EXTRA_DAYS = 1
+interface ServiceQuote { code: string; carrier: string; days: number; price: number }
+/** a parcel service tier, priced and timed for the sender/receiver lane */
+const quoteFor = (tier: ParcelService, lane: Lane): ServiceQuote => ({
+  code: tier.code, carrier: PARCEL_CARRIER,
+  days: tier.days + (lane === 'regional' ? REGIONAL_EXTRA_DAYS : 0),
+  price: tier.price + (lane === 'regional' ? REGIONAL_SURCHARGE : 0),
+})
+
 /** 'YYYY-MM-DDTHH:mm' → its date / time halves */
 const dateOf = (at?: string) => (at ? at.slice(0, 10) : '')
 const timeOf = (at?: string) => (at && at.length >= 16 ? at.slice(11, 16) : '')
@@ -250,6 +256,17 @@ interface Opt { value: string; label?: string }
 const TEXTAREA = `w-full rounded-md border border-warm-300 bg-surface px-3 py-2 text-[13px] text-ink
   placeholder:text-warm-400 transition-shadow focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/20
   disabled:bg-warm-50 disabled:text-ink-3`
+/** small "Show more" disclosure link — the merged form's stand-in for the old page-level tier switch */
+function MoreToggle({ open, onToggle, label }: { open: boolean; onToggle: () => void; label: string }) {
+  return (
+    <button type="button" onClick={onToggle}
+      className="mt-4 inline-flex items-center gap-1 text-[12.5px] font-bold text-brand-500 hover:text-brand-600">
+      {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+      {label}
+    </button>
+  )
+}
+
 /** a read-only value at input height (a locked Location Master field, a minted package id) */
 function ReadBox({ value }: { value: string }) {
   return (
@@ -378,17 +395,21 @@ function PhoneField({ label, required, code, number, onCode, onNumber, disabled,
  *   {Pick Up|Delivery} window · Floor Number · Lift Available
  * `locked` = a Location Master address picked from the list — shown, not retyped.
  */
-function PartyFields({ party, set, nameLabel, windowLabel, requireContact, locked, locationCode, hid, showErrors, floorLift = true }: {
+function PartyFields({ party, set, nameLabel, windowLabel, requireContact, locked, locationCode, hid, showErrors, floorLift = true, advancedDefaultOpen }: {
   party: Party; set: (patch: Partial<Party>) => void
   nameLabel: string; windowLabel: string | null; requireContact?: boolean; locked?: boolean
-  locationCode: ReactNode; hid: (k: string) => boolean; showErrors: boolean; floorLift?: boolean
+  locationCode?: ReactNode; hid: (k: string) => boolean; showErrors: boolean; floorLift?: boolean
+  /** whether the "Show more address details" disclosure starts open */
+  advancedDefaultOpen?: boolean
 }) {
+  const [moreOpen, setMoreOpen] = useState(!!advancedDefaultOpen)
   const err = (v: string | undefined, req = true) => (showErrors && req && !locked && !filled(v) ? 'Required field.' : undefined)
   const text = (k: keyof Party, label: string, o: { required?: boolean; type?: string; placeholder?: string } = {}) => (
     <F label={label} required={o.required} type={o.type} placeholder={o.placeholder}
       value={String(party[k] ?? '')} disabled={locked} error={err(String(party[k] ?? ''), !!o.required)}
       onChange={(v) => set({ [k]: v } as Partial<Party>)} />
   )
+  const showMore = !hid('addrCoordinates') || (floorLift && !hid('addrFloorLift')) || (!!windowLabel && !hid('addrWindow'))
   return (
     <>
       <SubHead label="Contact Details" first />
@@ -414,15 +435,27 @@ function PartyFields({ party, set, nameLabel, windowLabel, requireContact, locke
         {text('city', 'City', { required: true })}
         <F label="State" required value={party.state} disabled={locked} error={err(party.state)}
           options={opts(STATES)} placeholder="Select state" onChange={(v) => set({ state: v })} />
-        {!hid('addrCoordinates') && <>{text('latitude', 'Latitude', { type: 'number' })}{text('longitude', 'Longitude', { type: 'number' })}</>}
-        {floorLift && !hid('addrFloorLift') && <>
-          {text('floorNumber', 'Floor Number')}
-          <InlineToggle label="Lift Available" checked={!!party.liftAvailable} onChange={(v) => set({ liftAvailable: v })} />
-        </>}
       </Grid>
-      {windowLabel && !hid('addrWindow') && (
-        <WindowRange label={`${windowLabel} Window`} start={party.windowStart ?? ''} end={party.windowEnd ?? ''}
-          onChange={(w) => set(w)} />
+
+      {showMore && (
+        <>
+          <MoreToggle open={moreOpen} onToggle={() => setMoreOpen((v) => !v)} label="Show more address details" />
+          {moreOpen && (
+            <div className="mt-4">
+              <Grid>
+                {!hid('addrCoordinates') && <>{text('latitude', 'Latitude', { type: 'number' })}{text('longitude', 'Longitude', { type: 'number' })}</>}
+                {floorLift && !hid('addrFloorLift') && <>
+                  {text('floorNumber', 'Floor Number')}
+                  <InlineToggle label="Lift Available" checked={!!party.liftAvailable} onChange={(v) => set({ liftAvailable: v })} />
+                </>}
+              </Grid>
+              {windowLabel && !hid('addrWindow') && (
+                <WindowRange label={`${windowLabel} Window`} start={party.windowStart ?? ''} end={party.windowEnd ?? ''}
+                  onChange={(w) => set(w)} />
+              )}
+            </div>
+          )}
+        </>
       )}
     </>
   )
@@ -460,6 +493,31 @@ function AddressBookSearch({ book, onPick }: { book: BookEntry[]; onPick: (p: Pa
               {q ? `No address matches “${q}”` : 'No saved addresses yet — fill in the fields below'}
             </p>
           )}
+        </AcPop>
+      )}
+    </div>
+  )
+}
+
+/** Ship From's pickup-address search — the merchant's saved pickup locations, searched by name (incl. "Other address…"). */
+function PickupSearch({ options, onPick }: { options: Opt[]; onPick: (code: string) => void }) {
+  const [q, setQ] = useState('')
+  const hits = useMemo(() => options
+    .filter((o) => !q || (o.label ?? o.value).toLowerCase().includes(q.toLowerCase()))
+    .slice(0, 8), [options, q])
+  const { open, setOpen, hi, setHi, ref, popRef, pos, onKeyDown, pick } = useAutocomplete<Opt>(hits, (o) => { onPick(o.value); setQ('') })
+  return (
+    <div ref={ref} className="relative" onFocus={() => { if (!open) setOpen(true) }} onKeyDown={onKeyDown} role="presentation">
+      <SearchInput value={q} onChange={(v) => { setQ(v); setHi(0); setOpen(true) }}
+        placeholder="Search your pickup addresses..." />
+      {open && (
+        <AcPop pos={pos} popRef={popRef}>
+          {hits.map((o, i) => (
+            <AcRow key={o.value} on={i === hi} onHover={() => setHi(i)} onPick={() => pick(o)}>
+              <span className="min-w-0 flex-1 truncate py-1.5 text-[13px] text-ink">{o.label ?? o.value}</span>
+            </AcRow>
+          ))}
+          {hits.length === 0 && <p className="px-3 py-2 text-[12.5px] text-ink-3">No address matches “{q}”</p>}
         </AcPop>
       )}
     </div>
@@ -570,15 +628,12 @@ export default function AddOrderPage() {
     && (params.get('type') === 'FTL' || pathname.endsWith('/vehicle') || pr?.shipmentType === 'FTL' || saved?.shipmentType === 'FTL')
   const overageStore = fromOverage ? stores.find((s) => s.code === fromOverage.pr.storeCode) : undefined
 
-  /* ---- the console registry: relabels + Form Builder hides (tier membership follows staging) ---- */
+  /* ---- the console registry: relabels + Form Builder / Base Modules hides ---- */
   const [fieldCfg] = useState(loadFieldConfig)
   const [behavior] = useState(loadFormBehavior)
-  const hid = (key: string) => fieldHidden(key, fieldCfg, 'full', behavior)
+  const hid = (key: string) => fieldHidden(key, fieldCfg, behavior)
   const lbl = (key: string) => fieldLabel(key, fieldCfg)
-  /* the tier the merchant last used (Simplified the first time); Dedicate Truck lives in both */
-  const [formMode, setFormModeState] = useState<FormMode>(() => saved?.formMode ?? lastTier())
-  const setFormMode = (m: FormMode) => { setFormModeState(m); try { localStorage.setItem(TIER_KEY, m) } catch { /* private mode */ } }
-  const full = formMode === 'full'
+  const advancedDefaultOpen = behavior.defaultMode === 'full'
 
   /* ---- Ship From ---- */
   const firstSender = (): Party => saved?.sender
@@ -603,7 +658,6 @@ export default function AddOrderPage() {
     ?? (pr ? pr.shipTo ?? blankParty() : jump ? { ...blankParty(), ...db.orders[2]?.receiver } : blankParty()))
   const [drops, setDrops] = useState<Party[]>(() => saved?.drops ?? [])
   const [rto, setRto] = useState<Party>(() => saved?.consignment?.rto ?? blankParty())
-  const [manualTo, setManualTo] = useState(() => !!saved || !!pr || !!jump)
 
   /* ---- Consignment Details (+ handling, instructions, RTO mode, VAS, carrier) ---- */
   const [c, setCState] = useState<ConsignmentFields>(() => {
@@ -615,7 +669,6 @@ export default function AddOrderPage() {
       schedulingConfirmation: false, dedicateTruck: ftlFirst, totalLoadingTime: null,
       clearanceRequired: false, scannable: false, splittable: false,
       specialInstructions: '', rtoMode: RTO_MODES[0], vas: [],
-      carrier: qa ? (ftlFirst ? CARRIERS[1].code : CARRIERS[0].code) : '',
       ...saved?.consignment,
       /* an older FTL draft kept its extras in additionalServices — they are VAS rows now */
       ...(saved && !saved.consignment?.vas?.length && saved.additionalServices?.length
@@ -629,6 +682,10 @@ export default function AddOrderPage() {
 
   /* ---- FTL: Dedicate Truck on → Vehicle Details ---- */
   const isFtl = !fromOverage && !!c.dedicateTruck
+  /* Ship To is optional on a dedicated-truck booking (the merchant may not know or
+     want to disclose the drop yet) — collapsed by default, opened by choice or if
+     a resumed draft already has one. */
+  const [shipToOpen, setShipToOpen] = useState(() => !isFtl || partyOk(receiver) || drops.length > 0)
   const [ftlService, setFtlService] = useState(saved?.ftlServiceType || pr?.ftlServiceType || DEFAULT_FTL_SERVICE)
   const [rows, setRows] = useState<VehicleRow[]>(() => {
     if (saved?.shipmentType === 'FTL') return rowsOf(vehiclesOf(saved))
@@ -647,20 +704,14 @@ export default function AddOrderPage() {
     /* the overage barcode IS this package's tracking number */
     return [fromOverage ? { ...p, weight: w ?? p.weight, weightMode: w ? 'manual' : 'auto', trackingNumber: fromOverage.scan.barcode } : p]
   })
-  const [secure, setSecure] = useState(saved?.secure ?? false)
+  const [secure] = useState(saved?.secure ?? false)
   const [noDg, setNoDg] = useState(true)
-  const [service, setService] = useState(saved && saved.shipmentType !== 'FTL' ? saved.service : SERVICES[0].code)
+  const [service, setService] = useState(saved && saved.shipmentType !== 'FTL' ? saved.service : '')
   const [showErrors, setShowErrors] = useState(false)
 
   const receiverBook = useReceiverBook(db.orders)
   const fromList = !!senderStore && senderStore !== OTHER_ADDRESS
   const allDrops = [receiver, ...drops]
-
-  /* Ship To's Location Code: the delivery-side Location Master rows for this merchant */
-  const toLocations = useMemo(() => masters.locations.filter((l) => l.enabled
-    && ['CUSTOMER_LOCATION', 'MERCHANT_LOCATION', 'PUDO', 'PARCEL_LOCKER'].includes(l.type)
-    && (l.merchantCodes.length === 0 || (!!merchant && l.merchantCodes.includes(merchant.code)))), [masters.locations, merchant])
-  const toLocationOpts = [{ value: '', label: '— None —' }, ...toLocations.map((l) => ({ value: l.code, label: `${l.name} (${l.code})` }))]
 
   /* ---- derived booking numbers ---- */
   const totals = useMemo(() => ({
@@ -677,9 +728,11 @@ export default function AddOrderPage() {
   /* the chosen VAS names — what `additionalServices` carries for compatibility; the rate card prices them */
   const addServices = (c.vas ?? []).map((v) => v.service).filter(Boolean)
   const vasTotal = addServices.reduce((n, sv) => n + vasPrice(sv), 0)
-  const parcelSvc = SERVICES.find((s) => s.code === service) ?? SERVICES[0]
+  const lane = laneOf(sender, receiver)
+  const parcelQuotes = SERVICES.map((s) => quoteFor(s, lane))
+  const parcelSvc = parcelQuotes.find((q) => q.code === service) ?? parcelQuotes[0]
   const svc = isFtl
-    ? { code: ftlService, days: ftlServiceType(ftlService).days, price: ftlQuoteVehicles(vehicles, drops.length, addServices) }
+    ? { code: ftlService, carrier: FTL_CARRIER, days: ftlServiceType(ftlService).days, price: ftlQuoteVehicles(vehicles, drops.length, addServices) }
     : { ...parcelSvc, price: parcelSvc.price + vasTotal }
   const addressOptions = allDrops.map((d, i) => ({ value: String(i), label: `Address ${i + 1}${d.name ? ` · ${d.name}` : ''}${d.city ? `, ${d.city}` : ''}` }))
   const uncovered = allDrops.map((_, i) => i).filter((i) => !vehicles.some((v) => v.addressIdx.includes(i)))
@@ -693,39 +746,28 @@ export default function AddOrderPage() {
       .filter((o) => (seen.has(o.value) ? false : (seen.add(o.value), true)))
   }, [parcels])
 
-  /* ---- identifiers: Simplified asks one number (the reference copies it), as staging does ---- */
-  const idPref = full ? behavior.identifier : 'orderNumber'
-  const effectiveOrder = (idPref === 'referenceNumber' ? c.referenceNumber : c.orderNumber) ?? ''
-  const effectiveRef = (idPref === 'orderNumber' ? c.orderNumber : c.referenceNumber) ?? ''
-  /* Simplified: Start / End Time sit on the Ship By Date and ARE the delivery window */
-  const setWindowTime = (which: 'windowStart' | 'windowEnd', t: string) =>
-    setReceiver((r) => ({ ...r, [which]: t ? `${c.shipByDate || today()}T${t}` : '' }))
-  const setShipByDate = (d: string) => {
-    setC({ shipByDate: d })
-    if (!full && d) setReceiver((r) => ({
-      ...r,
-      ...(r.windowStart ? { windowStart: `${d}T${timeOf(r.windowStart)}` } : {}),
-      ...(r.windowEnd ? { windowEnd: `${d}T${timeOf(r.windowEnd)}` } : {}),
-    }))
-  }
+  /* ---- identifiers: Order Number is the ONE merchant-facing identifier;
+     Reference Number/Consignment Number are never shown, just mirrored for the API ---- */
+  const effectiveOrder = c.orderNumber ?? ''
+  const effectiveRef = effectiveOrder
 
   /* ------------------------------------------------ completion + validation */
-  const consignmentReq = [filled(effectiveOrder), filled(effectiveRef), !!c.consignmentType, filled(c.shipByDate),
-    ...(full ? [] : [filled(timeOf(receiver.windowStart)), filled(timeOf(receiver.windowEnd))])]
+  const consignmentReq = [filled(effectiveOrder), !!c.consignmentType]
   /* a Location Master row may be sparse and is not the merchant's to retype */
   const fromReq = fromList ? [filled(sender.name), filled(sender.line1)]
     : [sender.name, sender.line1, sender.country, sender.city, sender.state].map(filled)
-  const toReq = allDrops.flatMap((d) => [d.name, d.contactNumber, d.line1, d.country, d.city, d.state].map(filled))
-  const rtoReq = !full || c.rtoMode === RTO_MODES[0] ? [true] : [rto.name, rto.line1, rto.country, rto.city, rto.state].map(filled)
+  /* Dedicate Truck bookings assign drops to vehicles by capacity, not a precise
+     address up front — Ship To stays available to enter, just never blocking. */
+  const toReq = isFtl ? [] : allDrops.flatMap((d) => [d.name, d.contactNumber, d.line1, d.country, d.city, d.state].map(filled))
+  const rtoReq = c.rtoMode === RTO_MODES[0] ? [true] : [rto.name, rto.line1, rto.country, rto.city, rto.state].map(filled)
   const pieceReq = isFtl
     ? [!!ftlService, vehicles.length > 0, uncovered.length === 0,
       ...rows.map((r) => !!r.vehicleType && r.count >= 1 && r.loadKg > 0 && r.addressIdx.length > 0), noDg]
     : [...parcels.map((p) => p.quantity > 0 && p.weight > 0 && p.l > 0 && p.w > 0 && p.h > 0), noDg]
   const skuReq = isFtl ? [] : skuLines.map(({ it }) => isBlankItem(it) || (filled(it.name) && it.quantity >= 1))
-  /* VAS is a Regular-form card, and an FTL booking's card in both tiers */
-  const showVas = full || isFtl
-  const vasReq = showVas ? (c.vas ?? []).map(vasOk) : []
-  const carrierReq = [!!c.carrier]
+  const vasReq = (c.vas ?? []).map(vasOk)
+  /* the Services section only exists for LTL — Service Type (FTL) already picks the FTL rate */
+  const carrierReq = isFtl ? [] : [!!service]
   const allReq = [...consignmentReq, ...fromReq, ...toReq, ...rtoReq, ...pieceReq, ...skuReq, ...vasReq, ...carrierReq]
   const filledCount = allReq.filter(Boolean).length
   const canSubmit = filledCount === allReq.length
@@ -759,10 +801,6 @@ export default function AddOrderPage() {
     setDrops((ds) => ds.filter((_, j) => j !== i))
     setRows((rs) => rs.map((r) => ({ ...r, addressIdx: r.addressIdx.filter((a) => a !== idx).map((a) => (a > idx ? a - 1 : a)) })))
   }
-  const pickToLocation = (setParty: (p: Partial<Party>) => void) => (code: string) => {
-    const l = toLocations.find((x) => x.code === code)
-    setParty(l ? { ...l.party, locationCode: l.code } : { locationCode: '' })
-  }
   const pickPackageType = (i: number, code: string) => {
     const t = packageTypes.find((x) => x.code === code)
     setParcels((ps) => ps.map((x, j) => (j === i ? reweigh(t
@@ -786,16 +824,6 @@ export default function AddOrderPage() {
   const setItem = (i: number, k: number, patch: Partial<ParcelItem>) =>
     setItems(i, (items) => items.map((it, m) => (m === k ? { ...it, ...patch } : it)))
   const removeItem = (i: number, k: number) => setItems(i, (items) => items.filter((_, m) => m !== k))
-  const moveItem = (i: number, k: number, to: number) => {
-    if (to === i) return
-    const it = parcels[i].items?.[k]
-    if (!it) return
-    setParcels((ps) => ps.map((x, j) => {
-      if (j === i) return reweigh({ ...x, items: (x.items ?? []).filter((_, m) => m !== k) }, packageTypes)
-      if (j === to) return reweigh({ ...x, items: [...(x.items ?? []), it] }, packageTypes)
-      return x
-    }))
-  }
   const setVas = (i: number, patch: Partial<VasLine>) => setC({ vas: (c.vas ?? []).map((v, j) => (j === i ? { ...v, ...patch } : v)) })
 
   const pickSender = (code: string) => {
@@ -834,7 +862,7 @@ export default function AddOrderPage() {
   }, [dictated, listKey, autoKey, stores])
 
   useEffect(() => { clearDraftKeys() }, [])
-  const jumpTarget = jump === 1 ? (isFtl ? 'sec-vehicle' : full ? 'sec-sku' : 'sec-package') : jump === 2 ? 'sec-carriers' : null
+  const jumpTarget = jump === 1 ? (isFtl ? 'sec-vehicle' : 'sec-package') : jump === 2 ? 'sec-services' : null
   useEffect(() => {
     if (!jumpTarget) return
     const t = setTimeout(() => document.getElementById(jumpTarget)?.scrollIntoView({ block: 'start' }), 150)
@@ -866,13 +894,14 @@ export default function AddOrderPage() {
       consignmentNumber: c.consignmentNumber?.trim() || effectiveRef.trim(),
       /* Merchant is never a field — it is the signed-in merchant, recorded silently */
       merchantCode: merchant?.code ?? null, merchantName: merchant?.name ?? '',
+      /* the carrier follows the chosen service — never a separate pick */
+      carrier: svc.carrier,
       rto: c.rtoMode === RTO_MODES[1] ? rto : null,
       packages: isFtl ? [] : parcels.map((p) => ({
         packageId: p.packageId, packageType: p.packageTypeName || CUSTOM_PACKAGE_NAME, quantity: p.quantity,
         trackingNumber: p.trackingNumber ?? '', palletSpace: p.palletSpace ?? '', description: p.description ?? '',
       })),
     },
-    formMode,
   })
 
   const backTo = fromPr ? `/grow/orders/pickups/${fromPr.id}`
@@ -890,23 +919,20 @@ export default function AddOrderPage() {
     }
   }
 
-  /* ---- the sections, in each tier's staging order ---- */
-  const pkgIds = isFtl ? ['sec-vehicle'] : full ? ['sec-sku', 'sec-piece'] : ['sec-package']
-  const sections = full
-    ? ['sec-consignment', 'sec-ship-from', 'sec-rto', 'sec-ship-to', ...pkgIds, 'sec-vas', 'sec-carriers']
-    : ['sec-consignment', 'sec-ship', ...pkgIds, ...(isFtl ? ['sec-vas'] : []), 'sec-carriers']
+  /* ---- the sections, one order regardless of order complexity ---- */
+  const sections = ['sec-consignment', 'sec-ship-from', 'sec-rto', 'sec-ship-to',
+    isFtl ? 'sec-vehicle' : 'sec-package', 'sec-vas', ...(isFtl ? [] : ['sec-services'])]
   const doneOf: Record<string, boolean> = {
-    'sec-consignment': done(consignmentReq), 'sec-ship': done(fromReq) && done(toReq),
+    'sec-consignment': done(consignmentReq),
     'sec-ship-from': done(fromReq), 'sec-ship-to': done(toReq), 'sec-rto': done(rtoReq),
-    'sec-package': done(pieceReq) && done(skuReq), 'sec-sku': done(skuReq), 'sec-piece': done(pieceReq), 'sec-vehicle': done(pieceReq),
-    'sec-vas': done(vasReq), 'sec-carriers': done(carrierReq),
+    'sec-package': done(pieceReq) && done(skuReq), 'sec-vehicle': done(pieceReq),
+    'sec-vas': done(vasReq), 'sec-services': done(carrierReq),
   }
 
   const proceed = () => {
     if (!canSubmit) {
       setShowErrors(true)
-      if (!full && !done(toReq)) setManualTo(true)
-      if (!full && !done(fromReq)) setEditFrom(true)
+      if (!done(fromReq)) setEditFrom(true)
       const first = sections.find((s) => !doneOf[s])
       if (first) setTimeout(() => jumpTo(first), 60)
       return
@@ -928,13 +954,10 @@ export default function AddOrderPage() {
   }
 
   /* ------------------------------------------------------------ sections */
-  const serviceTypeField = !hid('serviceType') && (isFtl
-    ? <F label={lbl('serviceType')} value={ftlService} options={opts(FTL_SERVICE_CODES)} onChange={pickFtlService} />
-    : <F label={lbl('serviceType')} value={service} options={SERVICES.map((s) => ({ value: s.code }))} onChange={setService} />)
-  const tagsField = !hid('tags') && (
-    <Fld label={lbl('tags')} info>
-      <MultiSelect value={c.tags ?? []} options={TAG_OPTIONS} placeholder="eg, Ambient" onChange={(v) => setC({ tags: v })} />
-    </Fld>
+  /* Service Type here only classifies the FTL booking (drives the vehicle catalogue) —
+     parcel service/carrier is chosen in the Services section, with its own TAT and rate. */
+  const serviceTypeField = isFtl && !hid('serviceType') && (
+    <F label={lbl('serviceType')} value={ftlService} options={opts(FTL_SERVICE_CODES)} onChange={pickFtlService} />
   )
   const dedicateToggle = (
     <ChipToggle icon={Truck} label={lbl('dedicateTruck')} checked={isFtl} onChange={setDedicateTruck} disabled={!!fromOverage} />
@@ -944,208 +967,89 @@ export default function AddOrderPage() {
     <SectionCard id="sec-consignment" title="Consignment Details" done={doneOf['sec-consignment']}
       icon={<ClipboardList size={15} className={ICON} />}
       caption="Provide the consignment details to ensure accurate processing, routing, and billing of the shipment.">
-      {full ? (
-        <>
-          <SubHead label="Identifiers" first />
+      <Grid>
+        <F label={lbl('orderNumber')} required value={c.orderNumber ?? ''} placeholder="eg, ABC0001"
+          error={reqErr(filled(effectiveOrder))} onChange={(v) => setC({ orderNumber: v })} />
+        <F label={lbl('consignmentType')} required value={c.consignmentType ?? 'Forward'} options={opts(CONSIGNMENT_TYPES)}
+          onChange={(v) => setC({ consignmentType: v })} />
+        {!hid('exchangeOrderNumber') && c.consignmentType === 'Exchange' && (
+          <F label={lbl('exchangeOrderNumber')} value={c.exchangeOrderNumber ?? ''} placeholder="eg, ABC0000" onChange={(v) => setC({ exchangeOrderNumber: v })}
+            helper="Original order being exchanged" />
+        )}
+        {!hid('paymentMode') && (
+          <F label={lbl('paymentMode')} value={c.paymentMode ?? ''} placeholder="eg, Prepaid" options={opts(PAYMENT_MODES)} onChange={(v) => setC({ paymentMode: v })} />
+        )}
+        {!hid('orderAmount') && (
+          <FNum label={lbl('orderAmount')} blankZero placeholder="eg, 100.22" value={c.orderAmount ?? 0} onChange={(n) => setC({ orderAmount: n || null })} />
+        )}
+      </Grid>
+
+      {/* handling toggles stay in the open — Dedicate Truck is the FTL switch, not a minor setting.
+          Its own details (Service Type, Loading Time) render AFTER it, once it's on — a field
+          driven by a toggle should never appear above the toggle that triggers it. */}
+      <SubHead label="Handling" />
+      <div className="flex flex-wrap items-center gap-3">
+        {!hid('scannable') && <ChipToggle icon={ScanLine} label={lbl('scannable')} checked={!!c.scannable} onChange={(v) => setC({ scannable: v })} />}
+        {!hid('schedulingConfirmation') && <ChipToggle icon={CalendarCheck} label={lbl('schedulingConfirmation')} checked={!!c.schedulingConfirmation} onChange={(v) => setC({ schedulingConfirmation: v })} />}
+        {!hid('dedicateTruck') && dedicateToggle}
+        {!hid('clearanceRequired') && <ChipToggle icon={FileCheck} label={lbl('clearanceRequired')} checked={!!c.clearanceRequired} onChange={(v) => setC({ clearanceRequired: v })} />}
+      </div>
+      {isFtl && (
+        <div className="mt-4">
           <Grid>
-            {idPref !== 'referenceNumber' && (
-              <F label={lbl('orderNumber')} required value={c.orderNumber ?? ''} placeholder="eg, ABC0001"
-                error={reqErr(filled(effectiveOrder))} onChange={(v) => setC({ orderNumber: v })}
-                helper={idPref === 'orderNumber' ? `${lbl('referenceNumber')} is copied from this.` : undefined} />
-            )}
-            {idPref !== 'orderNumber' && (
-              <F label={lbl('referenceNumber')} required value={c.referenceNumber ?? ''} placeholder="eg, ABC0001"
-                error={reqErr(filled(effectiveRef))} onChange={(v) => setC({ referenceNumber: v })}
-                helper={idPref === 'referenceNumber' ? `${lbl('orderNumber')} is copied from this.` : undefined} />
-            )}
-            {!hid('consignmentNumber') && (
-              <F label={lbl('consignmentNumber')} value={c.consignmentNumber ?? ''} placeholder="eg, 0001" onChange={(v) => setC({ consignmentNumber: v })} />
-            )}
-          </Grid>
-          <SubHead label="Order" />
-          <Grid>
-            <F label={lbl('consignmentType')} required value={c.consignmentType ?? 'Forward'} options={opts(CONSIGNMENT_TYPES)}
-              onChange={(v) => setC({ consignmentType: v })} />
-            <F label={lbl('shipByDate')} required type="date" value={c.shipByDate ?? ''} error={reqErr(filled(c.shipByDate))} onChange={setShipByDate} />
-            {!hid('exchangeOrderNumber') && c.consignmentType === 'Exchange' && (
-              <F label={lbl('exchangeOrderNumber')} value={c.exchangeOrderNumber ?? ''} placeholder="eg, ABC0000" onChange={(v) => setC({ exchangeOrderNumber: v })}
-                helper="Original order being exchanged" />
-            )}
-            {tagsField}
-            {!hid('paymentMode') && (
-              <F label={lbl('paymentMode')} value={c.paymentMode ?? ''} placeholder="eg, Prepaid" options={opts(PAYMENT_MODES)} onChange={(v) => setC({ paymentMode: v })} />
-            )}
-            {!hid('orderAmount') && (
-              <FNum label={lbl('orderAmount')} blankZero placeholder="eg, 100.22" value={c.orderAmount ?? 0} onChange={(n) => setC({ orderAmount: n || null })} />
-            )}
             {serviceTypeField}
-            {!hid('labelFormat') && (
-              <Fld label={lbl('labelFormat')}>
-                <div className="inline-flex h-8 items-center overflow-hidden rounded-md border border-warm-300">
-                  {LABEL_FORMATS.map((f) => {
-                    const on = c.labelFormat === f
-                    return (
-                      <button key={f} type="button" onClick={() => setC({ labelFormat: f })}
-                        className={`h-full whitespace-nowrap border-r border-warm-300 px-4 text-[13px] transition-colors last:border-r-0
-                          ${on ? 'bg-brand-50 font-bold text-brand-500' : 'bg-surface text-ink-2 hover:bg-warm-50'}`}>
-                        {f}
-                      </button>
-                    )
-                  })}
-                </div>
-              </Fld>
-            )}
           </Grid>
-          {/* handling toggles — the console's chip row; Total Loading Time rides with Dedicate Truck */}
-          <SubHead label="Handling" />
-          <div className="flex flex-wrap items-center gap-3">
-            {!hid('scannable') && <ChipToggle icon={ScanLine} label={lbl('scannable')} checked={!!c.scannable} onChange={(v) => setC({ scannable: v })} />}
-            {!hid('schedulingConfirmation') && <ChipToggle icon={CalendarCheck} label={lbl('schedulingConfirmation')} checked={!!c.schedulingConfirmation} onChange={(v) => setC({ schedulingConfirmation: v })} />}
-            {!hid('dedicateTruck') && dedicateToggle}
-            {!hid('clearanceRequired') && <ChipToggle icon={FileCheck} label={lbl('clearanceRequired')} checked={!!c.clearanceRequired} onChange={(v) => setC({ clearanceRequired: v })} />}
-            {!hid('totalLoadingTime') && isFtl && (
-              <span className="flex items-center gap-1.5 text-[12.5px] text-ink-3">
-                {lbl('totalLoadingTime').toLowerCase()}
-                <span className="w-24"><NumBox blankZero integer unit="min" value={c.totalLoadingTime ?? 0} onChange={(n) => setC({ totalLoadingTime: n || null })} /></span>
-              </span>
+        </div>
+      )}
+
+      {(!hid('specialInstructions') || !hid('deliveryInstructions')) && (
+        <>
+          <SubHead label="Instructions" />
+          <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
+            {!hid('specialInstructions') && (
+              <F label={lbl('specialInstructions')} multiline value={c.specialInstructions ?? ''} placeholder="Handling notes visible to operations"
+                onChange={(v) => setC({ specialInstructions: v })} />
+            )}
+            {!hid('deliveryInstructions') && (
+              <F label={lbl('deliveryInstructions')} multiline value={instructions} placeholder="Instructions for the driver at the door"
+                onChange={(v) => setInstructions(v.slice(0, 150))} helper={`Shared with the pickup and delivery driver · ${instructions.length}/150`} />
             )}
           </div>
-          {(!hid('specialInstructions') || !hid('deliveryInstructions')) && (
-            <>
-              <SubHead label="Instructions" />
-              <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
-                {!hid('specialInstructions') && (
-                  <F label={lbl('specialInstructions')} multiline value={c.specialInstructions ?? ''} placeholder="Handling notes visible to operations"
-                    onChange={(v) => setC({ specialInstructions: v })} />
-                )}
-                {!hid('deliveryInstructions') && (
-                  <F label={lbl('deliveryInstructions')} multiline value={instructions} placeholder="Instructions for the driver at the door"
-                    onChange={(v) => setInstructions(v.slice(0, 150))} helper={`Shared with the pickup and delivery driver · ${instructions.length}/150`} />
-                )}
-              </div>
-            </>
-          )}
-        </>
-      ) : (
-        <>
-          <Grid>
-            <F label={lbl('orderNumber')} required value={c.orderNumber ?? ''} placeholder="eg, ABC0001"
-              error={reqErr(filled(effectiveOrder))} onChange={(v) => setC({ orderNumber: v })} />
-            <F label={lbl('consignmentType')} required value={c.consignmentType ?? 'Forward'} options={opts(CONSIGNMENT_TYPES)}
-              onChange={(v) => setC({ consignmentType: v })} />
-            {serviceTypeField}
-            <F label={lbl('shipByDate')} required type="date" value={c.shipByDate ?? ''} error={reqErr(filled(c.shipByDate))} onChange={setShipByDate} />
-            <F label="Start Time" required type="time" value={timeOf(receiver.windowStart)}
-              error={reqErr(filled(timeOf(receiver.windowStart)))} onChange={(v) => setWindowTime('windowStart', v)} />
-            <F label="End Time" required type="time" value={timeOf(receiver.windowEnd)}
-              error={reqErr(filled(timeOf(receiver.windowEnd)))} onChange={(v) => setWindowTime('windowEnd', v)} />
-            {tagsField}
-          </Grid>
-          {/* Dedicate Truck in the Simplified tier too — FTL without switching tiers */}
-          {!hid('dedicateTruck') && (
-            <>
-              <SubHead label="Handling" />
-              <div className="flex flex-wrap items-center gap-3">{dedicateToggle}</div>
-            </>
-          )}
         </>
       )}
     </SectionCard>
   )
 
-  const fromLocationCode = (
-    <F label="Location Code" value={senderStore} onChange={pickSender}
-      options={senderOptions} placeholder="eg, Williamstown" />
-  )
   const saveSenderToggle = senderStore === OTHER_ADDRESS
     ? <span className="flex items-center gap-2 text-[12.5px] font-bold text-ink-2">Save address <Toggle checked={saveSender} onChange={setSaveSender} /></span>
     : undefined
 
-  /* Simplified: Ship From card → Ship To contact, one card, as staging draws it */
-  const shipSimplified = (
-    <SectionCard id="sec-ship" done={doneOf['sec-ship']}
-      icon={<MapPin size={15} className={ICON} />}
-      title={<>Ship From <ArrowRight size={15} className="text-warm-400" /> Ship To</>}
-      caption="Where the consignment is collected from and where it is delivered.">
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_24px_minmax(0,1.5fr)]">
-        <div className="min-w-0">
-          <SubHead label="Ship From" first />
+  /* Ship From — a compact location card + edit pencil by default (was Simplified-only);
+     the pencil reveals the full PartyFields form, same as it always did on edit. */
+  const shipFromSection = (
+    <SectionCard id="sec-ship-from" title="Ship From" done={doneOf['sec-ship-from']}
+      icon={<Warehouse size={15} className={ICON} />}
+      caption="Provide the pickup address and contact details for this consignment."
+      action={editFrom ? saveSenderToggle : undefined}>
+      {!editFrom ? (
+        <>
           <div className="flex items-start gap-3 rounded-lg border border-line bg-warm-25 px-4 py-3">
             <Warehouse size={16} className="mt-0.5 shrink-0 text-warm-400" />
             <div className="min-w-0 flex-1">
               <p className="truncate text-[13px] font-bold text-ink">{sender.city || sender.name || <span className="font-normal text-ink-3">No pickup location yet</span>}</p>
               <p className="mt-0.5 flex items-center gap-1.5 truncate text-[12.5px] text-ink-3"><User size={13} className="shrink-0" /> {sender.contactNumber || sender.name || '—'}</p>
             </div>
-            <IconButton icon={<Pencil size={14} />} title="Edit Ship From" onClick={() => setEditFrom((v) => !v)} />
+            <IconButton icon={<Pencil size={14} />} title="Edit Ship From" onClick={() => setEditFrom(true)} />
           </div>
           {showErrors && !done(fromReq) && <p className="mt-1 text-[12.5px] text-brand-500">Ship From is incomplete — edit it</p>}
-        </div>
-        <div className="hidden items-center justify-center pt-8 text-warm-400 lg:flex"><ArrowRight size={18} /></div>
-        <div className="min-w-0">
-          <SubHead label="Ship To" first />
-          <div className="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
-            <F label="Location Code" value={receiver.locationCode ?? ''} options={toLocationOpts}
-              placeholder="eg, Williamstown" onChange={pickToLocation((p) => setReceiver((x) => ({ ...x, ...p })))} />
-            <div className="flex items-end">
-              <Button variant="outline" onClick={() => setManualTo((v) => !v)}>{manualTo ? 'Hide Address' : 'Add Manually'}</Button>
-            </div>
-            <F label="Full Name" required value={receiver.name} placeholder="Enter Full Name" error={reqErr(filled(receiver.name))}
-              onChange={(v) => setReceiver((x) => ({ ...x, name: v }))} />
-            {!hid('addrEmail') && <F label="Email" type="email" value={receiver.email} placeholder="Enter Email" onChange={(v) => setReceiver((x) => ({ ...x, email: v }))} />}
-            <PhoneField label="Phone" required code={receiver.countryCode ?? ''} number={receiver.contactNumber}
-              error={reqErr(filled(receiver.contactNumber))}
-              onCode={(v) => setReceiver((x) => ({ ...x, countryCode: v }))} onNumber={(v) => setReceiver((x) => ({ ...x, contactNumber: v }))} />
-          </div>
-          {!manualTo && receiver.line1 && <p className="mt-3 truncate text-[12.5px] text-ink-3">{partyLine(receiver)}</p>}
-          {!manualTo && showErrors && !addressOk(receiver) && <p className="mt-2 text-[12.5px] text-brand-500">Pick a Location Code or Add Manually</p>}
-          {drops.length > 0 && <p className="mt-2 text-[12.5px] text-ink-3">+ {drops.length} more delivery address{drops.length === 1 ? '' : 'es'} — see the Regular form</p>}
-        </div>
-      </div>
-
-      {editFrom && (
-        <div className="mt-6 border-t border-line pt-5">
-          <div className="mb-3 flex items-center justify-between">
-            <p className="text-[13px] font-bold text-ink">Edit Ship From</p>
-            {saveSenderToggle}
-          </div>
-          <PartyFields party={sender} set={(p) => setSender((x) => ({ ...x, ...p }))} nameLabel="Sender Name" windowLabel={null}
-            locked={fromList} locationCode={fromLocationCode}
-            hid={(k) => hid(k) || ['addrCompanyName', 'addrLandmark', 'addrSuburb', 'addrCoordinates'].includes(k)}
-            showErrors={showErrors} floorLift={false} />
-        </div>
+        </>
+      ) : (
+        <>
+          <div className="mb-4"><PickupSearch options={senderOptions} onPick={pickSender} /></div>
+          <PartyFields party={sender} set={(p) => setSender((x) => ({ ...x, ...p }))} nameLabel="Sender Name" windowLabel="Pick Up"
+            locked={fromList} hid={hid} showErrors={showErrors} advancedDefaultOpen={advancedDefaultOpen} />
+        </>
       )}
-      {manualTo && (
-        <div className="mt-6 border-t border-line pt-5">
-          <SubHead label="Ship To address" first />
-          <div className="mb-4"><AddressBookSearch book={receiverBook} onPick={(p) => setReceiver((x) => ({ ...x, ...p }))} /></div>
-          <Grid>
-            <F label="Address Line 1" required value={receiver.line1} placeholder="eg, Building No." error={reqErr(filled(receiver.line1))}
-              onChange={(v) => setReceiver((x) => ({ ...x, line1: v }))} />
-            {!hid('addrLines23') && <>
-              <F label="Address Line 2" value={receiver.line2} placeholder="eg, Street 1 A" onChange={(v) => setReceiver((x) => ({ ...x, line2: v }))} />
-              <F label="Address Line 3" value={receiver.line3 ?? ''} placeholder="eg, Behind High School" onChange={(v) => setReceiver((x) => ({ ...x, line3: v }))} />
-            </>}
-            <F label="Country" required value={receiver.country} options={opts(COUNTRIES)} placeholder="Select country" error={reqErr(filled(receiver.country))}
-              onChange={(v) => setReceiver((x) => ({ ...x, country: v }))} />
-            <F label="Postal Code" value={receiver.postalCode} options={opts(POSTCODES)} placeholder="eg, 1300"
-              onChange={(v) => setReceiver((x) => ({ ...x, postalCode: v }))} />
-            <F label="City" required value={receiver.city} error={reqErr(filled(receiver.city))}
-              onChange={(v) => setReceiver((x) => ({ ...x, city: v }))} />
-            <F label="State" required value={receiver.state} options={opts(STATES)} placeholder="Select state" error={reqErr(filled(receiver.state))}
-              onChange={(v) => setReceiver((x) => ({ ...x, state: v }))} />
-          </Grid>
-        </div>
-      )}
-    </SectionCard>
-  )
-
-  const shipFromSection = (
-    <SectionCard id="sec-ship-from" title="Ship From" done={doneOf['sec-ship-from']}
-      icon={<Warehouse size={15} className={ICON} />}
-      caption="Provide the pickup address and contact details for this consignment."
-      action={saveSenderToggle}>
-      <PartyFields party={sender} set={(p) => setSender((x) => ({ ...x, ...p }))} nameLabel="Sender Name" windowLabel="Pick Up"
-        locked={fromList} locationCode={fromLocationCode} hid={hid} showErrors={showErrors} />
     </SectionCard>
   )
 
@@ -1157,7 +1061,7 @@ export default function AddOrderPage() {
       {c.rtoMode === RTO_MODES[1] && (
         <div className="mt-5">
           <PartyFields party={rto} set={(p) => setRto((x) => ({ ...x, ...p }))} nameLabel="Name" windowLabel={null} hid={hid}
-            showErrors={showErrors} floorLift={false}
+            showErrors={showErrors} floorLift={false} advancedDefaultOpen={advancedDefaultOpen}
             locationCode={<F label="Location Code" value={rto.locationCode ?? ''} placeholder="eg, Williamstown"
               options={pickup.options.filter((o) => o.value !== OTHER_ADDRESS)}
               onChange={(code) => {
@@ -1167,6 +1071,17 @@ export default function AddOrderPage() {
         </div>
       )}
     </SectionCard>
+  )
+
+  /* collapsed by default on a dedicated-truck booking — see shipToOpen above */
+  const shipToPlaceholder = (
+    <div id="sec-ship-to" className="scroll-mt-20">
+      <button type="button" onClick={() => setShipToOpen(true)}
+        className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-warm-300 py-4
+                   text-[13px] font-bold text-brand-500 transition-colors hover:border-brand-500 hover:bg-brand-50/40">
+        <Plus size={14} /> Add a delivery address (optional)
+      </button>
+    </div>
   )
 
   const shipToSection = (
@@ -1188,8 +1103,7 @@ export default function AddOrderPage() {
               )}
             </div>
             <PartyFields party={d} set={set} nameLabel="Customer Name" windowLabel="Delivery" requireContact hid={hid} showErrors={showErrors}
-              locationCode={<F label="Location Code" value={d.locationCode ?? ''} options={toLocationOpts} placeholder="eg, Williamstown"
-                onChange={pickToLocation(set)} />} />
+              advancedDefaultOpen={advancedDefaultOpen} />
           </div>
         )
       })}
@@ -1203,9 +1117,6 @@ export default function AddOrderPage() {
 
   const declarations = (
     <div className="mt-4 space-y-2 border-t border-line pt-3">
-      <Tick checked={secure} onChange={setSecure} sub="Insurance cover for the declared value of this shipment">
-        <span className="inline-flex items-center gap-1.5">Secure your package <ShieldPlus size={14} className="text-brand-500" /></span>
-      </Tick>
       <Tick checked={noDg} onChange={setNoDg}>I declare that this shipment does not have Dangerous goods <span className="text-brand-500">*</span></Tick>
       {showErrors && !noDg && <p className="ml-[22px] text-[12.5px] text-brand-500">Required field.</p>}
     </div>
@@ -1216,141 +1127,46 @@ export default function AddOrderPage() {
     : !ownPresets ? `Showing all package types — none assigned to ${merchant?.name ?? 'this merchant'}` : undefined
   const pkgTypeName = (p: Parcel) => packageTypeOpts.find((o) => o.value === packageValue(p, packageTypes))?.label ?? CUSTOM_PACKAGE_NAME
 
-  /* Simplified: ONE Package & SKU list, a row per package carrying its SKU */
-  const packageSimplified = (
+  /* Packages is the ONE list — a package's SKU contents are optional, nested
+     enrichment. A package with no SKU lines ships as-is. */
+  const [pkgMoreOpen, setPkgMoreOpen] = useState<Set<number>>(new Set())
+  const togglePkgMore = (i: number) => setPkgMoreOpen((s) => {
+    const n = new Set(s); if (n.has(i)) n.delete(i); else n.add(i); return n
+  })
+  const [itemMoreOpen, setItemMoreOpen] = useState<Set<string>>(new Set())
+  const toggleItemMore = (key: string) => setItemMoreOpen((s) => {
+    const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n
+  })
+  const packageSection = (
     <div id="sec-package" className="scroll-mt-20">
       <RepeatableList<Parcel>
-        title="Package & SKU" addNoun="Package" icon={<PackageIcon size={15} className={ICON} />}
-        caption="Provide the package and SKU details for this consignment."
+        title="Packages" addNoun="Package" icon={<PackageIcon size={15} className={ICON} />}
+        caption="Add the packages in this consignment. A package can ship as-is, or you can optionally list what's inside it."
         cardLabel={(i) => `Package ${i + 1}`}
         rows={parcels}
-        incomplete={(p) => !(p.quantity > 0)}
-        summary={(p) => <Facts items={[p.packageId, pkgTypeName(p), `×${p.quantity}`, p.items?.[0] && (p.items[0].skuCode ?? p.items[0].name)]} />}
-        onAdd={() => { setFocusLine({ i: parcels.length, k: 0 }); setParcels((ps) => [...ps, newParcel()]) }}
+        incomplete={(p) => !(p.quantity > 0 && p.weight > 0 && p.l > 0 && p.w > 0 && p.h > 0)}
+        summary={(p) => {
+          const skuCount = (p.items ?? []).filter((it) => !isBlankItem(it)).length
+          return <Facts items={[p.packageId, pkgTypeName(p), `×${p.quantity}`, `${round2(p.weight)} kg`,
+            skuCount > 0 && `${skuCount} SKU${skuCount === 1 ? '' : 's'}`]} />
+        }}
+        onAdd={() => setParcels((ps) => [...ps, newParcel()])}
+        onDuplicate={(i) => setParcels((ps) => [...ps.slice(0, i + 1), clonePackage(ps[i]), ...ps.slice(i + 1)])}
         onRemove={(i) => setParcels((ps) => (ps.length > 1 ? ps.filter((_, j) => j !== i) : [newParcel()]))}
         body={(p, i) => {
-          const it = p.items?.[0]
-          const bound = !!it?.skuCode
-          return (
-            <Grid>
-              <Fld label="Package ID"><ReadBox value={p.packageId ?? ''} /></Fld>
-              <div title={packageTypeTitle}>
-                <F label="Package Type" required value={packageValue(p, packageTypes)} options={packageTypeOpts} onChange={(v) => pickPackageType(i, v)} />
-              </div>
-              <FNum label="Quantity" required value={p.quantity} min={1} integer onChange={(n) => setParcel(i, { quantity: n })} />
-              <F label="Tracking ID" value={p.trackingNumber ?? ''} placeholder="Auto"
-                disabled={!!fromOverage && i === 0} onChange={(v) => setParcel(i, { trackingNumber: v })} />
-              {it ? <>
-                <Fld label="SKU Code">
-                  <SkuCode item={it} skus={masters.skus} onPick={(s) => pickSku(i, 0, s)}
-                    onUnlink={() => setItem(i, 0, { skuCode: null })} autoFocus={focusLine?.i === i && focusLine.k === 0} />
-                </Fld>
-                <F label="SKU Name" value={it.name} placeholder="SKU Name" disabled={bound} onChange={(v) => setItem(i, 0, { name: v })} />
-                <F label="HSN Code" value={it.hsnCode ?? ''} placeholder="HSN" disabled={bound} onChange={(v) => setItem(i, 0, { hsnCode: v })} />
-                <F label="Origin Country" value={it.originCountry ?? ''} options={ORIGIN_OPTS} placeholder="Origin" disabled={bound}
-                  onChange={(v) => setItem(i, 0, { originCountry: v })} />
-              </> : (
-                <div className="flex items-end">
-                  <Button variant="text" icon={<Plus size={13} />} onClick={() => addItem(i)}>Add SKU</Button>
-                </div>
-              )}
-            </Grid>
-          )
-        }}
-        totals={<>
-          {parcels.some((p) => (p.items?.length ?? 0) > 1) && (
-            <p className="mt-3 text-[12px] text-ink-3">A package with more than one SKU shows its first here — the Regular form lists every SKU.</p>
-          )}
-          {declarations}
-        </>}
-      />
-    </div>
-  )
-
-  /* Regular: SKU — one row per SKU line, the console's SKU fields in the 4-column grid */
-  type SkuLine = (typeof skuLines)[number]
-  const skuSection = (
-    <div id="sec-sku" className="scroll-mt-20">
-      <RepeatableList<SkuLine>
-        title="SKU" addNoun="SKU" icon={<Barcode size={15} className={ICON} />}
-        caption="Provide the SKU details for this consignment to ensures precise tracking, billing, and handling of items."
-        cardLabel={(n) => `SKU ${n + 1}`}
-        rows={skuLines}
-        incomplete={({ it }) => !(isBlankItem(it) || (filled(it.name) && it.quantity >= 1))}
-        summary={({ it, i }) => <Facts items={[it.skuCode, it.name.trim() || (!it.skuCode && 'Not linked to the SKU master'), `×${it.quantity}`, `Piece ${i + 1}`]} />}
-        onAdd={() => addItem(parcels.length - 1)}
-        onRemove={(n) => { const l = skuLines[n]; if (l) removeItem(l.i, l.k) }}
-        body={({ it, i, k }) => (
-          <Grid>
-            <Fld label="SKU Code">
-              <SkuCode item={it} skus={masters.skus} onPick={(s) => pickSku(i, k, s)} onUnlink={() => setItem(i, k, { skuCode: null })}
-                autoFocus={focusLine?.i === i && focusLine.k === k} />
-            </Fld>
-            <F label="SKU Name" required value={it.name} placeholder="eg, Chair" disabled={!!it.skuCode}
-              error={reqErr(isBlankItem(it) || filled(it.name))} onChange={(v) => setItem(i, k, { name: v })} />
-            {!hid('skuCategory') && <F label="Category" value={it.category ?? ''} onChange={(v) => setItem(i, k, { category: v })} />}
-            {!hid('skuDescription') && <F label="Description" value={it.description ?? ''} onChange={(v) => setItem(i, k, { description: v })} />}
-            {/* HSN Code then Origin Country — both tiers, from the SKU master on pick */}
-            <F label="HSN Code" value={it.hsnCode ?? ''} disabled={!!it.skuCode} onChange={(v) => setItem(i, k, { hsnCode: v })} />
-            <F label="Origin Country" value={it.originCountry ?? ''} options={ORIGIN_OPTS} placeholder="Select country" disabled={!!it.skuCode}
-              onChange={(v) => setItem(i, k, { originCountry: v })} />
-            {!hid('skuImage') && <F label="Image Url" value={it.imageUrl ?? ''} placeholder="https://" onChange={(v) => setItem(i, k, { imageUrl: v })} />}
-            {!hid('skuUnitCost') && <FNum label="Unit Cost" unit={CURRENCY} blankZero value={it.unitCost ?? 0} onChange={(n) => setItem(i, k, { unitCost: n })} />}
-            {!hid('skuDimensions') && (
-              <Fld label="Dimensions (L × B × H + UOM)" className="sm:col-span-2">
-                <div className="grid grid-cols-4 gap-2">
-                  <NumBox blankZero value={it.lengthCm ?? 0} placeholder="L" onChange={(n) => setItem(i, k, { lengthCm: n })} />
-                  <NumBox blankZero value={it.widthCm ?? 0} placeholder="B" onChange={(n) => setItem(i, k, { widthCm: n })} />
-                  <NumBox blankZero value={it.heightCm ?? 0} placeholder="H" onChange={(n) => setItem(i, k, { heightCm: n })} />
-                  <MenuSelect value={it.dimUom ?? 'CM'} options={DIM_UOMS} onChange={(v) => setItem(i, k, { dimUom: v })} />
-                </div>
-              </Fld>
-            )}
-            {!hid('skuWeight') && (
-              <Fld label="Weight (+ UOM)">
-                <div className="grid grid-cols-[1fr_76px] gap-2">
-                  <NumBox blankZero value={it.weightKg} onChange={(n) => setItem(i, k, { weightKg: n })} />
-                  <MenuSelect value={it.weightUom ?? 'KG'} options={WEIGHT_UOMS} onChange={(v) => setItem(i, k, { weightUom: v })} />
-                </div>
-              </Fld>
-            )}
-            <FNum label="Quantity" required integer blankZero value={it.quantity}
-              error={showErrors && !isBlankItem(it) && it.quantity < 1 ? 'Required field.' : undefined} onChange={(n) => setItem(i, k, { quantity: n })} />
-            <F label="Piece" value={String(i)} options={parcels.map((_, j) => ({ value: String(j), label: `Piece ${j + 1} · ${parcels[j].packageId}` }))}
-              onChange={(v) => moveItem(i, k, Number(v))} />
-          </Grid>
-        )}
-      />
-    </div>
-  )
-
-  /* Regular: Piece — one row per package spec */
-  const pieceSection = (
-    <div id="sec-piece" className="scroll-mt-20">
-      <RepeatableList<Parcel>
-        title="Piece" addNoun="Piece" icon={<PackageIcon size={15} className={ICON} />}
-        caption="Provide the piece details for this consignment to ensure precise tracking, billing, and handling of items."
-        cardLabel={(i) => `Piece ${i + 1}`}
-        rows={parcels}
-        incomplete={(p) => !(p.quantity > 0 && p.weight > 0 && p.l > 0 && p.w > 0 && p.h > 0)}
-        summary={(p) => <Facts items={[p.packageId, pkgTypeName(p), `×${p.quantity}`, `${round2(p.weight)} kg`, `${p.l}×${p.w}×${p.h} cm`]} />}
-        onAdd={() => setParcels((ps) => [...ps, { ...newParcel(), items: [] }])}
-        onDuplicate={(i) => setParcels((ps) => [...ps.slice(0, i + 1), clonePackage(ps[i]), ...ps.slice(i + 1)])}
-        onRemove={(i) => setParcels((ps) => (ps.length > 1 ? ps.filter((_, j) => j !== i) : ps))}
-        body={(p, i) => {
-          const vol = volKg(p) * p.quantity
-          const inside = (p.items ?? []).filter((it) => !isBlankItem(it))
+          const items = p.items ?? []
+          const moreOpen = pkgMoreOpen.has(i)
           return (
             <>
               <Grid>
-                {!hid('pkgTracking') && (
-                  <F label="Tracking Number" value={p.trackingNumber ?? ''} placeholder="Auto-generated when empty" disabled={!!fromOverage && i === 0}
-                    helper={fromOverage && i === 0 ? 'The overage scan barcode' : undefined} onChange={(v) => setParcel(i, { trackingNumber: v })} />
-                )}
-                {!hid('pkgPalletSpace') && <F label="Pallet Space" value={p.palletSpace ?? ''} onChange={(v) => setParcel(i, { palletSpace: v })} />}
-                {!hid('pkgDescription') && (
-                  <F className="sm:col-span-2" label="Package Description" value={p.description ?? ''} onChange={(v) => setParcel(i, { description: v })} />
-                )}
+                <div title={packageTypeTitle}>
+                  <F label="Package Type" required value={packageValue(p, packageTypes)} options={packageTypeOpts} onChange={(v) => pickPackageType(i, v)} />
+                </div>
+                <F label="Cargo Type" required value={p.cargoType} options={opts(CARGO_TYPES)} onChange={(v) => setParcel(i, { cargoType: v })} />
+                <FNum label="Quantity" required value={p.quantity} min={1} integer onChange={(n) => setParcel(i, { quantity: n })} />
+                <FNum label="Weight" required value={p.weight} unit="kg" error={reqErr(p.weight > 0)}
+                  helper={p.weightMode === 'manual' ? undefined : 'Package tare + SKUs'}
+                  onChange={(n) => setParcel(i, { weight: n, weightMode: 'manual' })} />
                 {!hid('pkgDimensions') && (
                   <Fld label="Dimensions (L × W × H)" required error={showErrors && !(p.l > 0 && p.w > 0 && p.h > 0)} className="sm:col-span-2">
                     <div className="grid grid-cols-3 gap-2">
@@ -1360,22 +1176,98 @@ export default function AddOrderPage() {
                     </div>
                   </Fld>
                 )}
-                {!hid('pkgWeight') && (
-                  <FNum label="Weight" required value={p.weight} unit="kg" error={reqErr(p.weight > 0)}
-                    helper={p.weightMode === 'manual' ? undefined : 'Package tare + SKUs'}
-                    onChange={(n) => setParcel(i, { weight: n, weightMode: 'manual' })} />
-                )}
-                <div title={packageTypeTitle}>
-                  <F label="Package Type" required value={packageValue(p, packageTypes)} options={packageTypeOpts} onChange={(v) => pickPackageType(i, v)} />
-                </div>
-                <FNum label="Quantity" required value={p.quantity} min={1} integer onChange={(n) => setParcel(i, { quantity: n })} />
-                <F label="Cargo Type" required value={p.cargoType} options={opts(CARGO_TYPES)} onChange={(v) => setParcel(i, { cargoType: v })} />
               </Grid>
-              <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-1 border-t border-line pt-3 text-[12.5px] text-ink-2">
-                <span>{p.quantity} × <b className="text-ink">{round2(p.weight)} kg</b></span>
-                <span title="L × W × H ÷ 3500">Volumetric <b className="text-ink">{round2(vol)} kg</b></span>
-                <span>Chargeable <b className="text-ink">{round2(Math.max(p.weight, volKg(p)) * p.quantity)} kg</b></span>
-                <span className="min-w-0 truncate">{inside.length ? `SKUs: ${inside.map((it) => `${it.skuCode ?? it.name} ×${it.quantity}`).join(', ')}` : 'No SKUs yet'}</span>
+
+              {(!hid('pkgTracking') || !hid('pkgPalletSpace') || !hid('pkgDescription')) && (
+                <>
+                  <MoreToggle open={moreOpen} onToggle={() => togglePkgMore(i)} label="More package details" />
+                  {moreOpen && (
+                    <div className="mt-4">
+                      <Grid>
+                        {!hid('pkgTracking') && (
+                          <F label="Tracking Number" value={p.trackingNumber ?? ''} placeholder="Auto-generated when empty" disabled={!!fromOverage && i === 0}
+                            helper={fromOverage && i === 0 ? 'The overage scan barcode' : undefined} onChange={(v) => setParcel(i, { trackingNumber: v })} />
+                        )}
+                        {!hid('pkgPalletSpace') && <F label="Pallet Space" value={p.palletSpace ?? ''} onChange={(v) => setParcel(i, { palletSpace: v })} />}
+                        {!hid('pkgDescription') && (
+                          <F className="sm:col-span-2" label="Package Description" value={p.description ?? ''} onChange={(v) => setParcel(i, { description: v })} />
+                        )}
+                      </Grid>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* contents — optional, nested SKU lines scoped to this package */}
+              <div className="mt-5 border-t border-line pt-4">
+                <span className="mb-2 block text-[11px] font-bold uppercase tracking-[0.08em] text-ink-3">Contents (optional)</span>
+                {items.length === 0 ? (
+                  <p className="text-[12.5px] text-ink-3">This package can ship as-is. Add SKU lines only if you want to record what's inside.</p>
+                ) : (
+                  <div className="grid gap-2">
+                    {items.map((it, k) => {
+                      const bound = !!it.skuCode
+                      const key = `${i}-${k}`
+                      const expanded = itemMoreOpen.has(key)
+                      return (
+                        <div key={k} className="rounded-md border border-line bg-warm-25/60 px-3 py-2.5">
+                          <div className="flex items-center gap-3">
+                            <button type="button" onClick={() => toggleItemMore(key)} className="shrink-0 text-warm-400 hover:text-ink">
+                              {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                            </button>
+                            <div className="w-40 shrink-0">
+                              <SkuCode item={it} skus={masters.skus} onPick={(s) => pickSku(i, k, s)} onUnlink={() => setItem(i, k, { skuCode: null })}
+                                autoFocus={focusLine?.i === i && focusLine.k === k} />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <Input value={it.name} placeholder="eg, Chair" disabled={bound} onChange={(v) => setItem(i, k, { name: v })} />
+                            </div>
+                            <div className="w-20 shrink-0">
+                              <Input type="number" value={String(it.quantity)} onChange={(v) => setItem(i, k, { quantity: Number(v) || 0 })} />
+                            </div>
+                            <button type="button" onClick={() => removeItem(i, k)} aria-label="Remove SKU line"
+                              className="shrink-0 text-warm-400 transition-colors hover:text-brand-500">
+                              <X size={15} />
+                            </button>
+                          </div>
+                          {expanded && (
+                            <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-line/60 pt-3 sm:grid-cols-3 xl:grid-cols-6">
+                              <Fld label="SKU Code"><ReadBox value={it.skuCode ?? ''} /></Fld>
+                              {!hid('skuDescription') && <F label="Description" value={it.description ?? ''} onChange={(v) => setItem(i, k, { description: v })} />}
+                              <F label="HSN Code" value={it.hsnCode ?? ''} disabled={bound} onChange={(v) => setItem(i, k, { hsnCode: v })} />
+                              <F label="Origin Country" value={it.originCountry ?? ''} options={ORIGIN_OPTS} disabled={bound}
+                                onChange={(v) => setItem(i, k, { originCountry: v })} />
+                              {!hid('skuUnitCost') && <FNum label="Unit Cost" unit={CURRENCY} blankZero value={it.unitCost ?? 0} onChange={(n) => setItem(i, k, { unitCost: n })} />}
+                              {!hid('skuDimensions') && (
+                                <Fld label="Dimensions (L × B × H + UOM)" className="sm:col-span-2">
+                                  <div className="grid grid-cols-4 gap-2">
+                                    <NumBox blankZero value={it.lengthCm ?? 0} placeholder="L" onChange={(n) => setItem(i, k, { lengthCm: n })} />
+                                    <NumBox blankZero value={it.widthCm ?? 0} placeholder="B" onChange={(n) => setItem(i, k, { widthCm: n })} />
+                                    <NumBox blankZero value={it.heightCm ?? 0} placeholder="H" onChange={(n) => setItem(i, k, { heightCm: n })} />
+                                    <MenuSelect value={it.dimUom ?? 'CM'} options={DIM_UOMS} onChange={(v) => setItem(i, k, { dimUom: v })} />
+                                  </div>
+                                </Fld>
+                              )}
+                              {!hid('skuWeight') && (
+                                <Fld label="Weight (+ UOM)">
+                                  <div className="grid grid-cols-[1fr_76px] gap-2">
+                                    <NumBox blankZero value={it.weightKg} onChange={(n) => setItem(i, k, { weightKg: n })} />
+                                    <MenuSelect value={it.weightUom ?? 'KG'} options={WEIGHT_UOMS} onChange={(v) => setItem(i, k, { weightUom: v })} />
+                                  </div>
+                                </Fld>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+                <button type="button" onClick={() => addItem(i)}
+                  className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-warm-300 py-2.5
+                             text-[12.5px] font-bold text-brand-500 transition-colors hover:border-brand-500 hover:bg-brand-50/40">
+                  <Plus size={13} /> Add SKU
+                </button>
               </div>
             </>
           )
@@ -1425,6 +1317,13 @@ export default function AddOrderPage() {
       <div className="mt-2">
         <Button size="sm" variant="text" icon={<Plus size={13} />} onClick={addVehicle}>Add vehicle</Button>
       </div>
+      {!hid('totalLoadingTime') && (
+        <div className="mt-4 max-w-[200px]">
+          <Fld label={lbl('totalLoadingTime')}>
+            <NumBox blankZero integer unit="min" value={c.totalLoadingTime ?? 0} onChange={(n) => setC({ totalLoadingTime: n || null })} />
+          </Fld>
+        </div>
+      )}
       <p className="mt-2 text-[12px] text-ink-3">
         {units} vehicle{units === 1 ? '' : 's'} · load {(actualLoad / 1000).toFixed(2)} tons ({actualLoad.toLocaleString()} kg) of {capacityKg.toLocaleString()} kg capacity
         {overloaded.length > 0 && <span className="text-danger-fg"> · {overloaded.length} overloaded</span>}
@@ -1466,46 +1365,51 @@ export default function AddOrderPage() {
     </div>
   )
 
-  const carrierSection = (
-    <SectionCard id="sec-carriers" title="Carriers" count={CARRIERS.length} done={doneOf['sec-carriers']}
+  /* LTL only — an FTL booking's rate/TAT already comes from the vehicles configured
+     above and its Service Type is picked in Consignment Details, so this section
+     doesn't apply and is left out of `sections` entirely when Dedicate Truck is on. */
+  const servicesSection = (
+    <SectionCard id="sec-services" title="Services" count={parcelQuotes.length} done={doneOf['sec-services']}
       icon={<Truck size={15} className={ICON} />}
-      caption="Pick the carrier that will run this consignment — nothing is preselected.">
+      caption={`Estimated delivery time and rate for this pickup-to-delivery lane (${lane === 'local' ? 'same state' : 'interisland'}) — nothing is preselected.`}>
       <div className="rounded-lg border border-line p-5">
-        <div className="flex flex-wrap gap-4">
-          {CARRIERS.map((k) => {
-            const on = c.carrier === k.code
+        <div className="grid gap-3 sm:grid-cols-2">
+          {parcelQuotes.map((q) => {
+            const on = service === q.code
             return (
-              <button key={k.code} type="button" onClick={() => setC({ carrier: k.code })} role="radio" aria-checked={on}
-                className={`flex items-center gap-2.5 rounded-md border bg-surface px-4 py-3 text-left transition-colors
-                  ${on ? 'border-brand-500 text-ink' : 'border-line text-ink-2 hover:border-warm-300'}`}>
+              <button key={q.code} type="button" onClick={() => setService(q.code)} role="radio" aria-checked={on}
+                className={`flex items-center gap-3 rounded-md border bg-surface px-4 py-3 text-left transition-colors
+                  ${on ? 'border-brand-500 bg-brand-50/30' : 'border-line text-ink-2 hover:border-warm-300'}`}>
                 {on
                   ? <CircleDot size={15} className="shrink-0 text-brand-500" />
                   : <span className="h-[15px] w-[15px] shrink-0 rounded-full border border-warm-300" />}
-                <span>
-                  <span className="block text-[14px] leading-tight">{k.code}</span>
-                  <span className="block text-[12px] leading-tight text-ink-3">{k.sub}</span>
-                </span>
+                <div className="min-w-0 flex-1">
+                  <span className="block text-[14px] font-bold leading-tight text-ink">{q.code}</span>
+                  <span className="block text-[12px] leading-tight text-ink-3">{q.carrier}</span>
+                </div>
+                <div className="shrink-0 text-right">
+                  <span className="block text-[13px] font-bold text-ink">{money(q.price + vasTotal, CURRENCY)}</span>
+                  <span className="block text-[11.5px] text-ink-3">Est. {q.days} day{q.days === 1 ? '' : 's'}</span>
+                </div>
               </button>
             )
           })}
         </div>
-        {showErrors && !c.carrier && <p className="mt-3 text-[12.5px] text-brand-500">Select a carrier to create the consignment.</p>}
+        {showErrors && !service && <p className="mt-3 text-[12.5px] text-brand-500">Select a service to create the consignment.</p>}
       </div>
     </SectionCard>
   )
 
   const byId: Record<string, ReactNode> = {
-    'sec-consignment': consignmentSection, 'sec-ship': shipSimplified, 'sec-ship-from': shipFromSection,
-    'sec-rto': rtoSection, 'sec-ship-to': shipToSection, 'sec-package': packageSimplified, 'sec-sku': skuSection,
-    'sec-piece': pieceSection, 'sec-vehicle': vehicleSection, 'sec-vas': vasSection, 'sec-carriers': carrierSection,
+    'sec-consignment': consignmentSection, 'sec-ship-from': shipFromSection,
+    'sec-rto': rtoSection, 'sec-ship-to': shipToOpen ? shipToSection : shipToPlaceholder, 'sec-package': packageSection,
+    'sec-vehicle': vehicleSection, 'sec-vas': vasSection, 'sec-services': servicesSection,
   }
   const pct = Math.round((filledCount / allReq.length) * 100)
 
   return (
     <div>
-      <PageHeader title={isFtl ? 'Add FTL Consignment' : 'Add Consignment'} subtitle={full ? 'Regular form' : 'Simplified form'}
-        right={<TierSwitch<FormMode> value={formMode} onChange={setFormMode}
-          options={[{ value: 'simplified', label: 'Simplified' }, { value: 'full', label: 'Regular Add Form' }]} />} />
+      <PageHeader title={isFtl ? 'Add FTL Consignment' : 'Add Consignment'} />
       {fromPr && (
         <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-line bg-info-bg px-4 py-2.5 text-[13px] text-ink">
           <Truck size={15} className="shrink-0 text-info-fg" />
@@ -1533,8 +1437,8 @@ export default function AddOrderPage() {
         <div className="xl:sticky xl:top-4">
           <Panel title="Shipment Summary">
             <div className="px-5 pb-4">
-              <SummaryBlock title="Ship From" onJump={() => jumpTo(full ? 'sec-ship-from' : 'sec-ship')}>{sender.name || '—'}{sender.line1 ? `, ${partyLine(sender)}` : ''}</SummaryBlock>
-              <SummaryBlock title={allDrops.length > 1 ? `Ship To (${allDrops.length} addresses)` : 'Ship To'} onJump={() => jumpTo(full ? 'sec-ship-to' : 'sec-ship')}>
+              <SummaryBlock title="Ship From" onJump={() => jumpTo('sec-ship-from')}>{sender.name || '—'}{sender.line1 ? `, ${partyLine(sender)}` : ''}</SummaryBlock>
+              <SummaryBlock title={allDrops.length > 1 ? `Ship To (${allDrops.length} addresses)` : 'Ship To'} onJump={() => jumpTo('sec-ship-to')}>
                 {allDrops.map((d, i) => <p key={i}>{allDrops.length > 1 ? `${i + 1}. ` : ''}{d.name || '—'}{d.line1 ? `, ${partyLine(d)}` : ''}</p>)}
               </SummaryBlock>
               {isFtl ? (
@@ -1543,13 +1447,13 @@ export default function AddOrderPage() {
                   {addServices.length > 0 && <p className="text-[12.5px] text-ink-3">+ {addServices.join(', ')}</p>}
                 </SummaryBlock>
               ) : (
-                <SummaryBlock title="LTL · Package & SKU" onJump={() => jumpTo(full ? 'sec-piece' : 'sec-package')}>
+                <SummaryBlock title="LTL · Packages" onJump={() => jumpTo('sec-package')}>
                   {totals.qty} package{totals.qty === 1 ? '' : 's'} · {totals.items} SKU unit{totals.items === 1 ? '' : 's'}
                   <p className="text-[12.5px] text-ink-3">Dead {kg(totals.dead, 2)} · Vol {kg(totals.vol, 2)} · Chargeable {kg(totals.chargeable, 2)}</p>
                 </SummaryBlock>
               )}
-              <SummaryBlock title="Service Type · Carrier" onJump={() => jumpTo('sec-carriers')}>
-                {svc.code} · {c.carrier || <span className="text-ink-3">no carrier yet</span>}
+              <SummaryBlock title="Service" onJump={() => jumpTo('sec-services')}>
+                {(isFtl || service) ? `${svc.code} · ${svc.carrier}` : <span className="text-ink-3">no service selected yet</span>}
               </SummaryBlock>
               <div className="grid grid-cols-[1fr_auto] items-baseline gap-x-6 gap-y-1 border-t border-line pt-3 text-[13px] text-ink-2">
                 <span>Delivery</span><span className="text-right tabular-nums text-ink">{money(svc.price, CURRENCY)}</span>

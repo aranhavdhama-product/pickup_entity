@@ -55,12 +55,12 @@ export function Grid({ children, compact }: { children: ReactNode; compact?: boo
  * Uniform field anatomy so every control in a grid row sits on the same line:
  * fixed-height single-line label → control → helper/error underneath.
  */
-export function Fld({ label, required, info, error, helper, className = '', children }: {
+export function Fld({ label, required, info, error, helper, onTouch, className = '', children }: {
   label: string; required?: boolean; info?: boolean; error?: boolean
-  helper?: ReactNode; className?: string; children: ReactNode
+  helper?: ReactNode; onTouch?: () => void; className?: string; children: ReactNode
 }) {
   return (
-    <div className={`min-w-0 ${className}`}>
+    <div className={`min-w-0 ${className}`} onBlurCapture={onTouch}>
       <label className="mb-1.5 flex h-5 items-center gap-1 whitespace-nowrap text-[13px] font-bold text-ink" title={label}>
         <span className="truncate">{label}</span>
         {required && <span className="shrink-0 text-brand-500">*</span>}

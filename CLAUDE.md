@@ -109,7 +109,7 @@ orders / ~30 pickup requests, built from deterministic index math (never `Math.r
 reload shows the same data. Runs with no session.
 
 Product changes layered on the replica (deliberate departures from the live portal):
-- **Consignment Order page** (`/grow/orders`, nav "Shipments") — the `/local/consignments`
+- **Consignment Order page** (`/grow/orders`, nav "Consignments") — the `/local/consignments`
   page's grammar and vocabulary (spec §12): `FilterLine` (date range · State/Secondary State
   grouped `FilterMultiSelect` · Origin `FilterSelect` · funnel: Facility, Type, Carrier, Service
   Type, Exception, Tag · Clear Filters; right: search · ⚙ `ColumnChooser` · download) → the
