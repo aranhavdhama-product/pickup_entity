@@ -237,7 +237,11 @@ Packages (1) / Service Type (2) (QA shortcut). Never reintroduce a Grow-only loo
   `ReceiptPage` on `growOrders/ledger.ts` (`grow-wallet-v2`; Wallet tab = the GROW-STAGING wallet: Recharge (demo
   credit row) · Balance/Credits/Debits tiles · running balance per currency from `walletOf()`; Payments tab = the
   2GO_PH list; seeded opening credit per currency; one checkout = one DR entry, seeded from paid orders,
-  `recordPayment(order)` called by CheckoutPage, idempotent; `chargesOf()` = frozen charges else rate card, flagged
+  **payment flow** = `GrowOrders/paymentSheet.tsx` `PaymentSheet` (Wallet balance + inline Recharge · Card demo, only
+  the last 4 digits kept · Pay later on a Postpaid account · COD for a COD order; choice saved as
+  `merchantSettings.defaultPayMethod`) on Checkout, `PayNowDialog` on Billing / Payments ⋮ for Pending (pay-later /
+  COD) debits, `PayNowButton` for the order overlay; `debitsWallet()` = only Wallet/'Credit' debits move the balance,
+  `recordPayment(order, method, last4)` called by CheckoutPage, idempotent; `chargesOf()` = frozen charges else rate card, flagged
   estimated). **Billing** `/grow/orders/billing` = `BillingPage` — invoices DERIVED per month × currency by
   `growOrders/invoices.ts` (never sum ₱ and $), status from Settings' Payment Type. **Disputes**
   `/grow/orders/disputes` (+ `/:id`) = `DisputesPage` on `growOrders/disputes.ts` (`grow-disputes-v3`): the live

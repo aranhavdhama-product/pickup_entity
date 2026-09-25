@@ -26,6 +26,7 @@ import { toast } from '../../nueva/toast'
 import { fmtDate, fmtDateTime, money } from './utils'
 import { PagedTable, plural } from './accountBits'
 import { raiseDisputeHref } from './DisputesPage'
+import { PayNowDialog } from './paymentSheet'
 import { DISPUTE_TONE, latestInvoiceDispute, useDisputes } from '../../growOrders/disputes'
 
 const TONE: Record<InvoiceStatus, 'info' | 'warning' | 'success'> = { Open: 'info', Due: 'warning', Paid: 'success' }
@@ -33,10 +34,10 @@ const ym = monthOf
 const r2 = (n: number) => Math.round(n * 100) / 100
 
 /** "₱ 1,200.00 · $ 45.00" — never one sum across currencies. */
-function byCurrency(invs: Invoice[]): string {
+function byCurrency(invs: Invoice[], amt: (i: Invoice) => number = (i) => i.total): string {
   if (!invs.length) return '—'
   const m = new Map<string, number>()
-  invs.forEach((i) => m.set(i.currency, (m.get(i.currency) ?? 0) + i.total))
+  invs.forEach((i) => m.set(i.currency, (m.get(i.currency) ?? 0) + amt(i)))
   return [...m.entries()].map(([c, n]) => money(r2(n), c)).join(' · ')
 }
 
@@ -53,6 +54,7 @@ export default function BillingPage() {
   const [status, setStatus] = useState('')
   const [currency, setCurrency] = useState('')
   const [open, setOpen] = useState<Invoice | null>(null)
+  const [paying, setPaying] = useState<string[] | null>(null)
   const thisM = ym(new Date().toISOString())
   const rows = all.filter((i) => (!status || i.status === status) && (!currency || i.currency === currency)
     && (!q.trim() || [i.id, i.label].some((v) => v.toLowerCase().includes(q.trim().toLowerCase()))))
@@ -98,7 +100,7 @@ export default function BillingPage() {
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         <KpiTile icon={<CalendarClock size={18} />} label="Billed this month" value={byCurrency(all.filter((i) => i.month === thisM))}
           hint={`${plural(all.filter((i) => i.month === thisM).reduce((n, i) => n + i.consignments, 0), 'consignment')} so far`} />
-        <KpiTile icon={<Wallet size={18} />} tone={due.length ? 'warning' : 'neutral'} label="Outstanding" value={byCurrency(due)}
+        <KpiTile icon={<Wallet size={18} />} tone={due.length ? 'warning' : 'neutral'} label="Outstanding" value={byCurrency(due, (i) => (i.pendingIds.length ? i.pendingTotal : i.total))}
           hint={postpaid ? (due.length ? `Due ${fmtDate(due[0].dueOn)}` : 'Nothing due') : 'Prepaid account — paid at checkout'}
           onClick={due.length ? () => setStatus('Due') : undefined} />
         <KpiTile icon={<CircleCheck size={18} />} tone="success" label="Paid" value={byCurrency(all.filter((i) => i.status === 'Paid'))}
@@ -117,7 +119,9 @@ export default function BillingPage() {
       {open && (
         <Modal open wide title={`Invoice ${open.id}`} subtitle={`${open.label} · ${plural(open.consignments, 'consignment')} · ${postpaid ? `Due ${fmtDate(open.dueOn)}` : 'Prepaid'}`}
           onClose={() => setOpen(null)}
-          footer={<><Button variant="ghost" onClick={() => nav(raiseDisputeHref('Invoice', open.id))}>Raise a query</Button><Button variant="outline" icon={<Download size={15} />} onClick={() => exportInvoice(open)}>Download Invoice</Button><Button onClick={() => setOpen(null)}>Close</Button></>}>
+          footer={<><Button variant="ghost" onClick={() => nav(raiseDisputeHref('Invoice', open.id))}>Raise a query</Button><Button variant="outline" icon={<Download size={15} />} onClick={() => exportInvoice(open)}>Download Invoice</Button>{open.pendingIds.length > 0
+            ? <Button onClick={() => setPaying(open.pendingIds)}>Pay {money(open.pendingTotal, open.currency)} now</Button>
+            : <Button onClick={() => setOpen(null)}>Close</Button>}</>}>
           <div className="mb-3 flex items-center gap-2"><StatusPill label={open.status} tone={TONE[open.status]} />
             {open.estimated && <span className="text-[12px] text-ink-3">Includes estimated amounts</span>}</div>
           <table className="w-full text-[13px]">
@@ -134,7 +138,7 @@ export default function BillingPage() {
                   <td className="px-3 py-2 text-ink-2">{e.consignmentNos.join(', ')}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-ink-2">{money(e.shipping, e.currency)}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-ink-2">{money(e.tax, e.currency)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-ink">{money(e.amount, e.currency)}{e.estimated && <span className="ml-1 text-[11px] text-ink-3">est.</span>}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-ink">{money(e.amount, e.currency)}{e.estimated && <span className="ml-1 text-[11px] text-ink-3">est.</span>}{e.status === 'Pending' && <span className="ml-1 text-[11px] font-bold text-warning-fg">due</span>}</td>
                 </tr>
               ))}
             </tbody>
@@ -147,6 +151,7 @@ export default function BillingPage() {
           </table>
         </Modal>
       )}
+      {paying && <PayNowDialog entryIds={paying} title={open ? `Pay invoice ${open.id}` : 'Pay now'} onClose={() => setPaying(null)} onPaid={() => setOpen(null)} />}
     </LocalPage>
   )
 }

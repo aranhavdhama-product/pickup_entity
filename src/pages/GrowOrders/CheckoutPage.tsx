@@ -1,4 +1,11 @@
-/** /order/checkout/ replica — Payment Summary rail + remarks; Proceed creates the order. */
+/**
+ * /order/checkout/ replica — Payment Summary rail + remarks, then the merchant
+ * PAYMENT step (owner, 2026-09-25): `PaymentSheet` method cards (Wallet balance ·
+ * Card / online (demo) · Pay later on a Postpaid account · Cash on delivery for a
+ * COD order). "Pay ₱ X and place order" / "Place order" creates the order and
+ * records the ledger debit (`recordPayment(o, method)`); a success panel links the
+ * consignment and its receipt.
+ */
 import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { CURRENCY } from '../../growOrders/seed'
@@ -11,6 +18,8 @@ import { money } from './utils'
 import { SFld } from '../../components/consignmentForm'
 import { usePortalMerchant } from './pickupGate'
 import { recordPayment } from '../../growOrders/ledger'
+import { PaymentSheet, payLabel, type PaymentChoice } from './paymentSheet'
+import { CheckCircle2 } from 'lucide-react'
 import {
   DRAFT_KEY, DRAFT_PICKUP_KEY, clearDraftKeys, readOverageSidecar, vehiclesOf, volKg,
   type OrderDraft, type OverageSidecar,
@@ -28,10 +37,37 @@ export default function CheckoutPage() {
   const [payment, setPayment] = useState<PaymentMode>(() => (draft?.consignment?.paymentMode === 'COD' ? 'COD' : 'Prepaid'))
   const [cod, setCod] = useState(() => (draft?.consignment?.paymentMode === 'COD' && draft.consignment.orderAmount ? String(draft.consignment.orderAmount) : ''))
   const portal = usePortalMerchant()
+  const [choice, setChoice] = useState<PaymentChoice | null>(null)
+  const [tried, setTried] = useState(false)
+  /** set once the order is placed — the success panel (the draft keys are already cleared) */
+  const [placed, setPlaced] = useState<{ orderId: string; orderNumber: string; entryId: string | null; method: string; note: string } | null>(null)
   /* no draft = nothing to pay for; clear any sidecar the abandoned stepper left,
      so the next order is never silently attached to that pickup or scan.
      In an effect, never in the render body — this is a side effect. */
   useEffect(() => { if (!draft) clearDraftKeys() }, [draft])
+  if (placed) {
+    const later = placed.method === 'Pay later' || placed.method === 'COD'
+    return (
+      <div className="mx-auto max-w-[720px]">
+        <PageHeader title="Checkout" subtitle="Order placed" />
+        <Panel>
+          <div className="flex flex-col items-center px-8 py-10 text-center">
+            <CheckCircle2 size={40} className="text-success-fg" />
+            <p className="mt-3 text-[15px] font-bold text-ink">Consignment {placed.orderNumber} placed</p>
+            <p className="mt-1 text-[13px] text-ink-2">
+              {later ? (placed.method === 'COD' ? 'Shipping charges will be collected on delivery.' : 'Billed on this month’s invoice — shown as Due in Billing.')
+                : `Paid by ${placed.method === 'Wallet' ? 'wallet balance' : 'card'}.`}{placed.note ? ` ${placed.note}` : ''}
+            </p>
+            <div className="mt-5 flex flex-wrap justify-center gap-2">
+              {placed.entryId && <Button variant="outline" onClick={() => nav(`/grow/orders/wallet/${placed.entryId}`)}>{later ? 'View payment' : 'View receipt'}</Button>}
+              {later && <Button variant="outline" onClick={() => nav('/grow/orders/billing')}>Open Billing</Button>}
+              <Button onClick={() => nav(`/grow/orders?order=${placed.orderId}`)}>Open consignment</Button>
+            </div>
+          </div>
+        </Panel>
+      </div>
+    )
+  }
   if (!draft) {
     return (
       <div>
@@ -53,6 +89,8 @@ export default function CheckoutPage() {
   /** Every SKU / custom item across the packages, for the order record and the summary. */
   const items = draft.parcels.flatMap((p) => p.items ?? [])
   const proceed = () => {
+    setTried(true)
+    if (!choice?.ready) return
     /* resumed draft → update that same order; otherwise create a new one */
     const existing = draft.orderId ? orderById(draft.orderId) : undefined
     /** what the Create Consignment form collected beyond the legacy draft fields */
@@ -103,8 +141,9 @@ export default function CheckoutPage() {
     }
     if (existing) growOrderActions.update(o.id, o)
     else growOrderActions.create(o)
-    /* the Payments ledger (Wallet): one checkout = one debit entry */
-    recordPayment(o)
+    /* the Payments ledger (Wallet): one checkout = one debit entry — wallet / card paid, pay later / COD pending */
+    const entry = recordPayment(o, choice.method, choice.last4)
+    const paidNote = choice.method === 'Wallet' || choice.method === 'Card' ? `Paid ${money(payable, cur)}` : choice.method === 'COD' ? 'Charges on delivery' : 'Billed later'
     clearDraftKeys()
     if (ovPr && scan) {
       growOrderActions.resolveOverage(ovPr.id, scan.id, o.id)
@@ -124,15 +163,16 @@ export default function CheckoutPage() {
        (joined to the open request at its store per policy, or a new one) */
     const auto = growOrderActions.autoBookOnConsignment(o.id, portal.code)
     if (auto) {
-      toast.success(`Consignment ${o.orderNumber} created · Pickup Request ${auto.number} scheduled`)
-      nav('/grow/orders')
+      toast.success(`Consignment ${o.orderNumber} created · ${paidNote} · Pickup Request ${auto.number} scheduled`)
+      setPlaced({ orderId: o.id, orderNumber: o.orderNumber, entryId: entry?.id ?? null, method: choice.method, note: `Pickup Request ${auto.number} scheduled.` })
       return
     }
-    toast.success(`Consignment ${o.orderNumber} created`)
-    nav('/grow/orders')
+    toast.success(`Consignment ${o.orderNumber} created · ${paidNote}`)
+    setPlaced({ orderId: o.id, orderNumber: o.orderNumber, entryId: entry?.id ?? null, method: choice.method, note: '' })
   }
   /* the form's tax rule: whole pesos, cents for dollars */
   const taxes = cur === '$' ? Math.round(draft.rate * 15) / 100 : Math.round(draft.rate * 0.15)
+  const payable = Math.round((draft.rate + taxes) * 100) / 100
   const line = (k: string, v: ReactNode, key?: number) => (
     <p key={key} className="mt-1 first:mt-0"><span className="text-ink-3">{k} </span>{v}</p>
   )
@@ -181,6 +221,13 @@ export default function CheckoutPage() {
               </div>
             </div>
           </Panel>
+          <Panel title="Payment method">
+            <div className="px-5 pb-5 pt-2">
+              <p className="mb-3 text-[12px] text-ink-3">How you pay the {money(payable, cur)} shipping charges. Your choice is remembered.</p>
+              <PaymentSheet amount={payable} currency={cur} allowCod={payment === 'COD'} onChange={setChoice} />
+              {tried && choice && !choice.ready && choice.reason && <p className="mt-2 text-[12px] text-danger-fg">{choice.reason}</p>}
+            </div>
+          </Panel>
         </div>
         <Panel title="Payment Summary">
           <div className="px-5 pb-5">
@@ -191,7 +238,8 @@ export default function CheckoutPage() {
               <div className="flex justify-between"><span className="text-ink-3">Taxes</span><span>{money(taxes, cur)}</span></div>
               <div className="mt-3 flex justify-between border-t border-line pt-3 text-[15px] font-bold"><span>Payable Amount</span><span>{money(draft.rate + taxes, cur)}</span></div>
             </div>
-            <div className="mt-5 flex [&>button]:w-full"><Button onClick={proceed}>Proceed</Button></div>
+            <div className="mt-5 flex [&>button]:w-full"><Button onClick={proceed}>{payLabel(choice, payable, cur)}</Button></div>
+            {choice && <p className="mt-2 text-center text-[12px] text-ink-3">{choice.method === 'Wallet' ? 'Debited from your wallet' : choice.method === 'Card' ? 'Demo card payment' : choice.method === 'COD' ? 'Collected on delivery' : 'Added to this month’s invoice'}</p>}
           </div>
         </Panel>
       </div>

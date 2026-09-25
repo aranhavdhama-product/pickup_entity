@@ -91,18 +91,23 @@ const expiryOk = (v: string) => {
 }
 
 /** The method cards. Calls `onChange` with the current choice and whether it can be paid. */
-export function PaymentSheet({ amount, currency, allowCod = false, onChange }: {
-  amount: number; currency: string; allowCod?: boolean; onChange: (c: PaymentChoice) => void
+export function PaymentSheet({ amount, currency, allowCod = false, allowPayLater = true, onChange }: {
+  amount: number; currency: string; allowCod?: boolean
+  /** false when SETTLING a due payment (Pay now) — only wallet / card can pay it */
+  allowPayLater?: boolean
+  onChange: (c: PaymentChoice) => void
 }) {
   const ledger = useLedger()
   const masters = useMasters()
   const merchant = currentMerchant(masters.merchants, useMerchantCode())
   const settings = useMerchantSettings(merchant?.code ?? '', merchant?.name ?? '', merchant?.party)
-  const postpaid = settings.business.paymentType === 'Postpaid'
+  const postpaid = settings.business.paymentType === 'Postpaid' && allowPayLater
   const balance = useMemo(() => walletOf(ledger, currency).balance, [ledger, currency])
   const allowed: PayMethod[] = ['Wallet', 'Card', ...(postpaid ? ['Pay later' as const] : []), ...(allowCod ? ['COD' as const] : [])]
   const pref = settings.defaultPayMethod as PayMethod
-  const [method, setMethodState] = useState<PayMethod>(allowed.includes(pref) ? pref : 'Wallet')
+  const [picked, setMethodState] = useState<PayMethod>(allowed.includes(pref) ? pref : 'Wallet')
+  /* a method that stopped being offered (COD switched off, account made prepaid) falls back to the wallet */
+  const method: PayMethod = allowed.includes(picked) ? picked : 'Wallet'
   const [raw, setRaw] = useState('') // card digits — kept in component state only, never persisted
   const [name, setName] = useState('')
   const [exp, setExp] = useState('')
@@ -121,7 +126,8 @@ export function PaymentSheet({ amount, currency, allowCod = false, onChange }: {
 
   const setMethod = (m: PayMethod) => {
     setMethodState(m)
-    if (merchant?.code) saveMerchantSettings(merchant.code, settings, { defaultPayMethod: m })
+    /* remember the checkout's choice only (a Pay now sheet never offers every method) */
+    if (merchant?.code && allowPayLater) saveMerchantSettings(merchant.code, settings, { defaultPayMethod: m })
   }
   return (
     <div role="radiogroup" className="flex flex-col gap-2">
@@ -189,7 +195,7 @@ export function PayNowDialog({ entryIds, title, onClose, onPaid }: { entryIds: s
       <div className="pb-4 pt-1">
         {due.length === 0
           ? <p className="text-[13px] text-ink-2">Nothing left to pay.</p>
-          : <PaymentSheet amount={amount} currency={currency} onChange={(c) => setChoice(c.method === 'Pay later' || c.method === 'COD' ? { ...c, ready: false } : c)} />}
+          : <PaymentSheet amount={amount} currency={currency} allowPayLater={false} onChange={setChoice} />}
         {choice && !payable && choice.reason && <p className="mt-2 text-[12px] text-ink-3">{choice.reason}</p>}
       </div>
     </Modal>

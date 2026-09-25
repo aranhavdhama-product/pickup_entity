@@ -21,10 +21,10 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowDownLeft, ArrowUpRight, CreditCard, ListOrdered, Plus, Wallet } from 'lucide-react'
 import { Button, EmptyState, KebabMenu, KpiTile, Panel, StatusPill, type Column } from '../../nueva/components'
 import { FilterLine, FilterSelect, LocalPage, LocalTabs, SearchBox } from '../../local/chrome'
-import { useLedger, walletOf, type LedgerEntry, type LedgerStatus, type WalletRow } from '../../growOrders/ledger'
+import { isDue, useLedger, walletOf, type LedgerEntry, type LedgerStatus, type WalletRow } from '../../growOrders/ledger'
 import { fmtDateTime, money } from './utils'
 import { CountBadge, PagedTable, plural } from './accountBits'
-import { RechargeDialog } from './paymentSheet'
+import { PayNowDialog, RechargeDialog } from './paymentSheet'
 import { raiseDisputeHref } from './DisputesPage'
 
 export const LEDGER_TONE: Record<LedgerStatus, 'success' | 'danger' | 'warning'> = { Success: 'success', Failed: 'danger', Pending: 'warning' }
@@ -98,6 +98,7 @@ function WalletTab({ ledger }: { ledger: LedgerEntry[] }) {
 function PaymentsTab({ ledger }: { ledger: LedgerEntry[] }) {
   const nav = useNavigate()
   const [q, setQ] = useState('')
+  const [paying, setPaying] = useState<string | null>(null)
   const debits = useMemo(() => ledger.filter((e) => e.type === 'DR'), [ledger])
   const rows = useMemo(() => {
     const n = q.trim().toLowerCase()
@@ -117,11 +118,14 @@ function PaymentsTab({ ledger }: { ledger: LedgerEntry[] }) {
     { key: 'at', label: 'Date', width: 150, render: (e: LedgerEntry) => fmtDateTime(e.at) },
     { key: 'amount', label: 'Amount', width: 130, align: 'right', render: (e: LedgerEntry) => money(e.amount, e.currency) },
     { key: 'remarks', label: 'Remarks', render: (e: LedgerEntry) => e.remarks || '--' },
-    { key: 'status', label: 'Transaction Status', width: 160, render: (e: LedgerEntry) => <StatusPill label={e.status} tone={LEDGER_TONE[e.status]} /> },
+    { key: 'mode', label: 'Payment Mode', width: 150, render: (e: LedgerEntry) => <span className="block truncate">{e.mode}</span> },
+    { key: 'status', label: 'Transaction Status', width: 160, render: (e: LedgerEntry) => (isDue(e) ? <StatusPill label="Due" tone="warning" /> : <StatusPill label={e.status} tone={LEDGER_TONE[e.status]} />) },
     {
       key: 'actions', label: 'Actions', width: 90, render: (e: LedgerEntry) => (
         <span onClick={(ev) => ev.stopPropagation()}>
-          <KebabMenu items={[{ label: 'View Receipt', onClick: () => open(e) }, { label: 'Raise Dispute', onClick: () => nav(raiseDisputeHref('Transaction', e.id)) }]} />
+          <KebabMenu items={[
+            ...(isDue(e) ? [{ label: 'Pay now', onClick: () => setPaying(e.id) }] : []),
+            { label: 'View Receipt', onClick: () => open(e) }, { label: 'Raise Dispute', onClick: () => nav(raiseDisputeHref('Transaction', e.id)) }]} />
         </span>
       ),
     },
@@ -134,6 +138,7 @@ function PaymentsTab({ ledger }: { ledger: LedgerEntry[] }) {
           ? <Panel><EmptyState title="No payments yet" hint="A payment appears here once a consignment is checked out." /></Panel>
           : <PagedTable rows={rows} columns={columns} onRowClick={open} resetKey={q} />}
       </div>
+      {paying && <PayNowDialog entryIds={[paying]} onClose={() => setPaying(null)} />}
     </>
   )
 }

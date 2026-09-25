@@ -29,6 +29,7 @@ import { CONTACT_SUPPORT, merchantMayChange, usePortalMerchant } from './pickupG
 import { toShipmentRow } from './shipmentRows'
 import { merchantReadSections } from './merchantConsignmentSections'
 import { RaiseDisputeButton } from './DisputesPage'
+import { PayNowButton } from './paymentSheet'
 
 const CLOSED_STATES = ['Delivered', 'Cancelled']
 
@@ -71,6 +72,8 @@ export default function GrowConsignmentView({ orderId, onClose }: { orderId: str
           <Button variant="outline" icon={<Printer size={15} />}
             onClick={() => toast.info('Demo only — label generation is a platform service, not a local one.')}>Print Label</Button>
         )}
+        {/* Payments (2026-09-25): shows only while the order still has a pending debit */}
+        {!row.draft && <PayNowButton orderId={o.id} />}
         {/* Disputes (2026-09-25): a booked consignment can raise a tracking query */}
         {!row.draft && <RaiseDisputeButton orderId={o.id} />}
         {!closed && (
