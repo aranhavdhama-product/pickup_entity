@@ -231,6 +231,22 @@ Product changes layered on the replica (deliberate departures from the live port
   `Parcel.quantity` = packages of this spec, `ParcelItem.quantity` = units per package.
 `?step=1|2` (+`&type=FTL`) on Create Order prefills sample parties + a package and scrolls to
 Packages (1) / Service Type (2) (QA shortcut). Never reintroduce a Grow-only look: new Grow UI uses the shared console components.
+- **Money & account pages** (2026-09-25, research `docs/superpowers/research/2026-09-25-grow-portal-pages.md` §4–§9;
+  localStorage stores via `src/growOrders/localStore.ts`, deterministic seeds, normalize-on-load; shared bits in
+  `GrowOrders/accountBits.tsx`): **Wallet → Payments** `/grow/orders/wallet` (+ `/:id` receipt) = `WalletPage` /
+  `ReceiptPage` on `growOrders/ledger.ts` (`grow-wallet-v1`; one checkout = one DR entry, seeded from paid orders,
+  `recordPayment(order)` called by CheckoutPage, idempotent; `chargesOf()` = frozen charges else rate card, flagged
+  estimated). **Billing** `/grow/orders/billing` = `BillingPage` — invoices DERIVED per month × currency by
+  `growOrders/invoices.ts` (never sum ₱ and $), status from Settings' Payment Type. **Disputes**
+  `/grow/orders/disputes` (+ `/:id`) = `DisputesPage` on `growOrders/disputes.ts` (`grow-disputes-v3`): the live
+  GROW-STAGING tenant's three kinds Wallet (Transaction) · Tracking (queries) · Invoice with Open/Closed tabs and
+  their live columns; raise via `?raise=<kind>:<subject>` — Wallet ⋮, Billing invoice dialog, and
+  `RaiseDisputeButton` (for the consignment overlay). **Address Book** `/grow/orders/address-book` (+ `/add`,
+  `/:id`, `/:id/edit`) on `growOrders/addressBook.ts` (`grow-address-book-v1`); `receiverBook()` lists saved rows
+  FIRST. **Settings** `/grow/orders/settings?tab=account|packages|users|email|storefront` on
+  `growOrders/merchantSettings.ts` (`grow-merchant-settings-v1`, per merchant code): saved packages join the form's
+  presets through `packageTypesForMerchant` (`SAVED-` codes), the default pickup address is listed first by
+  `usePickupLocations`; User Management / Email / Store Front are "not captured" empty states.
 
 **Grow analytics & tools pages (2026-09-25, research `docs/superpowers/research/2026-09-25-grow-portal-pages.md`
 §1–3, §6, §10; live arrangement, our components):** `/grow/orders/dashboard` (`DashboardPage.tsx` — date range +
@@ -277,7 +293,9 @@ effects (a cancelled/rescheduled PR leaving its trip) flow through `onPickupRequ
   disabled items stay visible with the `reason` (`SelectionAction.reason`, `MenuItem.disabled/reason`).
   `prModel.can.*` delegates to it. Never gate a pickup action inline in a page. Research:
   `docs/superpowers/research/2026-09-25-pickup-actions-by-status.md`. A request made by a split carries
-  `splitFromPrId` and is never a Duplicate of its sibling.
+  `splitFromPrId` and is never a Duplicate of its sibling. ONE pickup-point key: `prActions.pickupPointKey`
+  (store code for a known location; + address line only for "Other address…"). Split / Merge are LTL only;
+  a multi-select Split = `splitAllPickupRequests` (one request per consignment).
 - Rules live in the store, not in pages: multi-PR policy (merge on create), same-day
   cutoff (`pickupSlots.ts`), auto re-attempt on failure, "no orders left" → Pickup Failed,
   unpicked released at completion, handover auto-closes when scans reconcile, a forwarded

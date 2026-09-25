@@ -28,6 +28,7 @@ import { BookPickupDialog } from './pickupDialog'
 import { CONTACT_SUPPORT, merchantMayChange, usePortalMerchant } from './pickupGate'
 import { toShipmentRow } from './shipmentRows'
 import { merchantReadSections } from './merchantConsignmentSections'
+import { RaiseDisputeButton } from './DisputesPage'
 
 const CLOSED_STATES = ['Delivered', 'Cancelled']
 
@@ -70,6 +71,8 @@ export default function GrowConsignmentView({ orderId, onClose }: { orderId: str
           <Button variant="outline" icon={<Printer size={15} />}
             onClick={() => toast.info('Demo only — label generation is a platform service, not a local one.')}>Print Label</Button>
         )}
+        {/* Disputes (2026-09-25): a booked consignment can raise a tracking query */}
+        {!row.draft && <RaiseDisputeButton orderId={o.id} />}
         {!closed && (
           <span title={locked ? CONTACT_SUPPORT : undefined}>
             <Button variant="outline" icon={<X size={15} />} onClick={cancel}>{row.draft ? 'Discard Draft' : 'Cancel Shipment'}</Button>
