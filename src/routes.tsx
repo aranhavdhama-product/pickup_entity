@@ -43,7 +43,6 @@ import InboundDamage from './pages/InboundDamage'
 import ComingSoon from './pages/ComingSoon'
 
 import LocalPickup from './pages/LocalPickup'
-import LocalPickupRequestDetail from './pages/LocalPickup/PickupRequestDetail'
 import LocalControlTower from './pages/LocalControlTower'
 import LocalTripDetail from './pages/LocalControlTower/TripDetail'
 import LocalInbound from './pages/LocalInbound'
@@ -74,7 +73,6 @@ import LocalAddConsignment from './pages/LocalConsignments/AddConsignment'
 import OrderViewPage from './pages/GrowOrders/OrderViewPage'
 import CheckoutPage from './pages/GrowOrders/CheckoutPage'
 import PickupRequestsPage from './pages/GrowOrders/PickupRequestsPage'
-import PickupRequestPage from './pages/GrowOrders/PickupRequestPage'
 /* Batch A — Grow analytics & tools pages */
 import GrowDashboardPage from './pages/GrowOrders/DashboardPage'
 import GrowTrackingPage from './pages/GrowOrders/TrackingPage'
@@ -142,7 +140,8 @@ export default function AppRoutes() {
         <Route path="/local/pickup" element={<LocalPickup />} />
         {/* the list with a request's drawer over it (same element — the list stays mounted) */}
         <Route path="/local/pickup/view/:prId" element={<LocalPickup />} />
-        <Route path="/local/pickup/:id" element={<LocalPickupRequestDetail />} />
+        {/* the request = a slide-over over the list (owner, 2026-09-25) */}
+        <Route path="/local/pickup/:id" element={<LocalPickup />} />
         <Route path="/local/control-tower" element={<LocalControlTower />} />
         <Route path="/local/control-tower/trips/:id" element={<LocalTripDetail />} />
         <Route path="/local/routing" element={<LocalRouting />} />
@@ -171,7 +170,8 @@ export default function AppRoutes() {
         <Route path="checkout" element={<CheckoutPage />} />
         {/* before :id — "pickups" must not be read as an order id */}
         <Route path="pickups" element={<PickupRequestsPage />} />
-        <Route path="pickups/:id" element={<PickupRequestPage />} />
+        {/* the request = a slide-over over the list (owner, 2026-09-25) */}
+        <Route path="pickups/:id" element={<PickupRequestsPage />} />
         {/* Batch A — analytics & tools pages (literals before :id) */}
         <Route path="dashboard" element={<GrowDashboardPage />} />
         <Route path="tracking" element={<GrowTrackingPage />} />

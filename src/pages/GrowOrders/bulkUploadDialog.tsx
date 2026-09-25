@@ -15,7 +15,7 @@
  * and carry an `OrderDraft` so `Resume` reopens the stepper with the row's data.
  */
 import { useRef, useState } from 'react'
-import { FileSpreadsheet, Package, Truck, Upload } from 'lucide-react'
+import { FileSpreadsheet, Upload } from 'lucide-react'
 import { blankParty } from '../../growOrders/seed'
 import { ORDER_DEFAULTS, growOrderActions, newOrderId, newOrderNumber } from '../../growOrders/store'
 import type { GrowOrder, Party, StoreLocation } from '../../growOrders/types'
@@ -25,13 +25,9 @@ import {
   parseBulkCsv, templateCsv, templateFileName, type BulkKind, type BulkParse, type BulkRow,
 } from '../../growOrders/bulkCsv'
 import { toast } from '../../nueva/toast'
-import { Button, Modal, Tabs } from '../../nueva/components'
+import { Button, Modal } from '../../nueva/components'
 
-/** The same two tabs as Create Order and Book a Pickup — one vocabulary. */
-const SHIP_TABS = ['Parcel', 'Vehicle (FTL)'] as const
-const SHIP_TAB_ICONS = [Package, Truck]
-const KIND_OF: Record<string, BulkKind> = { Parcel: 'Parcel', 'Vehicle (FTL)': 'FTL' }
-const TAB_OF: Record<BulkKind, string> = { Parcel: 'Parcel', FTL: 'Vehicle (FTL)' }
+/* owner, 2026-09-25: ONE bulk form (parcel columns); the FTL sheet is gone with the FTL tab */
 
 /* --------------------------------------------------------------- mapping ---- */
 
@@ -128,7 +124,7 @@ export function BulkUploadDialog({ stores, onClose, onCreated }: {
   /** Fired after the orders were written, with how many landed on Drafts. */
   onCreated: (n: number) => void
 }) {
-  const [kind, setKind] = useState<BulkKind>('Parcel')
+  const kind: BulkKind = 'Parcel'
   const [file, setFile] = useState<File | null>(null)
   const [fileError, setFileError] = useState('')
   const [drag, setDrag] = useState(false)
@@ -203,11 +199,6 @@ export function BulkUploadDialog({ stores, onClose, onCreated }: {
           </Button>
         </>}>
       <p className="mb-3 text-[12px] text-ink-3">Create many orders from a spreadsheet</p>
-      {/* the shipment tabs decide the column set, so they are locked once a file is parsed */}
-      {!review && (
-        <Tabs tabs={[...SHIP_TABS]} active={SHIP_TABS.indexOf(TAB_OF[kind] as (typeof SHIP_TABS)[number])} icons={SHIP_TAB_ICONS}
-          onChange={(i) => { setKind(KIND_OF[SHIP_TABS[i]]); setResult(null); setFileError(''); setFile(null) }} />
-      )}
 
       {!review ? (
         <div className="flex flex-col gap-4 pb-3 pt-4">
@@ -239,7 +230,7 @@ export function BulkUploadDialog({ stores, onClose, onCreated }: {
           <div className="flex items-center justify-between">
             <Button variant="text" size="sm" icon={<FileSpreadsheet size={13} />} onClick={downloadTemplate}>Download template</Button>
             <span className="text-[12px] text-ink-3">
-              {kind === 'FTL' ? 'One row per vehicle booking' : 'One row per parcel order'}
+              One row per order
             </span>
           </div>
         </div>

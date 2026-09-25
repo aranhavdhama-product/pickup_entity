@@ -108,7 +108,7 @@ function seedDisputes(): Dispute[] {
       category: t.cat, priority: t.pri, status: t.status, description: t.text, raisedAt: addH(o.createdAt, 30 + i * 5),
     }))
   })
-  const ledger = ledgerSnapshot()
+  const ledger = ledgerSnapshot().filter((e) => e.type === 'DR')
   const wd: { cat: string; status: DisputeStatus; share: number; text: string }[] = [
     { cat: 'Overcharge', status: 'Open', share: 0.2, text: 'Charged the express rate on a standard booking.' },
     { cat: 'Duplicate debit', status: 'Resolved', share: 1, text: 'This checkout was debited twice.' },

@@ -18,12 +18,12 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import {
-  ArrowLeft, ArrowRight, Box, Calendar, ChevronDown, ChevronRight, ClipboardList, CornerUpLeft, Eye, EyeOff,
+  ArrowRight, Box, Calendar, ChevronDown, ChevronRight, ClipboardList, CornerUpLeft, Eye, EyeOff,
   FileText, Image as ImageIcon, LayoutGrid, List, Lock, MapPin, MessageSquare, Package, Scale, Send, Truck,
   User, Wrench, Globe, Layers, Boxes,
 } from 'lucide-react'
 import {
-  Button, EmptyState, IconButton, Input, Panel, SimpleTable, StatusPill, Tabs, type SimpleCol,
+  Button, EmptyState, IconButton, Input, Panel, SimpleTable, StatusPill, Tabs, type SimpleCol, SlideOver, SlideOverRailItem,
 } from '../../nueva/components'
 import { toast } from '../../nueva/toast'
 import { useGrowOrders } from '../../growOrders/store'
@@ -154,34 +154,20 @@ export default function ConsignmentView({ row, onClose, audience = 'ops', action
     document.getElementById(`cv-read-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
   const railItem = (key: string, label: string, Icon: typeof Package, on: boolean, onClick: () => void) => (
-    <button key={key} type="button" onClick={onClick} title={label} aria-current={on ? 'page' : undefined}
-      className={`flex w-full items-center gap-2.5 border-l-[3px] px-4 py-2.5 text-left text-[13px] transition-colors ${
-        on ? 'border-brand-500 bg-warm-50 font-bold text-ink' : 'border-transparent text-ink-2 hover:bg-warm-50 hover:text-ink'}`}>
-      <Icon size={16} className={on ? 'text-brand-500' : 'text-ink-3'} />
-      {!events && <span className="truncate">{label}</span>}
-    </button>
+    <SlideOverRailItem key={key} label={label} icon={Icon} on={on} collapsed={events} onClick={onClick} />
   )
 
+  /* the shared drawer shell (nueva SlideOver) — host actions + View Events once the record exists */
   const shell = (title: ReactNode, body: ReactNode, wide = false) => (
-    <>
-      <div className="fixed inset-0 z-[60] bg-warm-900/40" onClick={onClose} />
-      <aside role="dialog" aria-label={typeof title === 'string' ? title : 'Consignment'}
-        className={`fixed inset-y-0 right-0 z-[61] flex flex-col bg-canvas shadow-ds-overlay transition-[width] duration-200 ${wide ? 'w-[92%]' : 'w-[62%] min-w-[760px]'}`}>
-        <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line bg-surface px-4">
-          <button type="button" onClick={onClose} aria-label="Back" className="rounded p-1 text-ink-2 hover:bg-warm-100 hover:text-ink"><ArrowLeft size={18} /></button>
-          <span className="text-[18px] font-bold text-ink">{title}</span>
-          {o && (
-            <span className="ml-auto flex items-center gap-2">
-              {actions}
-              <Button variant="outline" icon={events ? <EyeOff size={15} /> : <Eye size={15} />} onClick={() => setEvents((v) => !v)}>
-                {events ? 'Hide Events' : 'View Events'}
-              </Button>
-            </span>
-          )}
-        </header>
-        {body}
-      </aside>
-    </>
+    <SlideOver title={title} onClose={onClose} wide={wide} label={typeof title === 'string' ? title : 'Consignment'}
+      actions={o ? <>
+        {actions}
+        <Button variant="outline" icon={events ? <EyeOff size={15} /> : <Eye size={15} />} onClick={() => setEvents((v) => !v)}>
+          {events ? 'Hide Events' : 'View Events'}
+        </Button>
+      </> : undefined}>
+      {body}
+    </SlideOver>
   )
 
   if (!row || !o) {

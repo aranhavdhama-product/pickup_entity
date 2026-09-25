@@ -24,7 +24,8 @@
  */
 import { useMasters } from '../../growOrders/masters'
 import { useMemo, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import PickupRequestPage from './PickupRequestPage'
 import {
   Ban, CalendarDays, CircleAlert, CircleCheck, Download, Layers, Merge, PackagePlus, Plus, Printer, Split, Truck, X, Zap,
 } from 'lucide-react'
@@ -85,6 +86,8 @@ export default function PickupRequestsPage() {
   useMasters()
   const nav = useNavigate()
   const [params, setParams] = useSearchParams()
+  /* `/grow/orders/pickups/:id` = the list with the request's slide-over on top (owner, 2026-09-25) */
+  const { id: requestId } = useParams()
 
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
@@ -273,6 +276,8 @@ export default function PickupRequestsPage() {
               ? `Your carrier raises the pickup request itself — ${autoPickupSummary(pickupCfg)}. There is nothing to book here.`
               : 'Pickup requests are not available. Your carrier switches the Pickup Request module on to enable booking.'} />
         </Panel>
+        {/* a request stays readable from its link */}
+        {requestId && <PickupRequestPage id={requestId} onClose={() => nav('/grow/orders/pickups')} />}
       </LocalPage>
     )
   }
@@ -333,7 +338,7 @@ export default function PickupRequestsPage() {
             ) : (
               <DataTable key={`prs-${tab}`} columns={prCols.columns} rows={slice(rows)} rowKey="id" selectable
                 selectionActions={(s, clear) => prActions(s as GrowPickupRequest[], clear)}
-                onRowClick={(r) => nav(`/grow/orders/pickups/${(r as GrowPickupRequest).id}`)} />
+                onRowClick={(r) => nav(`/grow/orders/pickups/${(r as GrowPickupRequest).id}?${params.toString()}`)} />
             )}
             <div className="flex items-center justify-between gap-3">
               <div className="flex-1">
@@ -373,6 +378,7 @@ export default function PickupRequestsPage() {
           onClose={() => setRescheduling(null)}
           onDone={() => { rescheduling.clear(); setRescheduling(null) }} />
       )}
+      {requestId && <PickupRequestPage id={requestId} onClose={() => nav(`/grow/orders/pickups?${params.toString()}`)} />}
     </LocalPage>
   )
 }

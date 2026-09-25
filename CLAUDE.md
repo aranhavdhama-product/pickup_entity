@@ -233,14 +233,17 @@ Product changes layered on the replica (deliberate departures from the live port
 Packages (1) / Service Type (2) (QA shortcut). Never reintroduce a Grow-only look: new Grow UI uses the shared console components.
 - **Money & account pages** (2026-09-25, research `docs/superpowers/research/2026-09-25-grow-portal-pages.md` §4–§9;
   localStorage stores via `src/growOrders/localStore.ts`, deterministic seeds, normalize-on-load; shared bits in
-  `GrowOrders/accountBits.tsx`): **Wallet → Payments** `/grow/orders/wallet` (+ `/:id` receipt) = `WalletPage` /
-  `ReceiptPage` on `growOrders/ledger.ts` (`grow-wallet-v1`; one checkout = one DR entry, seeded from paid orders,
+  `GrowOrders/accountBits.tsx`): **Wallet** `/grow/orders/wallet?tab=wallet|payments` (+ `/:id` receipt) = `WalletPage` /
+  `ReceiptPage` on `growOrders/ledger.ts` (`grow-wallet-v2`; Wallet tab = the GROW-STAGING wallet: Recharge (demo
+  credit row) · Balance/Credits/Debits tiles · running balance per currency from `walletOf()`; Payments tab = the
+  2GO_PH list; seeded opening credit per currency; one checkout = one DR entry, seeded from paid orders,
   `recordPayment(order)` called by CheckoutPage, idempotent; `chargesOf()` = frozen charges else rate card, flagged
   estimated). **Billing** `/grow/orders/billing` = `BillingPage` — invoices DERIVED per month × currency by
   `growOrders/invoices.ts` (never sum ₱ and $), status from Settings' Payment Type. **Disputes**
   `/grow/orders/disputes` (+ `/:id`) = `DisputesPage` on `growOrders/disputes.ts` (`grow-disputes-v3`): the live
-  GROW-STAGING tenant's three kinds Wallet (Transaction) · Tracking (queries) · Invoice with Open/Closed tabs and
-  their live columns; raise via `?raise=<kind>:<subject>` — Wallet ⋮, Billing invoice dialog, and
+  GROW-STAGING tenant's three kinds Wallet (Transaction) · Tracking (queries) · Invoice in the Consignment Order
+  grammar — ONE list, tabs Open · Closed · All, kind = the "Type" filter (`?kind=` presets it), union of the live
+  columns with empty ones hidden; raise via `?raise=<kind>:<subject>` — Wallet ⋮, Billing invoice dialog, and
   `RaiseDisputeButton` (for the consignment overlay). **Address Book** `/grow/orders/address-book` (+ `/add`,
   `/:id`, `/:id/edit`) on `growOrders/addressBook.ts` (`grow-address-book-v1`); `receiverBook()` lists saved rows
   FIRST. **Settings** `/grow/orders/settings?tab=account|packages|users|email|storefront` on
@@ -287,6 +290,11 @@ effects (a cancelled/rescheduled PR leaving its trip) flow through `onPickupRequ
   consignments can also be booked from `/local/consignments` (Schedule Pickup + Add to existing
   pickup) and Grow `/grow/orders` (Schedule Pickup) — always pass
   `pickupRequestById` as the lookup to `localPrTabOf` / `inLocalPrTab`.
+- **A pickup request opens as a SLIDE-OVER over its list** (owner, 2026-09-25), never a page:
+  `/local/pickup/:id` and `/grow/orders/pickups/:id` mount the LIST, which hosts
+  `LocalPickup/PickupRequestDetail` / `GrowOrders/PickupRequestPage` in nueva `SlideOver` +
+  `SlideOverSections` (the Consignment view's shell — `ConsignmentView` uses the same primitive;
+  `side` prop flips it to the left in one line). Modals sit above it (z-70); Esc closes the top one.
 - **Every pickup action is gated by `src/growOrders/prActions.ts`** (owner, 2026-09-25):
   `prActionState(action, pr, { cfg, role: 'ops' | 'merchant' })` / `prBulkState` (a selection =
   enabled only if EVERY row is, + one hub to route / one point to merge / single-row dialogs);

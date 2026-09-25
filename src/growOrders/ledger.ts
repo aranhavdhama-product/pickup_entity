@@ -31,14 +31,18 @@ export interface LedgerEntry {
   tax: number
   currency: string
   type: 'DR' | 'CR'
-  mode: 'Credit' | 'Prepaid' | 'COD'
+  /** DR: 'Credit' (live receipt wording) / 'COD'; CR: the recharge method */
+  mode: string
+  /** when the bank / gateway settled it (live BANK TXN DATE); = `at` locally */
+  bankTxnAt: string
   status: LedgerStatus
   remarks: string
   /** true when priced from the rate card (the order carried no frozen charges) */
   estimated: boolean
 }
 
-const KEY = 'grow-wallet-v1'
+/* v2: wallet credits (recharges) + a seeded opening credit per currency */
+const KEY = 'grow-wallet-v2'
 const pad = (n: number, w = 2) => String(n).padStart(w, '0')
 const stamp = (iso: string, seq: number) => {
   const d = new Date(iso)
@@ -65,7 +69,7 @@ function entryFor(orders: GrowOrder[], seq: number, used: Set<string>): LedgerEn
     shipping: round2(sums.reduce((n, s) => n + s.shipping, 0)),
     tax: round2(sums.reduce((n, s) => n + s.tax, 0)),
     amount: round2(sums.reduce((n, s) => n + s.total, 0)),
-    currency: orders[0].currency || '₱', type: 'DR', mode: 'Credit', status: 'Success', remarks: '',
+    currency: orders[0].currency || '₱', type: 'DR', mode: 'Credit', bankTxnAt: orders[0].createdAt, status: 'Success', remarks: '',
     estimated: sums.some((s) => s.estimated),
   }
 }
@@ -91,7 +95,20 @@ function seedLedger(): LedgerEntry[] {
     out.push(entryFor(group, g, used))
     i += group.length; g++
   }
-  return out.reverse() // newest first
+  /* an opening recharge per currency, a day before the first debit, sized so the balance stays positive */
+  for (const cur of [...new Set(out.map((e) => e.currency))]) {
+    const mine = out.filter((e) => e.currency === cur)
+    const spent = mine.reduce((n, e) => n + e.amount, 0)
+    const first = mine.reduce((m, e) => (e.at < m ? e.at : m), mine[0].at)
+    const at = new Date(new Date(first).getTime() - 86_400_000).toISOString()
+    const step = cur === '$' ? 1000 : 10000
+    out.push({
+      id: stamp(at, 0).replace(/^DR/, 'CR'), at, bankTxnAt: at, orderIds: [], consignmentNos: [], shipping: 0, tax: 0,
+      amount: Math.ceil((spent * 1.2) / step) * step, currency: cur, type: 'CR', mode: 'Bank transfer', status: 'Success',
+      remarks: 'Opening wallet recharge', estimated: false,
+    })
+  }
+  return out.sort((a, b) => (a.at < b.at ? 1 : -1)) // newest first
 }
 
 function normalize(raw: unknown): LedgerEntry[] | null {
@@ -100,7 +117,7 @@ function normalize(raw: unknown): LedgerEntry[] | null {
     id: str(r.id), at: str(r.at), orderIds: strs(r.orderIds), consignmentNos: strs(r.consignmentNos),
     amount: num(r.amount), shipping: num(r.shipping), tax: num(r.tax), currency: str(r.currency, '₱'),
     type: r.type === 'CR' ? 'CR' : 'DR',
-    mode: r.mode === 'Prepaid' || r.mode === 'COD' ? r.mode : 'Credit',
+    mode: str(r.mode, 'Credit'), bankTxnAt: str(r.bankTxnAt, str(r.at)),
     status: r.status === 'Failed' || r.status === 'Pending' ? r.status : 'Success',
     remarks: str(r.remarks), estimated: r.estimated === true,
   } as LedgerEntry)).filter((e) => e.id)
@@ -115,10 +132,46 @@ export const resetLedger = store.reset
 /** One checkout = one debit. Idempotent: an order already on an entry is not recorded twice. */
 export function recordPayment(order: GrowOrder): LedgerEntry | null {
   const cur = store.get()
-  if (cur.some((e) => e.orderIds.includes(order.id))) return null
+  if (cur.some((e) => e.type === 'DR' && e.orderIds.includes(order.id))) return null
   const e = entryFor([order], cur.length, new Set(cur.map((x) => x.id)))
   e.at = new Date().toISOString()
   e.mode = order.paymentMode === 'COD' ? 'COD' : 'Credit'
   store.set([e, ...cur])
   return e
+}
+
+/* ------------------------------------------------------------------ wallet -- */
+
+export const RECHARGE_METHODS = ['Bank transfer', 'Credit / Debit card', 'E-wallet (GCash / Maya)'] as const
+
+/** Demo top-up: adds a CREDIT row (no real payment is taken). */
+export function recharge(amount: number, currency: string, method: string, note: string): LedgerEntry {
+  const cur = store.get()
+  const at = new Date().toISOString()
+  const used = new Set(cur.map((x) => x.id))
+  let id = stamp(at, 0).replace(/^DR/, 'CR')
+  for (let n = 1; used.has(id); n++) id = stamp(at, n).replace(/^DR/, 'CR')
+  const e: LedgerEntry = {
+    id, at, bankTxnAt: at, orderIds: [], consignmentNos: [], shipping: 0, tax: 0, amount: round2(amount), currency,
+    type: 'CR', mode: method, status: 'Success', remarks: note.trim() || 'Wallet recharge', estimated: false,
+  }
+  store.set([e, ...cur])
+  return e
+}
+
+export interface WalletRow extends LedgerEntry { debit: number; credit: number; balance: number }
+export interface WalletSummary { credits: number; debits: number; balance: number; rows: WalletRow[] }
+
+/** One currency's wallet: rows newest first, each with the running balance after it. */
+export function walletOf(ledger: LedgerEntry[], currency: string): WalletSummary {
+  const asc = ledger.filter((e) => e.currency === currency).sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))
+  let bal = 0, credits = 0, debits = 0
+  const rows = asc.map((e) => {
+    const ok = e.status === 'Success'
+    const credit = ok && e.type === 'CR' ? e.amount : 0
+    const debit = ok && e.type === 'DR' ? e.amount : 0
+    credits += credit; debits += debit; bal = round2(bal + credit - debit)
+    return { ...e, credit, debit, balance: bal }
+  })
+  return { credits: round2(credits), debits: round2(debits), balance: bal, rows: rows.reverse() }
 }

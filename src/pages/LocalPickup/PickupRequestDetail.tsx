@@ -13,9 +13,9 @@
  */
 import { useState, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { Info, Plus, ScanBarcode, Trash2 } from 'lucide-react'
+import { FileText, History, Info, Link2, PackageCheck, Plus, ScanBarcode, Trash2, Truck } from 'lucide-react'
 import {
-  Button, EmptyState, KebabMenu, PageHeader, Panel, SimpleTable, StatusPill, type MenuItem,
+  Button, EmptyState, KebabMenu, Panel, SimpleTable, SlideOver, SlideOverSections, StatusPill, type MenuItem, type SlideOverSection,
 } from '../../nueva/components'
 import { toast } from '../../nueva/toast'
 import { growOrderActions, useGrowOrders } from '../../growOrders/store'
@@ -74,21 +74,26 @@ const tick = (on: boolean) => (on ? <span className="font-bold text-success-fg">
 
 /* ------------------------------------------------------------- the page ---- */
 
-export default function PickupRequestDetail() {
-  const { id } = useParams()
+/**
+ * The request as a SLIDE-OVER over the Pickup list (owner, 2026-09-25: "do not
+ * show pickup request as page — show as slide-over"). `/local/pickup/:id` mounts
+ * the list, which hosts this; `onClose` returns to the list (its tab kept).
+ */
+export default function PickupRequestDetail({ id: idProp, onClose }: { id?: string; onClose?: () => void } = {}) {
+  const params = useParams()
+  const id = idProp ?? params.id
   const nav = useNavigate()
   const db = useGrowOrders()
   /* the record id is canonical; a PR number (`PR-000115`) resolves too, as a courtesy */
   const pr = db.pickupRequests.find((p) => p.id === id)
     ?? db.pickupRequests.find((p) => p.number.toLowerCase() === (id ?? '').toLowerCase())
-  const back = () => nav('/local/pickup')
+  const back = onClose ?? (() => nav('/local/pickup'))
 
   if (!pr) {
     return (
-      <div className="p-6">
-        <PageHeader title="Pickup Request" onBack={back} />
-        <Panel><EmptyState title="This pickup request does not exist" hint="It may have been removed, or the link is from another browser's data." /></Panel>
-      </div>
+      <SlideOver title="Pickup Request" onClose={back}>
+        <div className="p-6"><Panel><EmptyState title="This pickup request does not exist" hint="It may have been removed, or the link is from another browser's data." /></Panel></div>
+      </SlideOver>
     )
   }
   return <Detail key={pr.id} pr={pr} back={back} />
@@ -275,192 +280,191 @@ function Detail({ pr, back }: { pr: GrowPickupRequest; back: () => void }) {
     ? PICKUP_OUTCOME_LABEL[pickupOutcomeFor(pr.failureReason, pr.attempt, pr.maxAttempts)] : null
   const reason = reasonText(pr)
 
-  return (
-    <div className="p-6">
-      <PageHeader title={`Pickup Request ${pr.number}`} onBack={back}
-        subtitle={`${merchantOfPr(pr, db.stores)} · ${pickupPointName(pr, db.stores)} → ${dropLabel(pr, db.stores)}`}
-        right={(
-          <div className="flex items-center gap-2">
-            {referenceChips(pr).map((c) => <StatusPill key={c} label={c} tone={c.endsWith(' blind') ? 'info' : 'neutral'} />)}
-            <StatusPill label={s.label} tone={s.tone} />
-            {tags.map((t) => <StatusPill key={t.label} label={t.label} tone={t.tone} />)}
-            {items.length > 0 && <KebabMenu items={items} />}
-          </div>
-        )} />
+  const sections: SlideOverSection[] = [
+    { id: 'summary', label: 'Summary', icon: FileText, node: (
+      <div className="flex flex-col gap-3">
+  {!on && (
+    <div className="rounded-md border border-line bg-warm-25 px-4 py-2.5 text-[13px] text-ink-2">
+      The Pickup module is disabled for this account — this request stays readable, actions are withheld.{' '}
+      <Link to="/console/settings/base-modules" className="font-bold text-brand-500">Base Modules settings</Link>
+    </div>
+  )}
 
-      {!on && (
-        <div className="mb-4 rounded-md border border-line bg-warm-25 px-4 py-2.5 text-[13px] text-ink-2">
-          The Pickup module is disabled for this account — this request stays readable, actions are withheld.{' '}
-          <Link to="/console/settings/base-modules" className="font-bold text-brand-500">Base Modules settings</Link>
-        </div>
+  {/* auto pickup with `slotConfirmation`: the shipper confirms the slot before ops plans it */}
+  {pr.slotConfirmed !== null && (
+    <div className="flex items-center justify-between gap-4 rounded-md border border-line bg-warm-25 px-4 py-2.5 text-[13px] text-ink-2">
+      <span className="flex items-center gap-1.5">
+        <Info size={14} className="shrink-0 text-ink-3" />
+        {pr.slotConfirmed
+          ? <>Slot confirmed — {fmtWindow(pr)}</>
+          : <>Slot confirmation pending — the shipper has not yet confirmed {fmtWindow(pr)}.</>}
+      </span>
+      {on && gate('confirmSlot').enabled && (
+        <Button size="sm" variant="outline"
+          onClick={() => { if (growOrderActions.confirmPickupSlot(pr.id)) toast.success(`Pickup slot confirmed for ${pr.number}.`) }}>
+          Confirm slot
+        </Button>
       )}
-
-      {/* auto pickup with `slotConfirmation`: the shipper confirms the slot before ops plans it */}
-      {pr.slotConfirmed !== null && (
-        <div className="mb-4 flex items-center justify-between gap-4 rounded-md border border-line bg-warm-25 px-4 py-2.5 text-[13px] text-ink-2">
-          <span className="flex items-center gap-1.5">
-            <Info size={14} className="shrink-0 text-ink-3" />
-            {pr.slotConfirmed
-              ? <>Slot confirmed — {fmtWindow(pr)}</>
-              : <>Slot confirmation pending — the shipper has not yet confirmed {fmtWindow(pr)}.</>}
-          </span>
-          {on && gate('confirmSlot').enabled && (
-            <Button size="sm" variant="outline"
-              onClick={() => { if (growOrderActions.confirmPickupSlot(pr.id)) toast.success(`Pickup slot confirmed for ${pr.number}.`) }}>
-              Confirm slot
-            </Button>
-          )}
-        </div>
-      )}
-
-      <div className="grid grid-cols-3 gap-4">
-        <div className="col-span-2 flex flex-col gap-4">
-          <Panel title="Summary">
-            <Pairs pairs={[
-              ['Pickup window', <>{fmtWindow(pr)}{windowTag(pr) && <span className="text-ink-3"> · {windowTag(pr)}</span>}</>],
-              ['Pickup address', <>{pickupPointName(pr, db.stores)}<span className="block text-[12px] text-ink-3">{pickupPointAddress(pr, db.stores)}</span></>],
-              ['Drops at', dropLabel(pr, db.stores)],
-              ['Merchant', merchantOfPr(pr, db.stores)],
-              ['Contact', [pr.contactName, pr.contactNumber].filter(Boolean).join(' · ')],
-              ['Type', prTypeLabel(pr)],
-              ...(pr.shipmentType === 'FTL'
-                ? [['Service / vehicle', [pr.ftlServiceType, pr.vehicleType && `${pr.vehicleUnit ?? 1} × ${pr.vehicleType}`].filter(Boolean).join(' · ')] as [string, ReactNode]]
-                : pr.blind ? [['Expected', `${pr.expectedPieces ?? '?'} shipments${pr.sizeClass ? ` · ${pr.sizeClass}` : ''}`] as [string, ReactNode]] : []),
-              ['Shipments', consignmentsLabel(pr)],
-              ['Weight', weightLabel(pr, byId)],
-              ['Source', pr.source],
-              ['Attempt', <>{pr.attempt} of {pr.maxAttempts}{policyLine && <span className="text-ink-3"> · Reason policy: <span className="font-bold text-ink-2">{policyLine}</span></span>}</>],
-              ['Carrier', pr.carrierName ? `${pr.carrierName}${pr.carrierMode === 'CARRIER' ? ' (3PL)' : ' (own fleet)'}` : ''],
-              ...(reason ? [[pr.status === 'Cancelled' ? 'Cancel reason' : 'Failure reason', reason] as [string, ReactNode]] : []),
-              ...(pr.manualOverride ? [['Manual override', pr.manualOverride] as [string, ReactNode]] : []),
-              ['Instructions', pr.instructions ?? ''],
-              ['Created', fmtStamp(pr.createdAt)],
-            ]} />
-          </Panel>
-
-          <Panel title="Pickup outcome">
-            <p className="flex items-start gap-1.5 px-5 pb-1 pt-1 text-[12px] text-ink-3">
-              <Info size={13} className="mt-[1px] shrink-0" />
-              A shipment can have two parents — the request it was booked under and the request it was picked in — which is why this list is flat, not a tree.
-            </p>
-
-            <OutcomeSection title="Booked" count={booked.length}
-              action={on && gate('addConsignments').enabled
-                ? <Button size="sm" variant="outline" icon={<Plus size={13} />} onClick={() => setDialog('add')}>Add shipments</Button>
-                : undefined}
-              empty={pr.blind ? 'Reserved — no shipments attached yet. Attach them with Add shipments, or from Eligible consignments.' : 'None'}>
-              {outcomeTable(booked)}
-            </OutcomeSection>
-
-            <OutcomeSection title="Picked" count={pickedRows.length}>
-              {outcomeTable(pickedRows)}
-            </OutcomeSection>
-
-            <OutcomeSection title="Not picked" count={notPickedRows.length}
-              empty={attempted ? 'None' : 'Nothing yet — known once the driver has attempted the pickup.'}>
-              {outcomeTable(notPickedRows)}
-            </OutcomeSection>
-
-            <OutcomeSection title="Overage scans" count={pr.overages.length}>
-              <SimpleTable<GrowPickupRequest['overages'][number]> rows={pr.overages} rowKey={(v) => v.id}
-                columns={[
-                  { label: 'Barcode', render: (v) => <span className="font-mono text-[12px] font-bold text-ink">{v.barcode}</span> },
-                  { label: 'Scanned at', render: (v) => fmtStamp(v.scannedAt) },
-                  { label: 'Weight', align: 'right', render: (v) => (v.weightKg != null ? `${v.weightKg.toFixed(1)} kg` : '—') },
-                  { label: 'Note', render: (v) => v.note || '—' },
-                  { label: 'Status', render: (v) => (v.orderId
-                    ? <StatusPill label={`Resolved · ${byId.get(v.orderId)?.orderNumber ?? v.orderId}`} tone="success" />
-                    : <StatusPill label="Unresolved" tone="warning" />) },
-                ]} />
-              <p className="px-5 pb-1 pt-2 text-[12px] text-ink-3">
-                A barcode that matched no shipment. The merchant resolves it with Create order on their portal; a parcel that reached the hub is resolved from Inbound.
-              </p>
-            </OutcomeSection>
-            <div className="h-3" />
-          </Panel>
-
-          <Panel title="Handover">
-            <div className="flex flex-wrap items-center gap-2 px-5 pb-3 pt-1 text-[13px] text-ink-2">
-              <span>Mode: <span className="font-bold text-ink">{modeText}</span></span>
-              <span className="text-ink-3">·</span>
-              <span>{pr.handover.closedAt
-                ? <>Closed {fmtStamp(pr.handover.closedAt)}</>
-                : pr.handover.arrivedAtHubAt ? <>At hub since {fmtStamp(pr.handover.arrivedAtHubAt)}</>
-                : pr.status === 'Completed' ? 'In transit to hub' : 'Not collected yet'}</span>
-              {pr.handover.manifestRef && <><span className="text-ink-3">·</span><span>Manifest <span className="font-mono">{pr.handover.manifestRef}</span></span></>}
-              {pr.carrierPickupRef && <><span className="text-ink-3">·</span><span>Carrier ref <span className="font-mono">{pr.carrierPickupRef}</span></span></>}
-              {on && gate('closeHandover').enabled && (
-                <span className="ml-auto"><Button size="sm" onClick={() => setDialog('close')}>Close handover</Button></span>
-              )}
-            </div>
-            {universe.length === 0 ? (
-              <p className="px-5 pb-5 text-[13px] text-ink-3">Nothing to reconcile yet — scans appear here once the driver collects.</p>
-            ) : (
-              <div className="grid grid-cols-4 gap-3 px-5 pb-5">
-                {buckets.map((b) => (
-                  <div key={b.key} className="rounded-md border border-line p-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[13px] font-bold text-ink">{b.label}</span>
-                      <StatusPill label={String(b.ids.length)} tone={b.ids.length ? b.tone : 'neutral'} />
-                    </div>
-                    <p className="mt-0.5 text-[12px] text-ink-3">{b.hint}</p>
-                    <div className="mt-2 flex flex-col gap-0.5">
-                      {b.ids.map((i) => <span key={i} className="font-mono text-[12px] text-ink-2">{byId.get(i)?.orderNumber ?? i}</span>)}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Panel>
-        </div>
-
-        <div className="flex flex-col gap-4">
-          <Panel title="Trip">
-            {trip ? (
-              <Pairs pairs={[
-                ['Trip', <Link to={`/local/control-tower/trips/${trip.id}`} className="font-mono font-bold text-brand-500 hover:text-brand-600">{trip.id}</Link>],
-                ['Status', trip.status],
-                ['Date', trip.date],
-                ['Driver', pr.driverName ?? trip.driverName ?? 'Not assigned'],
-                ['Vehicle', trip.vehicle ?? ''],
-                ['Stop', stop ? `#${stop.seq} · ${stop.status} · ETA ${stop.eta}` : ''],
-              ]} />
-            ) : (
-              <div className="px-5 pb-5 pt-1 text-[13px] text-ink-3">
-                {pr.carrierMode === 'CARRIER'
-                  ? `Run by ${pr.carrierName} (3PL) — no fleet trip.`
-                  : pr.tripId ? `Trip ${pr.tripId} is not in this browser's planning data.` : 'Not on a route yet.'}
-                {on && can.addToRoute(pr) && !pr.tripId && (
-                  <div className="mt-3"><Button size="sm" variant="outline" onClick={() => setDialog('route')}>Add to route</Button></div>
-                )}
-              </div>
-            )}
-          </Panel>
-
-          {(parent || retry) && (
-            <Panel title="Related">
-              <div className="flex flex-col gap-2 px-5 pb-5 pt-1 text-[13px]">
-                {parent && <span>Re-attempt of <Link to={`/local/pickup/${parent.id}`} className="font-mono font-bold text-brand-500">{parent.number}</Link> <span className="text-ink-3">· {statusLabel(parent).label}</span></span>}
-                {retry && <span>Re-attempted as <Link to={`/local/pickup/${retry.id}`} className="font-mono font-bold text-brand-500">{retry.number}</Link> <span className="text-ink-3">· {statusLabel(retry).label}</span></span>}
-              </div>
-            </Panel>
-          )}
-
-          <Panel title="Timeline">
-            <ol className="flex flex-col px-5 pb-5 pt-1">
-              {[...pr.statusHistory].reverse().map((e, i) => (
-                <li key={`${e.at}-${i}`} className="relative border-l border-line pb-3 pl-4 last:pb-0">
-                  <span className={`absolute -left-[4.5px] top-1.5 h-2 w-2 rounded-full ${i === 0 ? 'bg-brand-500' : 'bg-warm-300'}`} />
-                  <p className="text-[13px] font-bold text-ink">{e.status}</p>
-                  {e.note && <p className="text-[12px] text-ink-2">{e.note}</p>}
-                  <p className="text-[12px] text-ink-3">{fmtStamp(e.at)}</p>
-                </li>
-              ))}
-            </ol>
-          </Panel>
-        </div>
+    </div>
+  )}
+      <Panel title="Summary">
+        <Pairs pairs={[
+          ['Pickup window', <>{fmtWindow(pr)}{windowTag(pr) && <span className="text-ink-3"> · {windowTag(pr)}</span>}</>],
+          ['Pickup address', <>{pickupPointName(pr, db.stores)}<span className="block text-[12px] text-ink-3">{pickupPointAddress(pr, db.stores)}</span></>],
+          ['Drops at', dropLabel(pr, db.stores)],
+          ['Merchant', merchantOfPr(pr, db.stores)],
+          ['Contact', [pr.contactName, pr.contactNumber].filter(Boolean).join(' · ')],
+          ['Type', prTypeLabel(pr)],
+          ...(pr.shipmentType === 'FTL'
+            ? [['Service / vehicle', [pr.ftlServiceType, pr.vehicleType && `${pr.vehicleUnit ?? 1} × ${pr.vehicleType}`].filter(Boolean).join(' · ')] as [string, ReactNode]]
+            : pr.blind ? [['Expected', `${pr.expectedPieces ?? '?'} shipments${pr.sizeClass ? ` · ${pr.sizeClass}` : ''}`] as [string, ReactNode]] : []),
+          ['Shipments', consignmentsLabel(pr)],
+          ['Weight', weightLabel(pr, byId)],
+          ['Source', pr.source],
+          ['Attempt', <>{pr.attempt} of {pr.maxAttempts}{policyLine && <span className="text-ink-3"> · Reason policy: <span className="font-bold text-ink-2">{policyLine}</span></span>}</>],
+          ['Carrier', pr.carrierName ? `${pr.carrierName}${pr.carrierMode === 'CARRIER' ? ' (3PL)' : ' (own fleet)'}` : ''],
+          ...(reason ? [[pr.status === 'Cancelled' ? 'Cancel reason' : 'Failure reason', reason] as [string, ReactNode]] : []),
+          ...(pr.manualOverride ? [['Manual override', pr.manualOverride] as [string, ReactNode]] : []),
+          ['Instructions', pr.instructions ?? ''],
+          ['Created', fmtStamp(pr.createdAt)],
+        ]} />
+      </Panel>
       </div>
+    ) },
+    { id: 'outcome', label: 'Pickup outcome', icon: PackageCheck, node: (
+      <Panel title="Pickup outcome">
+        <p className="flex items-start gap-1.5 px-5 pb-1 pt-1 text-[12px] text-ink-3">
+          <Info size={13} className="mt-[1px] shrink-0" />
+          A shipment can have two parents — the request it was booked under and the request it was picked in — which is why this list is flat, not a tree.
+        </p>
 
+        <OutcomeSection title="Booked" count={booked.length}
+          action={on && gate('addConsignments').enabled
+            ? <Button size="sm" variant="outline" icon={<Plus size={13} />} onClick={() => setDialog('add')}>Add shipments</Button>
+            : undefined}
+          empty={pr.blind ? 'Reserved — no shipments attached yet. Attach them with Add shipments, or from Eligible consignments.' : 'None'}>
+          {outcomeTable(booked)}
+        </OutcomeSection>
+
+        <OutcomeSection title="Picked" count={pickedRows.length}>
+          {outcomeTable(pickedRows)}
+        </OutcomeSection>
+
+        <OutcomeSection title="Not picked" count={notPickedRows.length}
+          empty={attempted ? 'None' : 'Nothing yet — known once the driver has attempted the pickup.'}>
+          {outcomeTable(notPickedRows)}
+        </OutcomeSection>
+
+        <OutcomeSection title="Overage scans" count={pr.overages.length}>
+          <SimpleTable<GrowPickupRequest['overages'][number]> rows={pr.overages} rowKey={(v) => v.id}
+            columns={[
+              { label: 'Barcode', render: (v) => <span className="font-mono text-[12px] font-bold text-ink">{v.barcode}</span> },
+              { label: 'Scanned at', render: (v) => fmtStamp(v.scannedAt) },
+              { label: 'Weight', align: 'right', render: (v) => (v.weightKg != null ? `${v.weightKg.toFixed(1)} kg` : '—') },
+              { label: 'Note', render: (v) => v.note || '—' },
+              { label: 'Status', render: (v) => (v.orderId
+                ? <StatusPill label={`Resolved · ${byId.get(v.orderId)?.orderNumber ?? v.orderId}`} tone="success" />
+                : <StatusPill label="Unresolved" tone="warning" />) },
+            ]} />
+          <p className="px-5 pb-1 pt-2 text-[12px] text-ink-3">
+            A barcode that matched no shipment. The merchant resolves it with Create order on their portal; a parcel that reached the hub is resolved from Inbound.
+          </p>
+        </OutcomeSection>
+        <div className="h-3" />
+      </Panel>
+    ) },
+    { id: 'handover', label: 'Handover', icon: ScanBarcode, node: (
+      <Panel title="Handover">
+        <div className="flex flex-wrap items-center gap-2 px-5 pb-3 pt-1 text-[13px] text-ink-2">
+          <span>Mode: <span className="font-bold text-ink">{modeText}</span></span>
+          <span className="text-ink-3">·</span>
+          <span>{pr.handover.closedAt
+            ? <>Closed {fmtStamp(pr.handover.closedAt)}</>
+            : pr.handover.arrivedAtHubAt ? <>At hub since {fmtStamp(pr.handover.arrivedAtHubAt)}</>
+            : pr.status === 'Completed' ? 'In transit to hub' : 'Not collected yet'}</span>
+          {pr.handover.manifestRef && <><span className="text-ink-3">·</span><span>Manifest <span className="font-mono">{pr.handover.manifestRef}</span></span></>}
+          {pr.carrierPickupRef && <><span className="text-ink-3">·</span><span>Carrier ref <span className="font-mono">{pr.carrierPickupRef}</span></span></>}
+          {on && gate('closeHandover').enabled && (
+            <span className="ml-auto"><Button size="sm" onClick={() => setDialog('close')}>Close handover</Button></span>
+          )}
+        </div>
+        {universe.length === 0 ? (
+          <p className="px-5 pb-5 text-[13px] text-ink-3">Nothing to reconcile yet — scans appear here once the driver collects.</p>
+        ) : (
+          <div className="grid grid-cols-4 gap-3 px-5 pb-5">
+            {buckets.map((b) => (
+              <div key={b.key} className="rounded-md border border-line p-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[13px] font-bold text-ink">{b.label}</span>
+                  <StatusPill label={String(b.ids.length)} tone={b.ids.length ? b.tone : 'neutral'} />
+                </div>
+                <p className="mt-0.5 text-[12px] text-ink-3">{b.hint}</p>
+                <div className="mt-2 flex flex-col gap-0.5">
+                  {b.ids.map((i) => <span key={i} className="font-mono text-[12px] text-ink-2">{byId.get(i)?.orderNumber ?? i}</span>)}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Panel>
+    ) },
+    { id: 'trip', label: 'Trip', icon: Truck, node: (
+      <Panel title="Trip">
+        {trip ? (
+          <Pairs pairs={[
+            ['Trip', <Link to={`/local/control-tower/trips/${trip.id}`} className="font-mono font-bold text-brand-500 hover:text-brand-600">{trip.id}</Link>],
+            ['Status', trip.status],
+            ['Date', trip.date],
+            ['Driver', pr.driverName ?? trip.driverName ?? 'Not assigned'],
+            ['Vehicle', trip.vehicle ?? ''],
+            ['Stop', stop ? `#${stop.seq} · ${stop.status} · ETA ${stop.eta}` : ''],
+          ]} />
+        ) : (
+          <div className="px-5 pb-5 pt-1 text-[13px] text-ink-3">
+            {pr.carrierMode === 'CARRIER'
+              ? `Run by ${pr.carrierName} (3PL) — no fleet trip.`
+              : pr.tripId ? `Trip ${pr.tripId} is not in this browser's planning data.` : 'Not on a route yet.'}
+            {on && can.addToRoute(pr) && !pr.tripId && (
+              <div className="mt-3"><Button size="sm" variant="outline" onClick={() => setDialog('route')}>Add to route</Button></div>
+            )}
+          </div>
+        )}
+      </Panel>
+    ) },
+    ...(parent || retry ? [{ id: 'related', label: 'Related', icon: Link2, node: (
+        <Panel title="Related">
+          <div className="flex flex-col gap-2 px-5 pb-5 pt-1 text-[13px]">
+            {parent && <span>Re-attempt of <Link to={`/local/pickup/${parent.id}`} className="font-mono font-bold text-brand-500">{parent.number}</Link> <span className="text-ink-3">· {statusLabel(parent).label}</span></span>}
+            {retry && <span>Re-attempted as <Link to={`/local/pickup/${retry.id}`} className="font-mono font-bold text-brand-500">{retry.number}</Link> <span className="text-ink-3">· {statusLabel(retry).label}</span></span>}
+          </div>
+        </Panel>
+    ) }] : []),
+    { id: 'timeline', label: 'Timeline', icon: History, node: (
+      <Panel title="Timeline">
+        <ol className="flex flex-col px-5 pb-5 pt-1">
+          {[...pr.statusHistory].reverse().map((e, i) => (
+            <li key={`${e.at}-${i}`} className="relative border-l border-line pb-3 pl-4 last:pb-0">
+              <span className={`absolute -left-[4.5px] top-1.5 h-2 w-2 rounded-full ${i === 0 ? 'bg-brand-500' : 'bg-warm-300'}`} />
+              <p className="text-[13px] font-bold text-ink">{e.status}</p>
+              {e.note && <p className="text-[12px] text-ink-2">{e.note}</p>}
+              <p className="text-[12px] text-ink-3">{fmtStamp(e.at)}</p>
+            </li>
+          ))}
+        </ol>
+      </Panel>
+    ) },
+  ]
+
+  return (
+    <SlideOver title={`Pickup Request ${pr.number}`} onClose={back}
+      subtitle={`${merchantOfPr(pr, db.stores)} · ${pickupPointName(pr, db.stores)} → ${dropLabel(pr, db.stores)}`}
+      actions={<>
+        {referenceChips(pr).map((c) => <StatusPill key={c} label={c} tone={c.endsWith(' blind') ? 'info' : 'neutral'} />)}
+        <StatusPill label={s.label} tone={s.tone} />
+        {tags.map((t) => <StatusPill key={t.label} label={t.label} tone={t.tone} />)}
+        {items.length > 0 && <KebabMenu items={items} />}
+      </>}>
+      <SlideOverSections sections={sections} label="Pickup request sections" />
       {dialog === 'add' && <AddConsignmentsDialog pr={pr} onClose={close} onDone={close} />}
       {dialog === 'reschedule' && <RescheduleDialog prs={[pr]} onClose={close} onDone={close} />}
       {dialog === 'split' && <SplitPickupDialog pr={pr} merchantCode={merchantOfPr(pr, db.stores)} onClose={close} onDone={close} />}
@@ -469,6 +473,6 @@ function Detail({ pr, back }: { pr: GrowPickupRequest; back: () => void }) {
       {dialog === 'route' && <AddToRouteDialog prIds={[pr.id]} onClose={close} onDone={close} />}
       {dialog === 'carrier' && <AssignCarrierDialog prs={[pr]} onClose={close} onDone={close} />}
       {dialog === 'close' && <CloseHandoverDialog pr={pr} reconciled={reconciled} onClose={close} onDone={close} />}
-    </div>
+    </SlideOver>
   )
 }

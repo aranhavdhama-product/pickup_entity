@@ -162,6 +162,16 @@ the section".
 **Live has NO balance, NO top-up and NO credit entries.** It is a payments list, despite the "Wallet"
 name.
 
+**Wallet variant — GROW-STAGING tenant (captured 2026-09-25, page text + DOM only, list empty):**
+`/transactions/` is titled "Payments" / "Manage payments for quicker transactions" too, but it is a real
+wallet: a primary **Recharge** button at the top right, a **Summary** block with **Credits · Debits ·
+Balance** (₹0.00 each), search, then the grid **REFERENCE (sortable) · DATE (sortable) · BANK TXN DATE ·
+TRANSACTION STATUS · TRANSACTION · DEBIT · CREDIT · BALANCE · REMARKS**, rows per page 10. **Recharge** opens
+the modal **"Add Money to Wallet"** / "Enter amount to be added" with a single **₹ Amount** input and a
+**Recharge** button that stays disabled until an amount is entered (not submitted; no payment-gateway step
+was seen). The owner wants THIS wallet: our `/grow/orders/wallet` has a Wallet tab (balance tiles,
+Recharge, the ledger with running balance) and keeps the 2GO_PH payments list as a second tab.
+
 **Data we have:** orders with `paymentStatus: 'Paid'` + `charges` (shipping/tax/total), checkout
 groups (orders paid together). **Needs a small local store** `src/growOrders/ledger.ts`
 (`grow-wallet-v1`): `{ id: 'DR…', at, orderIds[], amount, currency, mode: 'Credit'|'Prepaid'|'COD',

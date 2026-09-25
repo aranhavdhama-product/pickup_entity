@@ -1,11 +1,11 @@
 // FarEye Nueva — design-system primitives (see design.md)
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import {
   Plus, SlidersHorizontal, X, ChevronDown, Search,
   Pencil, ChevronRight, ChevronLeft, Info, Check,
   MoreVertical, AlertCircle, Upload, FileSpreadsheet, Download,
-  AlertTriangle, CheckCircle2, CalendarDays, ChevronUp,
+  AlertTriangle, CheckCircle2, CalendarDays, ChevronUp, ArrowLeft,
 } from 'lucide-react'
 import {
   DATASTORES, datastoreById, download, isBinaryXlsx, parseCsv, parseSpreadsheetML,
@@ -927,7 +927,7 @@ export function Modal({ title, open, onClose, children, footer, wide, subtitle }
   }, [open, onClose])
   if (!open) return null
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-warm-900/40 py-10 fe-nueva">
+    <div data-modal-open className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-warm-900/40 py-10 fe-nueva">
       <div className={`relative bg-surface rounded-xl shadow-ds-overlay w-full ${wide ? 'max-w-4xl' : 'max-w-3xl'} mx-4`}>
         <div className={`flex justify-between px-6 pt-5 pb-3 ${subtitle ? 'items-start' : 'items-center'}`}>
           <div className="min-w-0">
@@ -1067,7 +1067,7 @@ export function ConfirmDialog({ open, title, message, note, confirmLabel = 'Conf
   if (!open) return null
   const accent = tone === 'danger' ? 'var(--color-st-danger)' : 'var(--color-brand-500)'
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-warm-900/40 fe-nueva">
+    <div data-modal-open className="fixed inset-0 z-[70] flex items-center justify-center bg-warm-900/40 fe-nueva">
       <div className="bg-surface rounded-xl shadow-ds-overlay w-full max-w-md mx-4 p-6">
         <div className="flex items-center gap-2.5">
           <AlertCircle size={20} style={{ color: accent }} />
@@ -1860,6 +1860,92 @@ export function SequenceList({ items, onChange, labelOf = (k) => k, reorderable 
             </span>
           </div>
         ))}
+      </div>
+    </div>
+  )
+}
+
+/* ---------------- Slide-over (the record drawer) ---------------- */
+/**
+ * The drawer a record opens in over its list (owner, 2026-09-25) — the
+ * Consignment view's shell, shared with the Pickup request view on both
+ * portals: scrim (click closes), a 62%-wide panel on `side`, a 56px header
+ * (Back · title · subtitle · host actions right), then the host's body, which
+ * owns its own scroll. Esc closes it unless a Modal is open above it.
+ */
+export function SlideOver({ title, subtitle, onClose, actions, side = 'right', wide = false, label, children }: {
+  title: ReactNode; subtitle?: ReactNode; onClose: () => void; actions?: ReactNode
+  /** which edge it slides from — one line to flip */
+  side?: 'right' | 'left'
+  /** 92% wide (the consignment view with its event log docked) */
+  wide?: boolean
+  label?: string
+  children: ReactNode
+}) {
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || document.querySelector('[data-modal-open]')) return
+      onClose()
+    }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [onClose])
+  return (
+    <>
+      <div className="fixed inset-0 z-[60] bg-warm-900/40" onClick={onClose} />
+      <aside role="dialog" aria-label={label ?? (typeof title === 'string' ? title : 'Details')}
+        className={`fixed inset-y-0 ${side === 'left' ? 'left-0' : 'right-0'} z-[61] flex flex-col bg-canvas shadow-ds-overlay transition-[width] duration-200 ${wide ? 'w-[92%]' : 'w-[62%] min-w-[760px]'}`}>
+        <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line bg-surface px-4">
+          <button type="button" onClick={onClose} aria-label="Back" className="rounded p-1 text-ink-2 hover:bg-warm-100 hover:text-ink"><ArrowLeft size={18} /></button>
+          <span className="text-[18px] font-bold text-ink">{title}</span>
+          {subtitle && <span className="min-w-0 truncate text-[13px] text-ink-3">{subtitle}</span>}
+          {actions && <span className="ml-auto flex items-center gap-2">{actions}</span>}
+        </header>
+        {children}
+      </aside>
+    </>
+  )
+}
+
+/** One entry of a slide-over's section rail. `collapsed` = icon only. */
+export function SlideOverRailItem({ label, icon: Icon, on, collapsed = false, onClick }: {
+  label: string; icon: ComponentType<{ size?: number; className?: string }>; on: boolean; collapsed?: boolean; onClick: () => void
+}) {
+  return (
+    <button type="button" onClick={onClick} title={label} aria-current={on ? 'page' : undefined}
+      className={`flex w-full items-center gap-2.5 border-l-[3px] px-4 py-2.5 text-left text-[13px] transition-colors ${
+        on ? 'border-brand-500 bg-warm-50 font-bold text-ink' : 'border-transparent text-ink-2 hover:bg-warm-50 hover:text-ink'}`}>
+      <Icon size={16} className={on ? 'text-brand-500' : 'text-ink-3'} />
+      {!collapsed && <span className="truncate">{label}</span>}
+    </button>
+  )
+}
+
+export type SlideOverSection = { id: string; label: string; icon: ComponentType<{ size?: number; className?: string }>; node: ReactNode }
+
+/**
+ * A slide-over body: the section rail on the left, every section stacked on
+ * one scroll on the right; the rail scrolls to a section and follows the one
+ * at the top (scroll-spy). Fills the SlideOver below its header.
+ */
+export function SlideOverSections({ sections, label = 'Sections' }: { sections: SlideOverSection[]; label?: string }) {
+  const [on, setOn] = useState<string | null>(null)
+  const scroller = useRef<HTMLDivElement>(null)
+  const refs = useRef<Record<string, HTMLDivElement | null>>({})
+  const goTo = (id: string) => { setOn(id); refs.current[id]?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }
+  return (
+    <div className="flex min-h-0 flex-1">
+      <nav aria-label={label} className="w-[196px] shrink-0 overflow-y-auto border-r border-line bg-surface py-2">
+        {sections.map((x) => <SlideOverRailItem key={x.id} label={x.label} icon={x.icon} on={(on ?? sections[0]?.id) === x.id} onClick={() => goTo(x.id)} />)}
+      </nav>
+      <div ref={scroller} className="min-h-0 min-w-0 flex-1 overflow-auto p-4" onScroll={(e) => {
+        const top = e.currentTarget.getBoundingClientRect().top + 48
+        const cur = sections.filter((x) => (refs.current[x.id]?.getBoundingClientRect().top ?? 1e9) <= top).pop()
+        if (cur && cur.id !== on) setOn(cur.id)
+      }}>
+        <div className="flex flex-col gap-3">
+          {sections.map((x) => <div key={x.id} ref={(el) => { refs.current[x.id] = el }} className="scroll-mt-4">{x.node}</div>)}
+        </div>
       </div>
     </div>
   )

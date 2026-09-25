@@ -26,7 +26,7 @@ export default function ReceiptPage() {
   const masters = useMasters()
   const merchant = currentMerchant(masters.merchants, useMerchantCode())
   const e = ledgerEntryById(id)
-  const back = () => nav('/grow/orders/wallet')
+  const back = () => nav(-1)
   if (!e) {
     return (
       <div>
@@ -41,8 +41,7 @@ export default function ReceiptPage() {
     ['Transaction Status', <StatusPill key="s" label={e.status} tone={LEDGER_TONE[e.status]} />],
     ['Reference Number', e.id],
     ['Transaction Type', e.type],
-    ['Shipping charges', money(e.shipping, e.currency)],
-    ['Taxes', money(e.tax, e.currency)],
+    ...(e.type === 'DR' ? [['Shipping charges', money(e.shipping, e.currency)], ['Taxes', money(e.tax, e.currency)]] as [string, React.ReactNode][] : []),
     ['Amount', <b key="a">{money(e.amount, e.currency)}</b>],
     ['Payment Mode', e.mode],
   ]
@@ -72,7 +71,7 @@ export default function ReceiptPage() {
               {rows.map(([k, v]) => (
                 <tr key={k}><td className="py-2 text-ink-3">{k}</td><td className="py-2 text-ink">{v}</td></tr>
               ))}
-              <tr>
+              {e.consignmentNos.length > 0 && <tr>
                 <td className="py-2 align-top text-ink-3">Consignments</td>
                 <td className="py-2 text-ink">
                   {e.consignmentNos.map((cn, i) => {
@@ -82,7 +81,8 @@ export default function ReceiptPage() {
                       : cn}</span>
                   })}
                 </td>
-              </tr>
+              </tr>}
+              {e.type === 'CR' && e.remarks && <tr><td className="py-2 text-ink-3">Remarks</td><td className="py-2 text-ink">{e.remarks}</td></tr>}
             </tbody>
           </table>
           {e.estimated && <p className="mt-4 text-center text-[12px] text-ink-3">Amount estimated from the rate card — this order was created outside checkout.</p>}

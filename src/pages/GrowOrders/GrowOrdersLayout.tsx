@@ -19,7 +19,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
 import { pickupPagesVisible, usePickupModuleConfig } from '../../config/pickupModule'
 import {
-  ArrowLeftRight, BookUser, Check, CircleHelp, ClipboardList, FileBarChart2, LayoutDashboard, MapPinned, Package, PackageCheck,
+  BookUser, Check, CircleHelp, ClipboardList, FileBarChart2, LayoutDashboard, MapPinned, Package, PackageCheck,
   Receipt, Settings, Truck, Wallet,
 } from 'lucide-react'
 import { currentMerchant, loadMasters, setMerchantCode, useMasters, useMerchantCode } from '../../growOrders/masters'
@@ -116,11 +116,11 @@ function MerchantSwitcher() {
 
   return (
     <div ref={ref} className="relative flex items-center gap-2">
-      {merchant && <span className="max-w-[220px] truncate text-[13px] font-bold text-ink-2" title={merchant.code}>{merchant.name}</span>}
-      <button type="button" title={`Switch merchant${merchant ? ` (${merchant.name})` : ''}`} aria-label="Switch merchant"
+      {/* owner, 2026-09-25: no ⇄ arrow — the merchant name is the switcher */}
+      <button type="button" title="Switch merchant" aria-label="Switch merchant"
         onClick={() => setOpen((v) => !v)} aria-haspopup="menu" aria-expanded={open}
-        className="rounded p-1.5 text-ink-3 hover:bg-warm-50 hover:text-ink-2">
-        <ArrowLeftRight size={18} />
+        className="max-w-[240px] truncate rounded px-2 py-1.5 text-[13px] font-bold text-ink-2 hover:bg-warm-50 hover:text-ink">
+        {merchant?.name ?? 'Merchant'}
       </button>
       {open && (
         <div role="menu" className="absolute right-0 top-[40px] z-50 w-[280px] overflow-hidden rounded-xl border border-line bg-surface py-1.5 shadow-ds-overlay">

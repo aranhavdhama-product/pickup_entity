@@ -40,6 +40,7 @@ import type { PrAction } from '../../growOrders/prActions'
 import { PrActionDialogs } from './prSelectionActions'
 import { prSelectionItems, type PrDialog } from './prSelectionItems'
 import ViewPickup from '../LocalPFP/ViewPickup'
+import PickupRequestDetail from './PickupRequestDetail'
 import {
   duplicateIds, matchesStatus, merchantOfPr, pickupPointName, prCsv, PR_DEFAULT_COLUMN_KEYS,
   statusLabel, statusTags, STATUS_FILTER_OPTIONS, TO_BOOK_CAPTION, TO_BOOK_EMPTY,
@@ -95,7 +96,13 @@ function Disabled({ auto = false }: { auto?: boolean }) {
 export default function LocalPickup() {
   const cfg = usePickupModuleConfig()
   /* owner, 2026-09-24: the page exists only in MANUAL mode */
-  if (!pickupPagesVisible(cfg)) return <Disabled auto={cfg.enabled} />
+  const { id } = useParams()
+  const nav = useNavigate()
+  /* a request stays READABLE from its link with the page hidden (scenario 23) */
+  if (!pickupPagesVisible(cfg)) return <>
+    <Disabled auto={cfg.enabled} />
+    {id && <PickupRequestDetail id={id} onClose={() => nav('/local/pickup')} />}
+  </>
   return <PickupRequestsList />
 }
 
@@ -107,7 +114,7 @@ function PickupRequestsList() {
   const [params, setParams] = useSearchParams()
   /* `/local/pickup/view/:prId` = the list with the request's drawer over it —
      the same drawer Pending For Planning's Pickups tab opens */
-  const { prId: drawerPrId } = useParams()
+  const { prId: drawerPrId, id: requestId } = useParams()
   const tab: LocalPrTab = localPrTabFromSlug(params.get('tab'))
   const eligibleTab = tab === CONSIGNMENTS_TO_BOOK
 
@@ -305,7 +312,7 @@ function PickupRequestsList() {
             ) : (
               <DataTable key={`prs-${tab}`} columns={prGrid.columns} rows={slice(prRows)} rowKey="id" selectable
                 selectionActions={(s, clear) => prActions(s as GrowPickupRequest[], clear)}
-                onRowClick={(r) => nav(`/local/pickup/view/${(r as GrowPickupRequest).id}?${params.toString()}`)} />
+                onRowClick={(r) => nav(`/local/pickup/${(r as GrowPickupRequest).id}?${params.toString()}`)} />
             )}
             <div className="flex items-center justify-between gap-3">
               <div className="flex-1">
@@ -319,6 +326,8 @@ function PickupRequestsList() {
       </div>
 
       {drawerPrId && <ViewPickup basePath="/local/pickup" />}
+      {/* owner, 2026-09-25: the request opens as a slide-over over the list, URL `/local/pickup/:id` */}
+      {requestId && <PickupRequestDetail id={requestId} onClose={() => nav(`/local/pickup?${params.toString()}`)} />}
 
       {dialog?.kind === 'book' && <BookConsignmentsDialog orders={dialog.orders} prefer={dialog.prefer} onClose={close} onDone={close} />}
       {dialog?.kind === 'create' && blindPickupsAllowed(cfg) && (

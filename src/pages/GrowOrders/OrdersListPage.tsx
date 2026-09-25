@@ -282,7 +282,8 @@ export default function OrdersListPage() {
         tabs={TABS.map((t, i) => ({ id: String(i), label: t.label, count: tabCounts[i], icon: t.icon }))}
         active={String(tab)} onChange={(id) => setTab(Number(id))}
         right={<>
-          <AddSplit onAdd={() => nav('/grow/orders/add')} onAddFtl={() => nav('/grow/orders/add/vehicle')} />
+          {/* owner, 2026-09-25: one merchant form (load type is chosen inside it) — no FTL entry */}
+          <AddSplit onAdd={() => nav('/grow/orders/add')} />
           <IconButton icon={<Upload size={15} />} title="Bulk upload shipments" onClick={() => setBulkOpen(true)} />
         </>} />
 

@@ -1,26 +1,26 @@
 /**
  * Disputes (`/grow/orders/disputes`, `/disputes/:id`) — the live GROW-STAGING
- * tenant's Disputes group (research 2026-09-25 §9): three kinds, Transaction
- * ("Wallet Dispute") · Tracking ("Manage Queries") · Invoice ("Invoice
- * Dispute"), each with Open / Closed tabs and its live column set. One page, the
- * kind a chip in the console FilterLine (`?kind=`), Open / Closed as LocalTabs
- * (`?tab=`). Tracking adds the live toolbar's Date Filter, Category / Priority
- * filters and the selection actions Close Disputes · Validate Address.
- * Raised from a payment (Wallet ⋮), a consignment (`RaiseDisputeButton`, the
- * overlay's header) or an invoice (Billing): `?raise=<kind>:<subject>` opens the
- * dialog preselected. Row click → the dispute's view page (details, timeline,
- * comment, dev "Simulate support response"). The raise form fields, vocabularies
- * and the thread view are OURS (not capturable — no live data).
+ * tenant's three dispute kinds (research 2026-09-25 §9: Wallet/Transaction ·
+ * Tracking queries · Invoice) in the Consignment Order page's grammar (owner,
+ * 2026-09-25): ONE list — FilterLine (date range · **Type** · Status · Clear;
+ * search · ⚙ columns · download) → LocalTabs **Open · Closed · All** (`?tab=`,
+ * default Open) with **Raise dispute** on the strip's right → DataTable whose
+ * columns are the union of the three kinds' live columns, empty ones hidden.
+ * `?kind=` presets the Type filter; `?raise=<kind>:<subject>` opens the dialog
+ * preselected (Wallet ⋮, Billing's invoice dialog, `RaiseDisputeButton`). The raise
+ * form, vocabularies and the detail timeline are OURS (not capturable).
  */
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { CheckCircle2, CircleDot, FileWarning, MapPinCheck, MessageSquareWarning, XCircle } from 'lucide-react'
+import { CheckCircle2, CircleDot, Download, FileWarning, ListChecks, MapPinCheck, MessageSquareWarning, Settings2, XCircle } from 'lucide-react'
 import { Button, EmptyState, MenuSelect, Modal, PageHeader, Panel, StatusPill, type Column } from '../../nueva/components'
-import { Chip, ClearFilters, DateRange, FilterLine, FilterSelect, LocalPage, LocalTabs, SearchBox } from '../../local/chrome'
+import { ClearFilters, ColumnChooser, DateRange, FilterLine, FilterMultiSelect, FilterSelect, IconBtn, LocalPage, LocalTabs, SearchBox } from '../../local/chrome'
+import { useColumnPrefs } from '../../local/columnPrefs'
+import { downloadCsv } from '../LocalPFP/adapter'
 import { toast } from '../../nueva/toast'
 import { useGrowOrders } from '../../growOrders/store'
 import {
-  CATEGORIES, DISPUTE_KINDS, DISPUTE_TONE, KIND_TITLE, PRIORITIES, disputeActions, disputeById, isClosed, openDisputeOn, useDisputes,
+  CATEGORIES, DISPUTE_KINDS, DISPUTE_STATUSES, DISPUTE_TONE, KIND_TITLE, PRIORITIES, disputeActions, disputeById, isClosed, openDisputeOn, useDisputes,
   type Dispute, type DisputeKind, type Priority,
 } from '../../growOrders/disputes'
 import { chargesOf, useLedger } from '../../growOrders/ledger'
@@ -144,106 +144,120 @@ export function RaiseDisputeDialog({ initialKind, initialSubject, onClose, onRai
 
 /* --------------------------------------------------------------- the list -- */
 
+const TYPE_LABEL: Record<DisputeKind, string> = { Transaction: 'Wallet', Tracking: 'Tracking', Invoice: 'Invoice' }
+const kindOfLabel = (l: string): DisputeKind | null => DISPUTE_KINDS.find((k) => TYPE_LABEL[k] === l) ?? null
+const TABS = [
+  { id: 'open', label: 'Open', icon: CircleDot, test: (d: Dispute) => !isClosed(d.status) },
+  { id: 'closed', label: 'Closed', icon: CheckCircle2, test: (d: Dispute) => isClosed(d.status) },
+  { id: 'all', label: 'All', icon: ListChecks, test: () => true },
+]
+
+/** The union of the three kinds' live columns; a column with no value in the current rows is hidden. */
+interface DCol { key: string; label: string; width?: number; align?: 'right'; value: (d: Dispute) => string; render?: (d: Dispute) => ReactNode }
+const D_COLUMNS: DCol[] = [
+  { key: 'id', label: 'Dispute Reference Number', width: 190, value: (d) => d.id, render: (d) => <b className="text-ink">{d.id}</b> },
+  { key: 'type', label: 'Type', width: 100, value: (d) => TYPE_LABEL[d.kind] },
+  { key: 'tx', label: 'Transaction Reference Number', width: 220, value: (d) => d.transactionRef },
+  { key: 'inv', label: 'Invoice Number', width: 170, value: (d) => d.invoiceNo },
+  { key: 'ship', label: 'Consignment / Shipment Number', width: 200, value: (d) => d.consignmentNo },
+  { key: 'ord', label: 'Order Number', width: 150, value: (d) => d.orderNumber },
+  { key: 'cat', label: 'Category', width: 170, value: (d) => d.category },
+  { key: 'amount', label: 'Amount', width: 140, align: 'right', value: (d) => (d.amount ? money(d.amount, d.currency) : '') },
+  { key: 'damt', label: 'Dispute Amount', width: 140, align: 'right', value: (d) => (d.disputeAmount ? money(d.disputeAmount, d.currency) : '') },
+  { key: 'raised', label: 'Dispute Raised Date', width: 160, value: (d) => fmtDateTime(d.raisedAt) },
+  { key: 'status', label: 'Current Status', width: 140, value: (d) => d.status, render: (d) => <StatusPill label={d.status} tone={DISPUTE_TONE[d.status]} /> },
+  { key: 'pri', label: 'Priority', width: 100, value: (d) => (d.kind === 'Tracking' ? d.priority : '') },
+  { key: 'upd', label: 'Updated At', width: 160, value: (d) => fmtDateTime(d.updatedAt) },
+]
+const D_KEYS = D_COLUMNS.map((c) => c.key)
+const csvCell = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v)
+
 export default function DisputesPage() {
   const nav = useNavigate()
   const disputes = useDisputes()
   const db = useGrowOrders()
   const [params, setParams] = useSearchParams()
-  const kind = kindOf(params.get('kind'))
-  const closedTab = params.get('tab') === 'closed'
+  const tab = TABS.find((t) => t.id === params.get('tab')) ?? TABS[0]
+  const kindParam = params.get('kind')
+  const typeFilter = kindParam ? TYPE_LABEL[kindOf(kindParam)] : ''
   const raise = params.get('raise')
   const [raising, setRaising] = useState(false)
   const [q, setQ] = useState('')
-  const [category, setCategory] = useState('')
-  const [priority, setPriority] = useState('')
+  const [statuses, setStatuses] = useState<string[]>([])
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const patch = (fn: (n: URLSearchParams) => void) => setParams((p) => { const n = new URLSearchParams(p); fn(n); return n }, { replace: true })
-  const clearFilters = () => { setQ(''); setCategory(''); setPriority(''); setFrom(''); setTo('') }
-  const setKind = (k: DisputeKind) => { clearFilters(); patch((n) => { n.set('kind', SLUG[k]) }) }
+  const setType = (label: string) => patch((n) => { const k = kindOfLabel(label); if (k) n.set('kind', SLUG[k]); else n.delete('kind') })
+  const clearAll = () => { setQ(''); setStatuses([]); setFrom(''); setTo(''); patch((n) => n.delete('kind')) }
   const [raiseKindSlug, raiseSubject] = raise ? [raise.split(':')[0], raise.slice(raise.indexOf(':') + 1)] : [null, undefined]
   const dialogOpen = raising || !!raise
   const closeDialog = () => { setRaising(false); if (raise) patch((n) => n.delete('raise')) }
 
-  const ofKind = useMemo(() => disputes.filter((d) => d.kind === kind), [disputes, kind])
-  const counts = { open: ofKind.filter((d) => !isClosed(d.status)).length, closed: ofKind.filter((d) => isClosed(d.status)).length }
-  const rows = useMemo(() => {
+  /* everything but the tab — the tab counts follow the filters */
+  const filtered = useMemo(() => {
     const n = q.trim().toLowerCase()
-    return ofKind.filter((d) => isClosed(d.status) === closedTab
-      && (!category || d.category === category) && (!priority || d.priority === priority)
+    const k = kindOfLabel(typeFilter)
+    return disputes.filter((d) => (!k || d.kind === k) && (!statuses.length || statuses.includes(d.status))
       && (!from || d.raisedAt.slice(0, 10) >= from.slice(0, 10)) && (!to || d.raisedAt.slice(0, 10) <= to.slice(0, 10))
       && (!n || [d.id, d.consignmentNo, d.orderNumber, d.transactionRef, d.invoiceNo, d.description, d.category].some((v) => v.toLowerCase().includes(n))))
       .sort((a, b) => (a.raisedAt < b.raisedAt ? 1 : -1))
-  }, [ofKind, closedTab, q, category, priority, from, to])
-  const filtersOn = !!(q || category || priority || from || to)
-  const status = (d: Dispute) => <StatusPill label={d.status} tone={DISPUTE_TONE[d.status]} />
-  const ref = (d: Dispute) => <b className="text-ink">{d.id}</b>
-  const cell = (v: string) => <span className="block truncate" title={v}>{v || '—'}</span>
+  }, [disputes, typeFilter, statuses, from, to, q])
+  const rows = filtered.filter(tab.test)
+  const filtersOn = !!(q || typeFilter || statuses.length || from || to)
 
-  /* the live column sets, per kind */
-  const columns: Column[] = kind === 'Transaction' ? [
-    { key: 'id', label: 'Dispute Reference Number', width: 200, render: ref },
-    { key: 'tx', label: 'Transaction Reference Number', render: (d: Dispute) => cell(d.transactionRef) },
-    { key: 'cn', label: 'Consignment Number', width: 190, render: (d: Dispute) => cell(d.consignmentNo) },
-    { key: 'amt', label: 'Dispute Amount', width: 140, align: 'right', render: (d: Dispute) => money(d.disputeAmount, d.currency) },
-    { key: 'raised', label: 'Dispute Raised Date', width: 160, render: (d: Dispute) => fmtDateTime(d.raisedAt) },
-    { key: 'status', label: 'Current Status', width: 140, render: status },
-  ] : kind === 'Invoice' ? [
-    { key: 'id', label: 'Dispute Reference Number', width: 200, render: ref },
-    { key: 'inv', label: 'Invoice Number', render: (d: Dispute) => cell(d.invoiceNo) },
-    { key: 'amount', label: 'Amount', width: 150, align: 'right', render: (d: Dispute) => money(d.amount, d.currency) },
-    { key: 'damt', label: 'Dispute Amount', width: 150, align: 'right', render: (d: Dispute) => money(d.disputeAmount, d.currency) },
-    { key: 'raised', label: 'Dispute Raised Date', width: 160, render: (d: Dispute) => fmtDateTime(d.raisedAt) },
-    { key: 'status', label: 'Current Status', width: 140, render: status },
-  ] : [
-    { key: 'id', label: 'Order Query Number', width: 160, render: ref },
-    { key: 'ship', label: 'Shipment Number', width: 170, render: (d: Dispute) => cell(d.consignmentNo) },
-    { key: 'ord', label: 'Order Number', width: 150, render: (d: Dispute) => cell(d.orderNumber) },
-    { key: 'raised', label: 'Query Raised Date', width: 150, render: (d: Dispute) => fmtDateTime(d.raisedAt) },
-    { key: 'cat', label: 'Category', render: (d: Dispute) => cell(d.category) },
-    { key: 'status', label: 'Current Status', width: 130, render: status },
-    { key: 'pri', label: 'Priority', width: 90, render: (d: Dispute) => d.priority },
-    { key: 'upd', label: 'Updated At', width: 150, render: (d: Dispute) => fmtDateTime(d.updatedAt) },
-  ]
+  const [picked, setPicked] = useColumnPrefs('grow-disputes-columns-v1', D_KEYS, D_KEYS)
+  const withData = D_COLUMNS.filter((c) => rows.some((d) => c.value(d)))
+  const shown = withData.filter((c) => picked.includes(c.key))
+  const columns: Column[] = shown.map((c) => ({
+    key: c.key, label: c.label, width: c.width, align: c.align,
+    render: (d: Dispute) => (c.render ? c.render(d) : <span className="block truncate" title={c.value(d)}>{c.value(d) || '—'}</span>),
+  }))
+  const exportCsv = () => {
+    downloadCsv('disputes.csv', [shown.map((c) => csvCell(c.label)).join(','), ...rows.map((d) => shown.map((c) => csvCell(c.value(d))).join(','))].join('\n'))
+    toast.success(`${plural(rows.length, 'dispute')} exported`)
+  }
 
   return (
     <LocalPage>
       <FilterLine right={<>
-        <SearchBox value={q} onChange={setQ} placeholder={kind === 'Tracking' ? 'Search queries' : 'Search disputes'} />
-        <Button icon={<MessageSquareWarning size={15} />} onClick={() => setRaising(true)}>{kind === 'Tracking' ? 'Raise a query' : 'Raise dispute'}</Button>
+        <SearchBox value={q} onChange={setQ} placeholder="Search disputes" />
+        <ColumnChooser columns={withData} visible={shown.map((c) => c.key)} onChange={setPicked} onReset={() => setPicked(null)}>
+          <Settings2 size={16} />
+        </ColumnChooser>
+        <IconBtn title="Download (CSV)" onClick={exportCsv}><Download size={16} /></IconBtn>
       </>}>
-        {DISPUTE_KINDS.map((k) => (
-          <Chip key={k} active={k === kind} count={disputes.filter((d) => d.kind === k && !isClosed(d.status)).length} onClick={() => setKind(k)}>
-            {k === 'Transaction' ? 'Wallet' : k}
-          </Chip>
-        ))}
-        {kind === 'Tracking' && <DateRange start={from} end={to} onStart={setFrom} onEnd={setTo} />}
-        <FilterSelect value={category} placeholder="Category" options={CATEGORIES[kind]} width={170} onChange={setCategory} />
-        {kind === 'Tracking' && <FilterSelect value={priority} placeholder="Priority" options={[...PRIORITIES]} width={130} onChange={setPriority} />}
-        <ClearFilters active={filtersOn} onClick={clearFilters} />
+        <DateRange start={from} end={to} onStart={setFrom} onEnd={setTo} />
+        <FilterSelect value={typeFilter} placeholder="Type" options={DISPUTE_KINDS.map((k) => TYPE_LABEL[k])} width={140} onChange={setType} />
+        <FilterMultiSelect values={statuses} placeholder="Status" options={[...DISPUTE_STATUSES]} width={170} onChange={setStatuses} />
+        <ClearFilters active={filtersOn} onClick={clearAll} />
       </FilterLine>
-      <LocalTabs tabs={[{ id: 'open', label: 'Open', count: counts.open, icon: CircleDot }, { id: 'closed', label: 'Closed', count: counts.closed, icon: CheckCircle2 }]}
-        active={closedTab ? 'closed' : 'open'} onChange={(id) => patch((n) => n.set('tab', id))} />
+      <LocalTabs tabs={TABS.map((t) => ({ id: t.id, label: t.label, icon: t.icon, count: filtered.filter(t.test).length }))}
+        active={tab.id} onChange={(id) => patch((n) => n.set('tab', id))}
+        right={<Button icon={<MessageSquareWarning size={15} />} onClick={() => setRaising(true)}>Raise dispute</Button>} />
       <div className="mt-4">
-        <p className="mb-2 text-[12px] text-ink-3"><b className="text-ink-2">{KIND_TITLE[kind].title}</b> · {KIND_TITLE[kind].subtitle}</p>
         {rows.length === 0 ? (
           <Panel><EmptyState icon={<FileWarning size={32} />} title={filtersOn ? 'No disputes match these filters' : 'No results found.'}
-            hint={filtersOn ? 'Clear the filters to see every dispute.' : kind === 'Transaction' ? 'Raise one from a payment in Wallet.' : kind === 'Invoice' ? 'Raise one from an invoice in Billing.' : 'Raise a query from a consignment.'} /></Panel>
+            hint={filtersOn ? 'Clear the filters to see every dispute.' : 'Raise one from a payment (Wallet), a consignment or an invoice (Billing).'} /></Panel>
         ) : (
-          <PagedTable key={`${kind}|${closedTab}`} rows={rows} columns={columns} onRowClick={(d) => nav(`/grow/orders/disputes/${d.id}`)}
-            resetKey={`${q}|${category}|${priority}|${from}|${to}`} initialSize={kind === 'Transaction' ? 10 : 100}
-            selectable={kind === 'Tracking' && !closedTab}
-            selectionActions={kind === 'Tracking' ? (sel, clear) => [
-              { label: 'Close Disputes', icon: <XCircle size={14} />, onClick: () => { disputeActions.close(sel.map((d) => d.id)); clear(); toast.success(`${plural(sel.length, 'query')} closed`) } },
-              { label: 'Validate Address', icon: <MapPinCheck size={14} />, onClick: () => {
-                const bad = sel.filter((d) => { const o = db.orders.find((x) => x.id === d.orderId); return !o || !o.receiver.line1 || !o.receiver.postalCode })
-                toast.info(bad.length ? `${plural(bad.length, 'address')} incomplete: ${bad.map((d) => d.consignmentNo).join(', ')}` : `${plural(sel.length, 'address')} valid`)
-              } },
-            ] : undefined} />
+          <PagedTable key={tab.id} rows={rows} columns={columns} onRowClick={(d) => nav(`/grow/orders/disputes/${d.id}`)}
+            resetKey={`${q}|${typeFilter}|${statuses.join()}|${from}|${to}`} selectable
+            selectionActions={(sel, clear) => {
+              const open = sel.filter((d) => !isClosed(d.status))
+              const trk = sel.filter((d) => d.kind === 'Tracking')
+              return [
+                { label: 'Close Disputes', icon: <XCircle size={14} />, disabled: open.length === 0, reason: 'Every selected dispute is already closed',
+                  onClick: () => { disputeActions.close(open.map((d) => d.id)); clear(); toast.success(`${plural(open.length, 'dispute')} closed`) } },
+                { label: 'Validate Address', icon: <MapPinCheck size={14} />, disabled: trk.length === 0, reason: 'Only tracking queries carry an address',
+                  onClick: () => {
+                    const bad = trk.filter((d) => { const o = db.orders.find((x) => x.id === d.orderId); return !o || !o.receiver.line1 || !o.receiver.postalCode })
+                    toast.info(bad.length ? `${plural(bad.length, 'address')} incomplete: ${bad.map((d) => d.consignmentNo).join(', ')}` : `${plural(trk.length, 'address')} valid`)
+                  } },
+              ]
+            }} />
         )}
       </div>
       {dialogOpen && (
-        <RaiseDisputeDialog initialKind={raise ? kindOf(raiseKindSlug) : kind} initialSubject={raise ? raiseSubject : undefined} onClose={closeDialog}
+        <RaiseDisputeDialog initialKind={raise ? kindOf(raiseKindSlug) : (kindOfLabel(typeFilter) ?? 'Tracking')} initialSubject={raise ? raiseSubject : undefined} onClose={closeDialog}
           onRaised={(d) => { closeDialog(); nav(`/grow/orders/disputes/${d.id}`) }} />
       )}
     </LocalPage>
