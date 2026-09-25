@@ -8,6 +8,7 @@
  */
 import { growOrderActions, pickupRequestById } from '../../growOrders/store'
 import { canAddOrdersTo, isOverduePr } from '../../growOrders/tabs'
+import { pickupPointKey } from '../../growOrders/prActions'
 import type { GrowPickupRequest, Party, PickupSource } from '../../growOrders/types'
 
 /** `split` = one request PER consignment, never merged; a one-shipment split is a new request. */
@@ -22,12 +23,15 @@ export interface BookingGroup {
 
 export interface BookingOutcome { pr: GrowPickupRequest; kind: 'new' | 'merged' | 'added'; count: number }
 
-/** Open requests a group may JOIN: same store point, parcel, still taking orders, not overdue, same hub. */
+/** Open requests a group may JOIN: the same pickup point (`pickupPointKey` — booked AND reserved
+ *  requests at the store; owner, 2026-09-25: "show eligible pickups in the dropdown"), LTL, still
+ *  taking orders, not overdue, and dropping at this hub or at no fixed hub yet. */
 export function joinCandidates(g: Pick<BookingGroup, 'storeCode' | 'destinationCode' | 'vehicle'>, prs: GrowPickupRequest[],
   until: Parameters<typeof canAddOrdersTo>[1], now = new Date()): GrowPickupRequest[] {
   if (g.vehicle) return []
+  const key = pickupPointKey({ storeCode: g.storeCode, shipFrom: null })
   return prs
-    .filter((p) => p.storeCode === g.storeCode && !(p.shipFrom?.line1 ?? '').trim() && p.shipmentType !== 'FTL'
+    .filter((p) => pickupPointKey(p) === key && p.shipmentType !== 'FTL'
       && canAddOrdersTo(p, until) && !isOverduePr(p, now)
       && (p.destinationCode == null || p.destinationCode === g.destinationCode))
     .sort((a, b) => a.startAt.localeCompare(b.startAt))

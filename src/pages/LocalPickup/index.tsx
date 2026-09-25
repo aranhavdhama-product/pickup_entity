@@ -255,8 +255,8 @@ function PickupRequestsList() {
     }))
 
   const eligibleActions = (sel: LocalConsignmentRow[], clear: () => void): SelectionAction[] => [
-    { label: 'Add to new pickup', icon: <Plus size={14} />, onClick: () => { setDialog({ kind: 'book', orders: sel.map((r) => r.order), prefer: 'new' }); clear() } },
-    { label: 'Add to existing pickup', icon: <PackageSearch size={14} />, onClick: () => { setDialog({ kind: 'book', orders: sel.map((r) => r.order), prefer: 'existing' }); clear() } },
+    { label: 'Add to new pickup request', icon: <Plus size={14} />, onClick: () => { setDialog({ kind: 'book', orders: sel.map((r) => r.order), prefer: 'new' }); clear() } },
+    { label: 'Add to existing pickup request', icon: <PackageSearch size={14} />, onClick: () => { setDialog({ kind: 'book', orders: sel.map((r) => r.order), prefer: 'existing' }); clear() } },
     { label: 'Download CSV', icon: <Download size={14} />, onClick: () => { downloadCsv('consignments-to-book-selected.csv', csvOf(sel)); clear() } },
   ]
 

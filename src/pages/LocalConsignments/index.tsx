@@ -253,7 +253,7 @@ export default function LocalConsignments() {
       /* only shipments still waiting for a pickup can join an open request */
       ...(manualPickup ? (() => {
         const joinable = sel.map((r) => r.order).filter(isPickupEligible)
-        return [{ label: 'Add to existing pickup', icon: <PackageSearch size={14} />, disabled: joinable.length === 0,
+        return [{ label: 'Add to existing pickup request', icon: <PackageSearch size={14} />, disabled: joinable.length === 0,
           onClick: joinable.length ? () => setJoining({ orders: joinable, clear }) : undefined }]
       })() : []),
       { label: 'Schedule Routing', icon: <CalendarClock size={14} />, onClick: () => {

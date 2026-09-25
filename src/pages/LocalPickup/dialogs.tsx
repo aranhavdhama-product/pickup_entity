@@ -437,7 +437,7 @@ export function BookConsignmentsDialog({ orders, prefer, onClose, onDone }: {
   }
 
   return (
-    <Modal open wide title={prefer === 'new' ? 'Add to new pickup' : 'Add to existing pickup'} onClose={onClose}
+    <Modal open wide title={prefer === 'new' ? 'Add to new pickup request' : 'Add to existing pickup request'} onClose={onClose}
       footer={<Footer onClose={onClose} onConfirm={submit} label={groups.length ? `Confirm · ${plural(pickupCount, 'pickup')}` : 'Confirm'} disabled={!groups.length} />}>
       <div className="flex flex-col gap-4 pb-3">
         <p className="text-[13px] text-ink-2">
@@ -464,7 +464,7 @@ export function BookConsignmentsDialog({ orders, prefer, onClose, onDone }: {
                     candidates={joinable} shipments={g.orders.length} ftl={g.ftl}
                     labelOf={(p) => `${p.number} · ${fmtWindow(p)} · ${consignmentsLabel(p)}`} />
                 </div>
-                {!g.ftl && joinable.length === 0 && <p className="mt-1 text-[12px] text-ink-3">No open pickup at this address can take more shipments ({cfg.allowAddToExistingUntil} or earlier).</p>}
+                {!g.ftl && joinable.length === 0 && <p className="mt-1 text-[12px] text-ink-3">No open pickup request at this address can take more shipments ({cfg.allowAddToExistingUntil} or earlier).</p>}
               </div>
             )
           })}
