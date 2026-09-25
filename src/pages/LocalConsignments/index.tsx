@@ -47,7 +47,6 @@ import { usePickupModuleConfig } from '../../config/pickupModule'
 import type { ConsignmentDateField } from '../../config/consignmentModuleUniverse'
 import { consignmentModuleSaved, dateRangeWindow, readConsignmentModuleConfig } from '../../config/consignmentModule'
 import { SchedulePickupDialog, type ScheduleResult } from './SchedulePickupDialog'
-import { BookConsignmentsDialog } from '../LocalPickup/dialogs'
 import { useConsignmentColumns } from './columns'
 import { BulkUploadDialog } from '../GrowOrders/bulkUploadDialog'
 import ConsignmentView from './ConsignmentView'
@@ -387,8 +386,13 @@ export default function LocalConsignments() {
       )}
 
       {joining && manualPickup && (
-        <BookConsignmentsDialog orders={joining.orders} prefer="existing" onClose={() => setJoining(null)}
-          onDone={() => { joining.clear(); setJoining(null) }} />
+        <SchedulePickupDialog orderIds={joining.orders.map((o) => o.id)} prefer="existing" title="Add to existing pickup request"
+          onClose={() => setJoining(null)}
+          onDone={(results, failed) => {
+            joining.clear(); setJoining(null)
+            if (results.length) toast.success(`Added to ${results.map((r) => r.number).join(', ')}`)
+            if (failed.length) toast.error(`${failed.join(', ')} can no longer take shipments — nothing added there.`)
+          }} />
       )}
 
       {uploading && (

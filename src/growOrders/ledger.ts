@@ -129,15 +129,41 @@ export const ledgerSnapshot = store.get
 export const ledgerEntryById = (id: string) => store.get().find((e) => e.id === id)
 export const resetLedger = store.reset
 
+/**
+ * How a checkout is paid (the Grow payment sheet):
+ *  · 'Wallet'    — debits the wallet balance at once (Success);
+ *  · 'Card'      — a demo card / online payment (Success; the wallet is untouched);
+ *  · 'Pay later' — credit account (Settings → Payment Type = Postpaid): a PENDING debit, the invoice reads Due;
+ *  · 'COD'       — shipping collected on delivery: a PENDING debit until settled.
+ * Seeded debits carry the live receipt's mode 'Credit' and count as wallet debits.
+ */
+export type PayMethod = 'Wallet' | 'Card' | 'Pay later' | 'COD'
+/** Does this debit come out of the wallet balance? */
+export const debitsWallet = (e: LedgerEntry) => e.type === 'DR' && e.status === 'Success' && (e.mode === 'Wallet' || e.mode === 'Credit')
+/** Still to be paid (Pay later / COD). */
+export const isDue = (e: LedgerEntry) => e.type === 'DR' && e.status === 'Pending'
+export const modeLabel = (method: PayMethod, last4?: string) => (method === 'Card' ? `Card${last4 ? ` •••• ${last4}` : ''}` : method)
+
 /** One checkout = one debit. Idempotent: an order already on an entry is not recorded twice. */
-export function recordPayment(order: GrowOrder): LedgerEntry | null {
+export function recordPayment(order: GrowOrder, method: PayMethod = 'Wallet', last4?: string): LedgerEntry | null {
   const cur = store.get()
   if (cur.some((e) => e.type === 'DR' && e.orderIds.includes(order.id))) return null
   const e = entryFor([order], cur.length, new Set(cur.map((x) => x.id)))
   e.at = new Date().toISOString()
-  e.mode = order.paymentMode === 'COD' ? 'COD' : 'Credit'
+  e.bankTxnAt = e.at
+  e.mode = modeLabel(method, last4)
+  e.status = method === 'Pay later' || method === 'COD' ? 'Pending' : 'Success'
+  e.remarks = method === 'Pay later' ? 'Pay later · billed on the monthly invoice' : method === 'COD' ? 'Collect on delivery' : ''
   store.set([e, ...cur])
   return e
+}
+
+/** Pay now: settle pending debits with the wallet or a card. */
+export function settlePayments(ids: string[], method: 'Wallet' | 'Card', last4?: string): void {
+  const s = new Set(ids)
+  const at = new Date().toISOString()
+  store.set(store.get().map((e) => (s.has(e.id) && isDue(e)
+    ? { ...e, status: 'Success', mode: modeLabel(method, last4), bankTxnAt: at, remarks: `Paid ${at.slice(0, 10)}` } : e)))
 }
 
 /* ------------------------------------------------------------------ wallet -- */
@@ -164,12 +190,12 @@ export interface WalletSummary { credits: number; debits: number; balance: numbe
 
 /** One currency's wallet: rows newest first, each with the running balance after it. */
 export function walletOf(ledger: LedgerEntry[], currency: string): WalletSummary {
-  const asc = ledger.filter((e) => e.currency === currency).sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))
+  /* only what moves the wallet: recharges and wallet-paid debits (card / pay-later rows live on Payments) */
+  const asc = ledger.filter((e) => e.currency === currency && (e.type === 'CR' || debitsWallet(e))).sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))
   let bal = 0, credits = 0, debits = 0
   const rows = asc.map((e) => {
-    const ok = e.status === 'Success'
-    const credit = ok && e.type === 'CR' ? e.amount : 0
-    const debit = ok && e.type === 'DR' ? e.amount : 0
+    const credit = e.status === 'Success' && e.type === 'CR' ? e.amount : 0
+    const debit = debitsWallet(e) ? e.amount : 0
     credits += credit; debits += debit; bal = round2(bal + credit - debit)
     return { ...e, credit, debit, balance: bal }
   })

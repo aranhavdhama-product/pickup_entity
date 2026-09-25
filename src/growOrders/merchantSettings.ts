@@ -31,6 +31,8 @@ export interface MerchantSettings {
   /** '' = the first pickup address is the default */
   defaultStoreCode: string
   packages: SavedPackage[]
+  /** the checkout's preselected payment method ('' = Wallet) */
+  defaultPayMethod: string
 }
 
 export const PROJECTED_VOLUMES = ['0-100 Consignments', '101-250 Consignments', '251-500 Consignments', '500+ Consignments']
@@ -57,6 +59,7 @@ export function defaultSettings(code: string, name: string, party?: Party | null
     defaultStoreCode: '',
     /* the live tab's own example row */
     packages: [{ id: 'flyer', name: 'Flyer', weightKg: 1, l: 10, w: 10, h: 10 }],
+    defaultPayMethod: '',
   }
 }
 
@@ -77,6 +80,7 @@ function normOne(r: Record<string, unknown>): MerchantSettings {
       country: str(b.country, 'Philippines'), line1: str(b.line1), line2: str(b.line2), postalCode: str(b.postalCode),
     },
     defaultStoreCode: str(r.defaultStoreCode),
+    defaultPayMethod: str(r.defaultPayMethod),
     packages: (Array.isArray(r.packages) ? r.packages : []).filter((x) => x && typeof x === 'object').map((x: Record<string, unknown>) => ({
       id: str(x.id), name: str(x.name), weightKg: num(x.weightKg), l: num(x.l), w: num(x.w), h: num(x.h),
     })).filter((x) => x.id && x.name),

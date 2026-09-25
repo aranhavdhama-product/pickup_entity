@@ -35,7 +35,8 @@ import { autoPickupSummary } from '../../growOrders/pickupSlots'
 import { csvOf, downloadCsv, executionOverlay, toConsignmentRow, type LocalConsignmentRow } from '../LocalPFP/adapter'
 import { usePlanning } from '../LocalPFP/planningStore'
 import { useConsignmentColumns } from '../LocalConsignments/columns'
-import { BookConsignmentsDialog, CreatePickupDialog } from './dialogs'
+import { CreatePickupDialog } from './dialogs'
+import { SchedulePickupDialog } from '../LocalConsignments/SchedulePickupDialog'
 import type { PrAction } from '../../growOrders/prActions'
 import { PrActionDialogs } from './prSelectionActions'
 import { prSelectionItems, type PrDialog } from './prSelectionItems'
@@ -329,7 +330,21 @@ function PickupRequestsList() {
       {/* owner, 2026-09-25: the request opens as a slide-over over the list, URL `/local/pickup/:id` */}
       {requestId && <PickupRequestDetail id={requestId} onClose={() => nav(`/local/pickup?${params.toString()}`)} />}
 
-      {dialog?.kind === 'book' && <BookConsignmentsDialog orders={dialog.orders} prefer={dialog.prefer} onClose={close} onDone={close} />}
+      {/* owner, 2026-09-25: the Eligible tab books through the SAME dialog as Consignment Order → Schedule */}
+      {dialog?.kind === 'book' && (
+        <SchedulePickupDialog orderIds={dialog.orders.map((o) => o.id)} prefer={dialog.prefer}
+          title={dialog.prefer === 'existing' ? 'Add to existing pickup request' : 'Add to new pickup request'}
+          onClose={close}
+          onDone={(results, failed) => {
+            close()
+            if (results.length) {
+              const n = results.reduce((k, r) => k + r.count, 0)
+              toast.success(`${n} consignment${n === 1 ? '' : 's'} booked — ${results.map((r) =>
+                `${r.number}${r.kind === 'merged' ? ' (merged)' : r.kind === 'added' ? ' (added)' : ''}`).join(', ')}`)
+            }
+            if (failed.length) toast.error(`${failed.join(', ')} can no longer take consignments — nothing added there.`)
+          }} />
+      )}
       {dialog?.kind === 'create' && blindPickupsAllowed(cfg) && (
         <CreatePickupDialog onClose={close}
           onDone={(prs) => {

@@ -209,3 +209,18 @@ strip 24, strip → table 24 (unchanged). No new value.
 - Rows: pickup requests only while Requested with no trip and no 3PL carrier (`isPendingPickup`);
   consignments only while Created · Ready To Ship · Pickup Requested with neither their request on
   a trip nor a delivery stop on one. Lists stay flat (no new grouping dimension).
+
+## 2026-09-25 — Filter line per tab row kind (owner, pickup module manual)
+
+- **First Mile (pickup-request rows):** date range on the pickup WINDOW (overlap) · Status
+  (`prModel.STATUS_FILTER_OPTIONS`, multi, the State popover's grammar) · Merchant · funnel: Type
+  (LTL · FTL · LTL blind · FTL blind), Pickup Address, Destination Hub, Source. Search = PR number /
+  pickup address. No chips strip, no Quick Filter. Group by None → the consignment line.
+- **Last Mile (consignment rows):** date on Ship By · State/Secondary State · Merchant · Order Type
+  (Forward / Reverse, moved out of the funnel) · funnel (staging's dims) · chips + Quick Filter.
+- **All:** date (Ship By / Pickup Start) · Merchant · Type (Consignment · LTL · FTL · LTL blind ·
+  FTL blind) · funnel: Destination · search. No chips strip.
+- Switching to a tab of another row kind resets every filter but Merchant + search. Tab counts:
+  the open tab = its filtered rows; the others = their rows under Merchant + search.
+- Controls reuse `.pfp-select` / the State popover at `roles.stateSelect.width`; no new value.
+  Module off = unchanged (consignment line).

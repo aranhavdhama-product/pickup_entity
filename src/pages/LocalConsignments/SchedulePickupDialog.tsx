@@ -21,7 +21,7 @@
  */
 import { useMemo, useState } from 'react'
 import { ChevronDown, ChevronRight, Info, Truck } from 'lucide-react'
-import { Button, Modal } from '../../nueva/components'
+import { Button, MenuSelect, Modal } from '../../nueva/components'
 import { useGrowOrders } from '../../growOrders/store'
 import type { GrowOrder, GrowPickupRequest, StoreLocation } from '../../growOrders/types'
 import { canAddOrdersTo, isOverduePr, isPickupEligible, rangesOverlap } from '../../growOrders/tabs'
@@ -73,8 +73,13 @@ function mergeTargetFor(
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0]
 }
 
-export function SchedulePickupDialog({ orderIds, onClose, onDone }: {
+export function SchedulePickupDialog({ orderIds, onClose, onDone, prefer = 'choose', title = 'Schedule pickup' }: {
   orderIds: string[]
+  /** 'new' / 'existing' LOCK the dialog to that path (owner, 2026-09-25: "Add to existing" asks only which
+   *  request; "Add to new" asks nothing) — the three-way choice shows only on Schedule pickup */
+  prefer?: 'new' | 'existing' | 'choose'
+  /** the dialog title — the Pickup page calls it "Add to new / existing pickup request" (owner, 2026-09-25) */
+  title?: string
   onClose: () => void
   /** `failed` = numbers of existing requests that refused the consignments */
   onDone: (results: ScheduleResult[], failed: string[]) => void
@@ -149,7 +154,10 @@ export function SchedulePickupDialog({ orderIds, onClose, onDone }: {
       .sort((a, b) => a.startAt.localeCompare(b.startAt))
     const target = mergeTargetFor(g, db.pickupRequests, gPolicy, startAt, endAt)
     const picked = choices[g.key]
-    const choice: Choice = picked && (picked.mode !== 'existing' || candidates.some((p) => p.id === picked.prId))
+    const choice: Choice = prefer === 'new' ? { mode: 'new' }
+      : prefer === 'existing' ? (picked?.mode === 'existing' && candidates.some((p) => p.id === picked.prId) ? picked
+        : candidates.length ? { mode: 'existing', prId: candidates[0].id } : { mode: 'new' })
+      : picked && (picked.mode !== 'existing' || candidates.some((p) => p.id === picked.prId))
       ? picked
       : target && candidates.some((p) => p.id === target.id) ? { mode: 'existing', prId: target.id } : { mode: 'new' }
     const weight = Math.round(g.orders.reduce((n, o) => n + totalWeightKg(o), 0) * 10) / 10
@@ -176,7 +184,7 @@ export function SchedulePickupDialog({ orderIds, onClose, onDone }: {
   const total = eligible.length
 
   return (
-    <Modal open title="Schedule pickup" subtitle="Book a pickup for the selected shipments." onClose={onClose} wide
+    <Modal open title={title} subtitle="Book a pickup for the selected shipments." onClose={onClose} wide
       footer={<>
         <Button variant="outline" onClick={onClose}>Cancel</Button>
         <Button disabled={!canConfirm} icon={<Truck size={14} />} onClick={confirm}>
@@ -226,10 +234,21 @@ export function SchedulePickupDialog({ orderIds, onClose, onDone }: {
                         </button>
                       </div>
                       <div className="flex shrink-0 flex-col items-end gap-2">
-                        <BookingChoiceControl choice={choice} onChange={setChoice} candidates={candidates}
-                          shipments={g.orders.length} ftl={!!g.vehicle}
-                          labelOf={(p) => `${p.number} · ${windowLabel(p)} · ${plural(p.orderIds.length, 'order')}`}
-                          note={target ? <>The pickup policy adds these to {target.number} (same {pickupPolicy(merchantOf(g.orders[0], db.stores)).multiPrPolicy === 'ONE_OPEN_PER_LOCATION' ? 'address' : 'slot'}).</> : undefined} />
+                        {prefer === 'choose' && (
+                          <BookingChoiceControl choice={choice} onChange={setChoice} candidates={candidates}
+                            shipments={g.orders.length} ftl={!!g.vehicle}
+                            labelOf={(p) => `${p.number} · ${windowLabel(p)} · ${plural(p.orderIds.length, 'order')}`}
+                            note={target ? <>The pickup policy adds these to {target.number} (same {pickupPolicy(merchantOf(g.orders[0], db.stores)).multiPrPolicy === 'ONE_OPEN_PER_LOCATION' ? 'address' : 'slot'}).</> : undefined} />
+                        )}
+                        {prefer === 'existing' && (candidates.length ? (
+                          <div className="w-[300px]">
+                            <MenuSelect value={choice.mode === 'existing' ? choice.prId : ''} options={candidates.map((p) => p.id)}
+                              labels={(id) => { const p = candidates.find((x) => x.id === id); return p ? `${p.number} · ${windowLabel(p)} · ${plural(p.orderIds.length, 'order')}` : id }}
+                              onChange={(id) => setChoice({ mode: 'existing', prId: id })} />
+                          </div>
+                        ) : (
+                          <p className="max-w-[300px] text-right text-[12px] text-ink-3">No open pickup request at this address can take more — it will be booked as a new request.</p>
+                        ))}
                       </div>
                     </div>
                     {expanded && (

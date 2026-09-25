@@ -35,6 +35,7 @@ import { useGrowOrders, growOrderActions } from '../../growOrders/store'
 import type { PrAction } from '../../growOrders/prActions'
 import { PrActionDialogs } from '../LocalPickup/prSelectionActions'
 import { prSelectionItems, type PrDialog, type PrSelectionItem } from '../LocalPickup/prSelectionItems'
+import { STATUS_FILTER_OPTIONS, matchesStatus } from '../LocalPickup/prModel'
 import { cancelReasonLabel } from '../../growOrders/pickupReasons'
 import { pickupPagesVisible, usePickupModuleConfig } from '../../config/pickupModule'
 import {
@@ -71,6 +72,27 @@ import {
 } from './stagingFixture'
 
 /* ------------------------------------------------------------ vocabulary --- */
+
+/**
+ * The filter line per row kind (owner, 2026-09-25):
+ *  - consignment  staging's set (date on Ship By · State/Secondary State · Merchant ·
+ *                 Order Type · funnel), + the Carriers / Categories chips + Quick Filter
+ *  - pickup       the Pickup page's grammar (date on the pickup window · Status ·
+ *                 Merchant · funnel: Type, Pickup Address, Destination Hub, Source)
+ *  - common       All: date (Ship By / Pickup Start) · Merchant · Type · funnel: Destination
+ */
+type FilterMode = 'consignment' | 'pickup' | 'common'
+const filterModeOf = (v: ColumnView): FilterMode => (v === 'pickup' ? 'pickup' : v === 'common' ? 'common' : 'consignment')
+const FILTER_DIMS: Record<FilterMode, string[]> = {
+  consignment: FUNNEL_FILTERS.filter((d) => d !== 'Merchant' && d !== 'Order Type'),
+  pickup: ['Type', 'Pickup Address', 'Destination Hub', 'Source'],
+  common: ['Destination'],
+}
+
+/** search: a pickup request by its number / pickup address, a consignment by its numbers / address */
+const matchesSearch = (r: UnifiedRow, needle: string): boolean => (isPickupRow(r)
+  ? `${r.reference} ${r.merchant} ${r.shipFromName} ${r.shipFromAddress}`
+  : `${r.orderNumber} ${r.referenceNumber} ${r.merchant} ${r.address}`).toLowerCase().includes(needle)
 
 /** the consignment states that still need planning (owner, 2026-09-25) */
 const NEEDS_PLANNING_STATES = new Set(['Created', 'Ready To Ship', 'Pickup Requested'])
@@ -230,7 +252,7 @@ const TAB_ICON: Record<TabKey, typeof Layers> = { all: Layers, 'last-mile': Pack
 
 type ModalKind = 'schedule' | 'rto' | 'plan' | 'close' | 'exception' | 'cancel'
   | 'cancelMixed' | null
-type PopKind = 'state' | 'funnel' | 'settings' | 'pagesize' | null
+type PopKind = 'state' | 'prStatus' | 'funnel' | 'settings' | 'pagesize' | null
 
 /**
  * `variant`:
@@ -275,6 +297,9 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
   const [to, setTo] = useState(fixture ? FIXTURE_DATE_RANGE.to : '')
   const [stateSel, setStateSel] = useState<string[]>([])
   const [stateDraft, setStateDraft] = useState<string[]>([])
+  /* First Mile (pickup-request rows): the Pickup page's Status filter */
+  const [prStatusSel, setPrStatusSel] = useState<string[]>([])
+  const [prStatusDraft, setPrStatusDraft] = useState<string[]>([])
   const [funnel, setFunnel] = useState<Record<string, string>>({})
   const [q, setQ] = useState('')
   const [exception, setException] = useState('')
@@ -348,11 +373,10 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
   /* First Mile's Group by (`?group=none`; default Pickup request) */
   const group: GroupBy = parseGroup(params.get('group'))
   const view: ColumnView = fixture || !pickupsOn ? 'consignment' : viewOf(tab, group)
-  const tabCounts = useMemo(() => ({
-    'first-mile': all.filter((r) => inTab('first-mile', group, r)).length,
-    'last-mile': all.filter((r) => inTab('last-mile', group, r)).length,
-    all: all.filter((r) => inTab('all', group, r)).length,
-  }), [all, group])
+  /* owner, 2026-09-25: the filter line follows the tab's ROW KIND — pickup
+     requests get the Pickup page's grammar, consignments the staging set, All
+     the common set (see FILTER_DIMS) */
+  const filterMode: FilterMode = filterModeOf(view)
   const tabRows = useMemo(
     () => (pickupsOn ? all.filter((r) => inTab(tab, group, r)) : all), [all, tab, group, pickupsOn])
   /** what the pickup-request and All cells read */
@@ -399,22 +423,34 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
     'Total Weight': ['0 - 10', '10 - 50', '50 - 200', '200+'],
     'Total Volume': ['0 - 1,000', '1,000 - 100,000', '100,000+'],
     'Ageing (days)': uniq(tabRows.map((r) => String(r.ageingDays))),
+    /* the pickup-request dims — option lists from the rows (Type = prModel's labels) */
+    Type: TYPE_OPTIONS.filter((t) => t !== 'Consignment'),
+    'Pickup Address': uniq(tabRows.flatMap((r) => (isPickupRow(r) ? [r.shipFromName] : []))),
+    'Destination Hub': uniq(tabRows.flatMap((r) => (isPickupRow(r) ? [r.shipToName] : []))),
+    Source: uniq(tabRows.flatMap((r) => (isPickupRow(r) ? [r.request.source] : []))),
   }), [tabRows, tabConsignments])
 
   /* the four row kinds actually present, in the order the discriminator declares */
   const typeOptions = useMemo(
     () => TYPE_OPTIONS.filter((t) => tabRows.some((r) => typeKeyOf(r) === t)), [tabRows])
 
-  const filtersOn = !!(from || to || stateSel.length || q || exception || carrier || flag || quick
+  const filtersOn = !!(from || to || stateSel.length || prStatusSel.length || q || exception || carrier || flag || quick
     || typeSel || Object.values(funnel).some(Boolean))
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase()
     return tabRows.filter((r) => {
       const pickup = isPickupRow(r)
-      const day = sortKey(r)
-      if (from && day < from) return false
-      if (to && day > to) return false
+      if (filterMode === 'pickup' && pickup) {
+        /* the pickup WINDOW overlaps the range (a window may span days) */
+        if (from && r.pickupWindow.end.slice(0, 10) < from) return false
+        if (to && r.pickupWindow.start.slice(0, 10) > to) return false
+        if (prStatusSel.length && !prStatusSel.some((st) => matchesStatus(r.request, st))) return false
+      } else {
+        const day = sortKey(r)
+        if (from && day < from) return false
+        if (to && day > to) return false
+      }
       if (!matchesState(stateSel, String(r.state), r.secondaryState)) return false
       if (typeSel && typeKeyOf(r) !== typeSel) return false
       if (exception && r.exception !== exception) return false
@@ -427,6 +463,10 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
         if (dim === 'Merchant' && r.merchant !== value) return false
         if (dim === 'Ageing (days)' && String(r.ageingDays) !== value) return false
         if (pickup) {
+          if (dim === 'Type' && typeKeyOf(r) !== value) return false
+          if (dim === 'Pickup Address' && r.shipFromName !== value) return false
+          if (dim === 'Destination Hub' && r.shipToName !== value) return false
+          if (dim === 'Source' && r.request.source !== value) return false
           if (dim === 'Destination' && r.shipToName !== value) return false
           if (dim === 'Tags' && !r.tags.includes(value)) return false
           if (dim === 'Facility' || dim === 'Order Type' || dim === 'Service Type' || dim === 'Sort Code') return false
@@ -441,15 +481,19 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
         }
       }
 
-      if (needle) {
-        const hay = pickup
-          ? `${r.reference} ${r.merchant} ${r.shipFromName} ${r.shipFromAddress}`.toLowerCase()
-          : `${r.orderNumber} ${r.referenceNumber} ${r.merchant} ${r.address}`.toLowerCase()
-        if (!hay.includes(needle)) return false
-      }
+      if (needle && !matchesSearch(r, needle)) return false
       return true
     })
-  }, [tabRows, from, to, stateSel, exception, quick, flag, carrier, funnel, q, typeSel])
+  }, [tabRows, from, to, stateSel, prStatusSel, exception, quick, flag, carrier, funnel, q, typeSel, filterMode])
+
+  /* the tab counts: the open tab = what it lists after ITS filters; the others
+     = their rows under what survives a tab switch (Merchant + search) */
+  const tabCounts = useMemo(() => {
+    const needle = q.trim().toLowerCase()
+    const base = (r: UnifiedRow) => (!funnel.Merchant || r.merchant === funnel.Merchant) && (!needle || matchesSearch(r, needle))
+    const count = (t: TabKey) => (t === tab ? filtered.length : all.filter((r) => inTab(t, group, r) && base(r)).length)
+    return { 'first-mile': count('first-mile'), 'last-mile': count('last-mile'), all: count('all') }
+  }, [all, filtered, tab, group, q, funnel.Merchant])
 
   /** what the table actually renders — the fixture short-circuits every filter */
   const display = useMemo<DisplayRow[]>(() => {
@@ -591,7 +635,13 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
     }, { replace: true })
     clearSelection()
     setPage(1)
-    if (typeSel && !all.some((r) => inTab(next, nextGroup, r) && typeKeyOf(r) === typeSel)) setTypeSel('')
+    /* a filter that belongs to the other row kind no longer applies: reset
+       everything but Merchant and search (owner, 2026-09-25) */
+    if (filterModeOf(viewOf(next, nextGroup)) !== filterMode) {
+      setFrom(''); setTo(''); setStateSel([]); setPrStatusSel([]); setTypeSel('')
+      setException(''); setCarrier(''); setFlag(''); setQuick(''); setQuickOpen(false)
+      setFunnel((f): Record<string, string> => (f.Merchant ? { Merchant: f.Merchant } : {}))
+    } else if (typeSel && !all.some((r) => inTab(next, nextGroup, r) && typeKeyOf(r) === typeSel)) setTypeSel('')
   }
   /* the same reset as a tab change: the rows on screen are a different kind */
   const switchGroup = (next: GroupBy) => switchTab(tab, next)
@@ -604,7 +654,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
   }), [selectedPickups, pickupCfg, db])
 
   const clearAll = () => {
-    setFrom(''); setTo(''); setStateSel([]); setFunnel({}); setQ(''); setTypeSel('')
+    setFrom(''); setTo(''); setStateSel([]); setPrStatusSel([]); setFunnel({}); setQ(''); setTypeSel('')
     setException(''); setCarrier(''); setFlag(''); setQuick(''); setPage(1)
   }
 
@@ -716,7 +766,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
   const funnelControl = (
     <div style={{ position: 'relative' }} onClick={(e) => e.stopPropagation()}>
       <button type="button" className="pfp-funnel" aria-label="More filters"
-        data-active={!!((!replica && exception) || FUNNEL_FILTERS.some((d) => d !== 'Merchant' && funnel[d])) || undefined}
+        data-active={!!((!replica && filterMode === 'consignment' && exception) || FILTER_DIMS[filterMode].some((d) => funnel[d])) || undefined}
         onClick={() => setPop(pop === 'funnel' ? null : 'funnel')}>
         <Funnel size={16} />
       </button>
@@ -726,8 +776,8 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
             {/* current page: Exceptions moved off the toolbar into the funnel
                 as its FIRST section (owner, spec §11). The replica keeps it on
                 the list toolbar, where staging has it. */}
-            {!replica && exceptionsControl}
-            {FUNNEL_FILTERS.filter((dim) => dim !== 'Merchant').map((dim) => (
+            {!replica && filterMode === 'consignment' && exceptionsControl}
+            {FILTER_DIMS[filterMode].map((dim) => (
               <select key={dim} className="pfp-select" value={funnel[dim] ?? ''}
                 onChange={(e) => { setFunnel((f) => ({ ...f, [dim]: e.target.value })); setPage(1) }}>
                 <option value="">{dim}</option>
@@ -738,6 +788,46 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
         </div>
       )}
     </div>
+  )
+
+  /* First Mile: the Pickup page's Status filter (prModel.STATUS_FILTER_OPTIONS),
+     the same popover grammar as State/Secondary State */
+  const prStatusControl = (
+    <div style={{ position: 'relative' }} onClick={(e) => e.stopPropagation()}>
+      <div className="pfp-select" style={{ width: ROLE.stateSelect.width }} data-placeholder={prStatusSel.length === 0}
+        role="button" tabIndex={0}
+        onClick={() => { setPrStatusDraft(prStatusSel); setPop(pop === 'prStatus' ? null : 'prStatus') }}>
+        <span>{prStatusSel.length ? `${prStatusSel.length} selected` : 'Status'}</span>
+        <span className="pfp-select-caret"><CaretDown size={16} /></span>
+      </div>
+      {pop === 'prStatus' && (
+        <div className="pfp-pop" style={{ top: 36, left: 0, width: 240 }}>
+          <div className="pfp-pop-scroll">
+            {STATUS_FILTER_OPTIONS.map((o) => (
+              <button key={o} type="button" className="pfp-pop-option"
+                onClick={() => setPrStatusDraft((d) => d.includes(o) ? d.filter((x) => x !== o) : [...d, o])}>
+                <input type="checkbox" readOnly checked={prStatusDraft.includes(o)} />{o}
+              </button>
+            ))}
+          </div>
+          <div className="pfp-pop-foot">
+            <button type="button" data-kind="clear" onClick={() => setPrStatusDraft([])}>Clear</button>
+            <button type="button" data-kind="apply"
+              onClick={() => { setPrStatusSel(prStatusDraft); setPage(1); setPop(null) }}>Apply</button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+
+  /* consignment tabs: staging's Order Type (Forward / Reverse) on the row */
+  const orderTypeControl = (
+    <select className="pfp-select" style={{ width: 170 }} aria-label="Order Type"
+      value={funnel['Order Type'] ?? ''} data-placeholder={!funnel['Order Type']}
+      onChange={(e) => { setFunnel((f) => ({ ...f, 'Order Type': e.target.value })); setPage(1) }}>
+      <option value="">Order Type</option>
+      {(funnelOptions['Order Type'] ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
+    </select>
   )
 
   const dateControl = (
@@ -884,22 +974,26 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
               staging's order, plus Merchant and Type after State */}
           <FilterLine>
             {dateControl}
-            {stateControl}
+            {filterMode === 'consignment' && stateControl}
+            {filterMode === 'pickup' && prStatusControl}
             {merchantControl}
-            {typeControl}
+            {filterMode === 'consignment' && orderTypeControl}
+            {filterMode === 'common' && typeControl}
             {groupControl}
             {funnelControl}
             <ClearFilters active={filtersOn} onClick={clearAll} />
-            <button type="button" className="pfp-quick" aria-pressed={quickOpen}
-              onClick={() => setQuickOpen((v) => !v)}>
-              <WarningCircle size={18} style={{ color: 'rgb(199, 40, 32)' }} />
-              Quick Filter
-              <CaretDown size={16} />
-            </button>
+            {filterMode === 'consignment' && (
+              <button type="button" className="pfp-quick" aria-pressed={quickOpen}
+                onClick={() => setQuickOpen((v) => !v)}>
+                <WarningCircle size={18} style={{ color: 'rgb(199, 40, 32)' }} />
+                Quick Filter
+                <CaretDown size={16} />
+              </button>
+            )}
           </FilterLine>
 
           {/* ------------------------------ row 2: Carriers / Categories cards */}
-          {quickOpen ? quickStrip : (
+          {filterMode !== 'consignment' ? null : quickOpen ? quickStrip : (
             <div className="pfp-strip">
               <section className="pfp-card">
                 <h3 className="pfp-card-title">Carriers</h3>
@@ -937,9 +1031,11 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
           {/* ---------------------------------------------------- row 1: filters */}
           <FilterLine>
             {dateControl}
-            {stateControl}
+            {filterMode === 'consignment' && stateControl}
+            {filterMode === 'pickup' && prStatusControl}
             {merchantControl}
-            {typeControl}
+            {filterMode === 'consignment' && orderTypeControl}
+            {filterMode === 'common' && typeControl}
             {funnelControl}
             <ClearFilters active={filtersOn} onClick={clearAll} />
 
@@ -949,17 +1045,17 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
 
             {/* Show / Hide cards and Quick Filter — icon-only (owner request),
                 the label moves to the tooltip; pressed = the section is open */}
-            <button type="button" className="pfp-iconbtn pfp-toggle" onClick={toggleStrip}
+            {filterMode === 'consignment' && <button type="button" className="pfp-iconbtn pfp-toggle" onClick={toggleStrip}
               aria-pressed={stripOpen}
               aria-label={stripOpen ? 'Hide the Carriers and Categories chips' : 'Show the Carriers and Categories chips'}
               title={stripOpen ? 'Hide carriers & categories' : 'Show carriers & categories'}>
               <GridFour size={16} />
-            </button>
+            </button>}
 
-            <button type="button" className="pfp-iconbtn pfp-toggle" onClick={() => setQuickOpen((v) => !v)}
+            {filterMode === 'consignment' && <button type="button" className="pfp-iconbtn pfp-toggle" onClick={() => setQuickOpen((v) => !v)}
               aria-pressed={quickOpen} aria-label="Quick Filter" title="Quick Filter">
               <WarningCircle size={18} style={{ color: 'rgb(199, 40, 32)' }} />
-            </button>
+            </button>}
 
             {/* the bulk-actions affordance: disabled until rows are picked — the
                 old "Select orders for more action" hint is now its tooltip */}
@@ -987,7 +1083,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
           )}
 
           {/* ----------------------------------------------- row 2: the strip */}
-          {quickOpen ? quickStrip : stripOpen ? (
+          {filterMode !== 'consignment' ? null : quickOpen ? quickStrip : stripOpen ? (
             /* Carriers / Categories as ONE compact chip line (owner request) —
                same chips, same filters, no card boxes; scrolls within itself */
             <div className="pfp-chipbar">

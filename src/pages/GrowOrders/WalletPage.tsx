@@ -19,52 +19,15 @@
 import { useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowDownLeft, ArrowUpRight, CreditCard, ListOrdered, Plus, Wallet } from 'lucide-react'
-import { Button, EmptyState, Input, KebabMenu, KpiTile, MenuSelect, Modal, Panel, StatusPill, type Column } from '../../nueva/components'
+import { Button, EmptyState, KebabMenu, KpiTile, Panel, StatusPill, type Column } from '../../nueva/components'
 import { FilterLine, FilterSelect, LocalPage, LocalTabs, SearchBox } from '../../local/chrome'
-import { toast } from '../../nueva/toast'
-import { RECHARGE_METHODS, recharge, useLedger, walletOf, type LedgerEntry, type LedgerStatus, type WalletRow } from '../../growOrders/ledger'
+import { useLedger, walletOf, type LedgerEntry, type LedgerStatus, type WalletRow } from '../../growOrders/ledger'
 import { fmtDateTime, money } from './utils'
 import { CountBadge, PagedTable, plural } from './accountBits'
-import { MField, NumInput } from './merchantFormBits'
+import { RechargeDialog } from './paymentSheet'
 import { raiseDisputeHref } from './DisputesPage'
 
 export const LEDGER_TONE: Record<LedgerStatus, 'success' | 'danger' | 'warning'> = { Success: 'success', Failed: 'danger', Pending: 'warning' }
-
-/* --------------------------------------------------------- recharge dialog -- */
-
-function RechargeDialog({ currency, onClose }: { currency: string; onClose: () => void }) {
-  const picks = currency === '$' ? [50, 100, 250, 500] : [1000, 2500, 5000, 10000]
-  const [amount, setAmount] = useState(0)
-  const [method, setMethod] = useState<string>(RECHARGE_METHODS[0])
-  const [note, setNote] = useState('')
-  const min = currency === '$' ? 10 : 100
-  const ok = amount >= min
-  return (
-    <Modal open title="Add Money to Wallet" subtitle="Enter amount to be added — demo only, no payment is taken." onClose={onClose}
-      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button disabled={!ok} onClick={() => { const e = recharge(amount, currency, method, note); toast.success(`${money(e.amount, currency)} added to your wallet`); onClose() }}>Recharge</Button></>}>
-      <div className="grid grid-cols-1 gap-4 pb-4 pt-1 sm:grid-cols-2">
-        <MField label={`Amount (${currency})`} required className="sm:col-span-2" hint={`Minimum ${money(min, currency)}`}>
-          <NumInput value={amount} onChange={setAmount} unit={currency} blankZero placeholder="0.00" />
-          <div className="mt-2 flex flex-wrap gap-2">
-            {picks.map((p) => (
-              <button key={p} type="button" onClick={() => setAmount(p)}
-                className={`h-7 rounded-full border px-3 text-[12px] ${amount === p ? 'border-ink bg-warm-50 font-bold text-ink' : 'border-line text-ink-2 hover:bg-warm-50'}`}>
-                + {money(p, currency)}
-              </button>
-            ))}
-          </div>
-        </MField>
-        <MField label="Payment method">
-          <MenuSelect value={method} options={[...RECHARGE_METHODS]} onChange={setMethod} />
-        </MField>
-        <MField label="Note">
-          <Input value={note} onChange={setNote} placeholder="Optional" />
-        </MField>
-      </div>
-    </Modal>
-  )
-}
 
 /* ---------------------------------------------------------------- wallet -- */
 
