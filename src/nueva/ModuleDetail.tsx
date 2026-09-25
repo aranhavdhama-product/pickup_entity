@@ -17,8 +17,11 @@ import { Navigate, useNavigate, useParams } from 'react-router-dom'
 import { Wrench, Table2, ListFilter, RefreshCw, AlertCircle, Lock } from 'lucide-react'
 import {
   Button, Checkbox, EmptyState, Field, Input, MenuSelect, MultiSelect, PageHeader, SimpleTable, Tabs, Toggle,
-  type SimpleCol,
+  SequenceList as SequenceListBase, type SeqItem, type SimpleCol,
 } from './components'
+import {
+  CONSIGNMENT_COLUMN_UNIVERSE, CONSIGNMENT_DATE_FIELDS, CONSIGNMENT_DATE_RANGES,
+} from '../config/consignmentModuleUniverse'
 import { toast } from './toast'
 import { fetchModuleSettings, saveModuleSettings, parseSettingJson, type ModuleSetting } from './settingsApi'
 import { BASE_MODULES } from './BaseModules'
@@ -26,6 +29,8 @@ import {
   readPickupModuleConfig, writePickupModuleConfig, normalizePickupModuleConfig, DEFAULT_PICKUP_MODULE_CONFIG, type AutoPickupConfig,
   type PickupModuleConfig, type PodLevel,
 } from '../config/pickupModule'
+import { AUTO_PICKUP_TRIGGER_EVENTS, triggerEventTitle } from '../growOrders/fareyeEvents'
+import { TriggerEventOption } from '../growOrders/TriggerEventOption'
 import {
   CONSIGNMENT_FIELDS, FIELD_SECTIONS, cacheFormBehavior, DEFAULT_FORM_BEHAVIOR,
   type FormBehavior,
@@ -78,21 +83,9 @@ const OPS_COLUMN_UNIVERSE = [
   'originalLastmileDeliveryEndTime', 'palletQuantity', 'lastUpdatedAt',
 ]
 
-/* Consignment Order — the 65-field universe (bundle @3363393, exact titles in LABELS) */
-export const CONSIGNMENT_COLUMN_UNIVERSE = [
-  'consignmentNumber', 'referenceNumber', 'state', 'secondaryState', 'exceptionState', 'exceptionReason',
-  'totalWeight', 'totalVolume', 'palletQuantity', 'totalQuantity', 'sku', 'skuLineItemNo', 'skuCode',
-  'shipByDate', 'shipToName', 'shipToAddress', 'shipToType', 'shipToCode', 'shipToPinCode', 'shipToCity',
-  'shipToCounty', 'businessUnit', 'driverName', 'consignmentType', 'createdAt', 'ageing', 'carrier', 'tags',
-  'vas', 'serviceTime', 'pickupServiceTime', 'deliveryServiceTime', 'orderNumber', 'dispatchDate',
-  'routingPriority', 'specialInstructions', 'shipperCode', 'serviceType', 'pickupStartDateTime',
-  'pickupEndDateTime', 'deliveryStartDateTime', 'deliveryEndDateTime', 'deliveryAttemptCount',
-  'schedulingConfirmationRequired', 'schedulingConfirmed', 'paymentMode', 'shipFromName', 'shipFromAddress',
-  'shipFromType', 'shipFromCode', 'shipFromPinCode', 'shipFromCity', 'shipFromCounty', 'originFacilityCode',
-  'destinationFacilityCode', 'trackingNumber', 'codAmount', 'clearanceDone', 'clearanceRequired', 'address',
-  'originalPickupStartTime', 'originalPickupEndTime', 'originalLastmileDeliveryStartTime',
-  'originalLastmileDeliveryEndTime', 'cancellationRemarksReason',
-]
+/* Consignment Order — the 67-key universe lives in config/consignmentModuleUniverse
+   (shared with the LOCAL app's settings page); re-exported for existing importers. */
+export { CONSIGNMENT_COLUMN_UNIVERSE }
 
 /* Pending For Planning — 66-field universe (editable variants + categories; bundle @3381972) */
 const PFP_COLUMN_UNIVERSE = [
@@ -137,7 +130,6 @@ export function labelFor(key: string): string {
     .trim()
 }
 
-interface SeqItem { key: string; selected: boolean; sequence: number }
 
 /** merge a selected [{key,sequence}] list with the full key universe */
 function buildSeqItems(selected: { key: string; sequence: number }[], universe: string[]): SeqItem[] {
@@ -148,47 +140,9 @@ function buildSeqItems(selected: { key: string; sequence: number }[], universe: 
     .sort((a, b) => (a.selected === b.selected ? a.sequence - b.sequence : a.selected ? -1 : 1))
 }
 
-/* Checkbox + sequence row list (Table Configuration / On Page Filters pattern) */
-function SequenceList({ items, onChange }: { items: SeqItem[]; onChange: (items: SeqItem[]) => void }) {
-  const selCount = items.filter((i) => i.selected).length
-  const allSelected = selCount === items.length
-  const toggleAll = () => {
-    let seq = 0
-    onChange(items.map((i) => ({ ...i, selected: !allSelected, sequence: !allSelected ? ++seq : 0 })))
-  }
-  const toggleOne = (key: string) => {
-    const next = items.map((i) => (i.key === key ? { ...i, selected: !i.selected } : i))
-    let seq = 0
-    onChange(next.map((i) => ({ ...i, sequence: i.selected ? ++seq : 0 })))
-  }
-  return (
-    <div>
-      <div className="flex items-center justify-between px-1 pb-2.5">
-        <div className="flex items-center gap-3 text-[13px]">
-          <button onClick={toggleAll} className="font-bold text-brand-500 hover:text-brand-600">
-            {allSelected ? 'Clear All' : 'Select All'}
-          </button>
-          <span className="text-ink-3 border-l border-line pl-3">{selCount}/{items.length} Selected</span>
-        </div>
-        <span className="text-[13px] font-bold text-ink pr-4">Sequence</span>
-      </div>
-      <div className="space-y-2">
-        {items.map((it) => (
-          <div key={it.key}
-            className={`flex items-center gap-3 rounded-md border px-3.5 py-2.5 transition-colors
-              ${it.selected ? 'bg-brand-50 border-brand-100' : 'bg-surface border-line'}`}>
-            <Checkbox checked={it.selected} onChange={() => toggleOne(it.key)} />
-            <span className="text-[13px] text-ink flex-1">{labelFor(it.key)}</span>
-            <span className={`w-14 h-7 inline-flex items-center justify-center rounded-md border text-[12.5px]
-              ${it.selected ? 'bg-warm-100 border-warm-200 text-ink-2' : 'bg-warm-50 border-line text-warm-400'}`}>
-              {it.selected ? it.sequence : '—'}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
+/* Checkbox + sequence row list — shared primitive in components.tsx */
+const SequenceList = ({ items, onChange }: { items: SeqItem[]; onChange: (items: SeqItem[]) => void }) =>
+  <SequenceListBase items={items} onChange={onChange} labelOf={labelFor} />
 
 /* User Types checkbox-chip row (General tab of every module page) */
 function UserTypeChips({ options, value, onChange }: {
@@ -299,20 +253,8 @@ function OpsDashboardDetail({ setting, onSave, saving }: {
    Planning, Load Planning, Carrier Portal) — staging's 4-tab pattern ---------- */
 
 /* staging date lists (mined from the bundle): stored top-level in settingJson */
-const DATE_FIELDS = [
-  { name: 'Created Date', code: 'created_at' },
-  { name: 'Delivery/Pickup Date', code: 'ship_to_delivery_date' },
-  { name: 'Ship By Date', code: 'ship_by_date' },
-  { name: 'Updated At', code: 'last_updated_at' },
-  { name: 'Last Mile Dispatch Date', code: 'dispatch_date' },
-]
-const DATE_RANGES = [
-  { name: 'Last 30 days', code: -30 },
-  { name: 'Last 15 Days', code: -15 },
-  { name: 'Last 7 Days', code: -7 },
-  { name: 'Today', code: 0 },
-  { name: 'Next 7 Days', code: 7 },
-]
+const DATE_FIELDS = [...CONSIGNMENT_DATE_FIELDS]
+const DATE_RANGES = [...CONSIGNMENT_DATE_RANGES]
 
 function RadioRow<T extends string | number>({ options, value, onChange }: {
   options: { name: string; code: T }[]; value: T; onChange: (v: T) => void
@@ -531,7 +473,6 @@ const MULTI_PR_OPTIONS = [
 const MULTI_PR_LABEL: Record<string, string> = Object.fromEntries(MULTI_PR_OPTIONS.map((o) => [o.code, o.name]))
 const INHERIT = '__inherit__'
 const PICKUP_MODE_OPTIONS = [{ name: 'Auto', code: 'auto' }, { name: 'Manual', code: 'manual' }]
-const AUTO_AFTER_STATE_OPTIONS = [{ name: 'Created', code: 'Created' }, { name: 'Label Generated', code: 'Label Generated' }, { name: 'Ready To Ship', code: 'Ready To Ship' }]
 const AUTO_DATE_RULE_OPTIONS = [
   { name: 'Same day, else next', code: 'same-day' }, { name: 'Next pickup day', code: 'next-business-day' }, { name: 'N days after', code: 'days-after-order' },
 ]
@@ -553,6 +494,9 @@ function seedPickupSetting(setting: Record<string, unknown>, rowEnabled: boolean
     ? (setting.featureSettings as Partial<PickupModuleConfig>) : {}
   const featureSettings: PickupModuleConfig = {
     ...readPickupModuleConfig(), ...stored,
+    /* a row saved before the shared horizon existed carried it as autoPickup.maxDaysAhead */
+    ...(stored.bookingHorizonDays === undefined && typeof stored.autoPickup?.maxDaysAhead === 'number'
+      ? { bookingHorizonDays: stored.autoPickup.maxDaysAhead } : {}),
     ...(rowEnabled === undefined ? {} : { enabled: rowEnabled }),   // the row flag is the Base Modules toggle
   }
   const merchantRules: MerchantRuleDraft[] = Object.entries(featureSettings.merchantOverrides ?? {}).map(([code, o]) => ({
@@ -700,6 +644,7 @@ function PickupGeneralTab({ draft, patch }: {
   const pod = { ...DEFAULT_PICKUP_MODULE_CONFIG.podRequirements, ...(fs.podRequirements as object) } as PickupModuleConfig['podRequirements']
   const auto = { ...DEFAULT_PICKUP_MODULE_CONFIG.autoPickup, ...((fs.autoPickup ?? {}) as object) } as AutoPickupConfig
   const setAuto = (p: Partial<AutoPickupConfig>) => set('autoPickup', { ...auto, ...p })
+  const manualBlind = ({ ...DEFAULT_PICKUP_MODULE_CONFIG.manualPickup, ...((fs.manualPickup ?? {}) as object) } as PickupModuleConfig['manualPickup']).blindAllowed
 
   return (
     <div className="space-y-6">
@@ -721,17 +666,17 @@ function PickupGeneralTab({ draft, patch }: {
           </FeatureRow>
           {fs.mode === 'auto' && (
             <>
-              <FeatureRow label="Auto pickup — raise after state" hint="The consignment state that raises the request; later states never do.">
-                <RadioRow options={AUTO_AFTER_STATE_OPTIONS} value={String(auto.afterState)} onChange={(v) => setAuto({ afterState: v as AutoPickupConfig['afterState'] })} />
+              <FeatureRow label="Auto pickup — raise on event" hint="The FarEye event that raises the request (FAREYE-STATES-EVENTS.md); later events never do.">
+                <div className="w-[360px]"><MenuSelect value={String(auto.triggerEvent)} options={AUTO_PICKUP_TRIGGER_EVENTS.map((e) => e.code)}
+                  labels={triggerEventTitle} renderOption={(v, active) => <TriggerEventOption code={v} active={active} />}
+                  onChange={(v) => setAuto({ triggerEvent: v })} /></div>
               </FeatureRow>
-              <FeatureRow label="Auto pickup — user picks the window" hint="On: the consignment form offers a date + slot under the slot rules; the date rule below is the fallback.">
+              <FeatureRow label="Auto pickup — slot confirmation" hint="On: an auto request waits for the shipper to confirm the slot before ops can plan it; off = planned straight away.">
+                <Toggle checked={!!auto.slotConfirmation} onChange={(v) => setAuto({ slotConfirmation: v })} />
+              </FeatureRow>
+              <FeatureRow label="Ask the shipper for a pickup window" hint="Yes = the consignment form asks for a pickup date and slot under these rules; No = the auto rule picks the window.">
                 <Toggle checked={!!auto.userSelectsWindow} onChange={(v) => setAuto({ userSelectsWindow: v })} />
               </FeatureRow>
-              {auto.userSelectsWindow && (
-                <FeatureRow label="Auto pickup — book up to (days ahead)" hint="The furthest date the user may pick (1–30).">
-                  <div className="w-28"><Input type="number" value={String(auto.maxDaysAhead)} onChange={(v) => setAuto({ maxDaysAhead: v === '' ? 7 : Number(v) })} /></div>
-                </FeatureRow>
-              )}
               <FeatureRow label="Auto pickup — date rule" hint="Which day the collection is booked for, counted from creation.">
                 <RadioRow options={AUTO_DATE_RULE_OPTIONS} value={String(auto.dateRule)} onChange={(v) => setAuto({ dateRule: v as AutoPickupConfig['dateRule'] })} />
               </FeatureRow>
@@ -757,6 +702,12 @@ function PickupGeneralTab({ draft, patch }: {
               </FeatureRow>
             </>
           )}
+          {fs.mode !== 'auto' && (
+            /* owner, 2026-09-25: the manual mode's one option — mirrors /local/settings/pickup */
+            <FeatureRow label="Manual pickup — reserved (blind) pickups" hint="On: a pickup slot can be booked before the consignments exist (the Reserved requests); off = pickups are booked only for existing consignments.">
+              <Toggle checked={manualBlind} onChange={(v) => set('manualPickup', { ...DEFAULT_PICKUP_MODULE_CONFIG.manualPickup, ...((fs.manualPickup ?? {}) as object), blindAllowed: v })} />
+            </FeatureRow>
+          )}
           <FeatureRow label="Handover scan mode" hint="Who scans a picked-up consignment into the hub.">
             <RadioRow options={SCAN_MODE_OPTIONS} value={String(fs.scanMode ?? '')} onChange={(v) => set('scanMode', v)} />
           </FeatureRow>
@@ -781,6 +732,10 @@ function PickupGeneralTab({ draft, patch }: {
           </FeatureRow>
           <FeatureRow label="Same-day cutoff" hint="Book before this for a same-day pickup; later bookings start next business day.">
             <div className="w-32"><Input type="time" value={str('sameDayCutoff')} onChange={(v) => set('sameDayCutoff', v)} /></div>
+          </FeatureRow>
+          {/* owner, 2026-09-25: ONE shared horizon — manual bookings and the auto "ask the shipper" window */}
+          <FeatureRow label="Pickups can be booked up to (days)" hint="The furthest date a pickup can be booked for (1–30 days from today).">
+            <div className="w-28"><Input type="number" value={str('bookingHorizonDays')} onChange={numIn('bookingHorizonDays')} /></div>
           </FeatureRow>
           <FeatureRow label="Pickup slots" hint="Comma-separated windows, HH:mm-HH:mm.">
             <div className="w-72"><Input value={slotsText(fs.slotDefinitions)} onChange={(v) => set('slotDefinitions', v ? slotsFrom(v) : [])} /></div>

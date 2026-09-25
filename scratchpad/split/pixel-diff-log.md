@@ -122,3 +122,90 @@
 
 - `scripts/pfpdiff.py` not re-run on 2026-09-23: it needs staging captures in a
   shots dir, and staging needs a live, click-navigated session.
+
+## 2026-09-24 — Type column removed (owner)
+
+The measured `orderType` column no longer renders on either look of Pending for Planning: the owner removed it from the page. The row kind is told by the tinted pickup rows and the Consignments · Pickups · All tabs. `stagingTokens.COLUMNS` filters it out; the measured capture is unchanged.
+
+## 2026-09-24 — Active Leg column added (owner)
+
+An `activeLeg` column (First Mile · Mid Mile · Last Mile) now renders right after Secondary State on both looks of Pending for Planning. It is an ADDITION to the measured capture (`stagingTokens.COLUMNS` inserts it); a pickup request row reads First Mile.
+
+## 2026-09-25 — Tabs renamed; per-tab column sets (owner)
+
+Tabs are now **First Mile · Last Mile · All** (`?tab=first-mile|last-mile`, All = no param; the old
+`pickups` / `consignments` slugs still resolve). Rows: First Mile = pickup requests (Group by
+Pickup request, default) or the consignments whose Active Leg is First Mile (Group by None,
+`?group=none`); Last Mile = consignments whose Active Leg is not First Mile; All = everything.
+Module off = no tabs, every consignment, the measured grid (unchanged).
+
+Column sets (`src/pages/LocalPFP/viewColumns.ts`), all ADDITIONS except Last Mile's:
+- **Active Leg is All-only** (owner correction, same day): the First Mile / Last Mile tabs already
+  say the leg. It stays on the module-off page (no tabs).
+- **Last Mile** — the measured staging set minus Active Leg; scroll width = 3352 − 120.
+- **First Mile / Pickup request** — the `/local/pickup` grid (`PR_COLUMN_DEFS` default set). Widths
+  are the PR defs' own: these are not staging columns, so staging has no measurement for them.
+  Table width = the sum of the columns.
+- **First Mile / None** — the Last Mile set + a Pickup Request column after Secondary State
+  (width = the measured 160 of Secondary State); scroll width = 3352 − 120 + 160.
+- **All** — Reference · Type · Active Leg · State · Secondary State · Merchant · Weight · Ship By /
+  Pickup Start · Destination · Carrier / Driver · Trip · Ageing (days). Widths are measured
+  staging widths (Reference Number, Order Type, State, …) or PR-def widths (Destination Hub, Trip).
+  **Type = the row kind only** (Consignment / Pickup Request) — no `Forward · FM → MM → LM` line;
+  the funnel's Order Type is Forward / Reverse only. The leg is Active Leg's job.
+- Cells keep the PFP styling: single line, `.pfp-order` link on the identity cell, `.pfp-pill` on
+  State / Status. No new colour, px or icon.
+- **Group by** select (`.pfp-select`, width = measured `roles.stateSelect.width`): on the replica's
+  filter row; on the current look it sits on the right of the tab strip (`LocalTabs` `right`
+  slot) because that filter line is already full and a 200px select there pushed the icons off.
+
+## 2026-09-25 — Pickup overlay: booked orders open their consignment (owner)
+
+On `/local/pending-for-planning/pickup/:prId` → Orders, each booked (and "collected here only")
+order number is a `.pfp-order` button (ArrowRight + number, the order-number column's glyph) that
+pushes `/local/pending-for-planning/:id` with `state.fromPickup`, so browser Back and the
+consignment overlay's Close both return to the request. One new rule in pfpChrome.css:
+`.pfp-orderlist .pfp-order:hover { color: var(--pfp-brand) }` — token only.
+
+## 2026-09-25 — All tab rows (owner)
+
+All = pickup-request rows (the first mile) + the Last Mile tab's consignments; first-mile
+consignments no longer get their own row there (they are listed only under First Mile → Group
+by None). All's count, Type filter options, chips and funnel options derive from that row set.
+
+
+## 2026-09-25 — Tab strip → table gap with the chip strip hidden
+
+The Carriers / Categories strip already unmounts when hidden, but the tab strip kept its 12px
+bottom margin, so tab → table read 12 + 24 = 36px. `.pfp > .lc-tabs:has(+ .pfp-tablewrap)` drops
+that margin: hidden = tabs 167 → table 191 (24, the measured table margin-top); shown = tabs →
+strip 24, strip → table 24 (unchanged). No new value.
+
+## 2026-09-25 — Consignment rows: staging's exact grid + selection bar (owner, "need them only")
+
+- **Columns** (First Mile / Group by None and Last Mile): `viewColumns.CONSIGNMENT_TAB_COLUMNS` =
+  the measured capture in measured order (Order Type back at its measured place; it reads
+  Forward / Reverse again) + **VAS** after SKU. VAS was not in the capture: width = the measured
+  Tag width (160). No Active Leg, no Pickup Request column. Scroll width = 3352 − 48 (flags) + 160
+  (VAS) = 3464. `/local/columns` offers only these 19 while the pickup tabs are on (all default on).
+  The All tab's Type column moved to its own key (`c:type`) so it no longer collides.
+- **Selection bar** (consignment-only selection): n Selected · Weight (Kg) · Volume mm³ · Pallet
+  Space, then Modify Order Details · Schedule · Initiate Return to Origin · Modify Carrier · Modify
+  Storage Location · Assign To Driver · Add To Best Route (n) · Plan For Routing (n) · Mark Ready for
+  Planning · Close Consignment · Download CSV · Raise Exception · Cancel Order. Modify Order
+  Details / Modify Carrier / Modify Storage Location / Assign To Driver / Add To Best Route have no
+  local implementation → "Not available in the prototype." toast. Icons are all from `icons.tsx`.
+- **Mixed selection** (All tab): only Plan For Routing (n) · Download CSV · Cancel (Cancel = cancel
+  the consignments + call off the pickups, one reason code).
+
+## 2026-09-25 — Pickup-request menu shared with /local/pickup; queue = needs-planning only (owner)
+
+- A pickups-only selection shows the Pickup page's 16 items (`LocalPickup/prSelectionItems.ts`,
+  gated by `prBulkState`; the reason is printed under a disabled item) in the replica's
+  `.pfp-panel-action` rows with glyphs from `icons.tsx`; the list scrolls in the measured panel.
+  The four replica pickup actions (and Send to Load Planning, which is not in that menu) are gone;
+  the dialogs are the Pickup page's (`prSelectionActions.tsx`). "Plan collection for routing" is
+  now **Plan pickup request for routing** everywhere (Pickup grid, PFP, AddToRouteDialog tab).
+- Rows: pickup requests only while Requested with no trip and no 3PL carrier (`isPendingPickup`);
+  consignments only while Created · Ready To Ship · Pickup Requested with neither their request on
+  a trip nor a delivery stop on one. Lists stay flat (no new grouping dimension).

@@ -8,7 +8,7 @@
  * rather than being quietly dropped.
  */
 import { useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 /* icons come from the tree's own extracted set — this route drops the lucide icon package */
 import {
   ArrowLeft, ChatText, ClipboardList, Close, Eye, FileImage, GridFour, ListTree, MapPin,
@@ -82,7 +82,10 @@ export default function ViewConsignment({ basePath = '/local/pending-for-plannin
     })
     : null), [order, db, plan])
 
-  const back = () => nav(basePath)
+  /* opened from a pickup request's Booked orders list → Close returns to that
+     request (it is the previous history entry); otherwise back to the list */
+  const fromPickup = !!(useLocation().state as { fromPickup?: boolean } | null)?.fromPickup
+  const back = () => (fromPickup ? nav(-1) : nav(basePath))
 
   if (!order || !row) {
     return (

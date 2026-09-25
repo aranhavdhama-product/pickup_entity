@@ -222,6 +222,11 @@ export function eventsOf(
   if (o.paymentStatus === 'Paid' && !o.isDraft) created.push({ name: 'Label Generated', at: plus(o.createdAt, 4), user: SYSTEM })
   if (o.error) created.push({ name: 'Data Validation Failed', at: plus(o.createdAt, 2), user: SYSTEM, detail: o.error })
   groups.push({ state: 'Created', at: o.createdAt, events: created })
+  if (o.readyToShip) {
+    /* consignment::marked-ready-for-ship — stamped by the note Mark Ready To Ship writes */
+    const at = (plan.notes[o.id] ?? []).find((n) => n.text === 'Marked Ready To Ship')?.at ?? plus(o.createdAt, 5)
+    groups.push({ state: 'Ready To Ship', at, events: [{ name: 'Marked Ready To Ship', at, user: SYSTEM }] })
+  }
 
   for (const pr of db.pickupRequests.filter((x) => x.orderIds.includes(o.id) || x.pickedOrderIds.includes(o.id))) {
     const events: EventView[] = pr.statusHistory.map((h) => ({
@@ -277,4 +282,55 @@ export function eventsOf(
   /* timestamps come in two shapes (local 'T' strings and ISO Z) — compare as instants */
   const t = (s: string) => new Date(s).getTime() || 0
   return groups.sort((a, b) => t(a.at) - t(b.at))
+}
+
+/* ------------------------------------------------- merchant audience ----- */
+
+/*
+ * The Grow merchant portal renders the SAME overlay with `audience="merchant"`.
+ * What a merchant sees is the tracking milestones of their own shipment — not
+ * the network's internals (geocoding, leg bookkeeping, trip assignment, pickup
+ * planning steps, ops notes). These readers narrow the ops lists above.
+ */
+
+/** Pickup statuses a merchant sees as a milestone (planning steps are internal). */
+const MERCHANT_PICKUP_STATUSES = new Set(['Requested', 'Out For Pickup', 'Completed', 'Pickup Failed', 'Cancelled'])
+const MERCHANT_PICKUP_LABEL: Record<string, string> = {
+  Requested: 'Pickup Scheduled', 'Out For Pickup': 'Out For Pickup', Completed: 'Picked Up',
+  'Pickup Failed': 'Pickup Failed', Cancelled: 'Pickup Cancelled',
+}
+/** Consignment events a merchant sees; everything else in `eventsOf` is ops bookkeeping. */
+const MERCHANT_EVENT_NAMES = new Set([
+  'Created', 'Label Generated', 'Data Validation Failed', 'In Scanned', 'Out For Delivery', 'Delivered', 'Delivery Failed', 'Cancelled',
+])
+const MERCHANT_EVENT_LABEL: Record<string, string> = { 'In Scanned': 'Arrived At Hub' }
+const MERCHANT_STATE_LABEL: Record<string, string> = { 'At Facility': 'At Hub', 'Driver Out': 'Out For Delivery' }
+
+/**
+ * The merchant's event log: milestone events only, no user (driver names), no
+ * internal detail (trip ids, planning notes). Groups left empty disappear.
+ */
+export function merchantEventsOf(groups: EventGroup[]): EventGroup[] {
+  const out: EventGroup[] = []
+  for (const g of groups) {
+    if (g.state === 'Notes' || g.state === 'Ready To Ship') continue
+    const pickup = g.state.startsWith('Pickup · ')
+    const events: EventView[] = []
+    for (const e of g.events) {
+      if (pickup) {
+        const status = e.name.replace(/^Pickup /, '')
+        if (!MERCHANT_PICKUP_STATUSES.has(status)) continue
+        /* the request number stays; the status-history note is ops' wording */
+        events.push({ name: MERCHANT_PICKUP_LABEL[status] ?? e.name, at: e.at, user: '', detail: g.state.slice('Pickup · '.length) })
+        continue
+      }
+      if (!MERCHANT_EVENT_NAMES.has(e.name)) continue
+      const detail = e.name === 'Delivery Failed' || e.name === 'Data Validation Failed' ? e.detail
+        : e.name === 'Created' ? undefined
+        : e.name === 'In Scanned' ? e.detail?.replace(/^Facility: /, 'Hub: ') : undefined
+      events.push({ name: MERCHANT_EVENT_LABEL[e.name] ?? e.name, at: e.at, user: '', detail })
+    }
+    if (events.length) out.push({ ...g, state: MERCHANT_STATE_LABEL[g.state] ?? g.state, events, at: events[events.length - 1].at })
+  }
+  return out
 }

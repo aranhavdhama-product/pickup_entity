@@ -47,11 +47,18 @@ import LocalPickupRequestDetail from './pages/LocalPickup/PickupRequestDetail'
 import LocalControlTower from './pages/LocalControlTower'
 import LocalTripDetail from './pages/LocalControlTower/TripDetail'
 import LocalInbound from './pages/LocalInbound'
+import LocalRouting from './pages/LocalRouting'
+import LocalRoutingPlanDetail from './pages/LocalRouting/PlanDetail'
+import LocalVehicleConfig from './pages/LocalRouting/VehicleConfig'
+import LocalVehicleEditor from './pages/LocalRouting/VehicleEditor'
 import LocalInboundScanner from './pages/LocalInbound/Scanner'
 import LocalPendingForPlanning from './pages/LocalPFP'
 import LocalColumnConfiguration from './pages/LocalPFP/TableSettings'
 import LocalSettings from './pages/LocalSettings'
 import LocalPickupSettings from './pages/LocalSettings/PickupSettings'
+import LocalGeneralSettings from './pages/LocalSettings/GeneralSettings'
+import LocalConsignmentOrderSettings from './pages/LocalSettings/ConsignmentOrderSettings'
+import LocalServiceOrderMasters from './pages/LocalSettings/ServiceOrderMasters'
 import LocalPfpChanges from './pages/LocalPFP/Changes'
 import LocalConsignments from './pages/LocalConsignments'
 import ConsoleUnavailable from './pages/ConsoleUnavailable'
@@ -62,12 +69,25 @@ import RequestsPage from './pages/GrowPortal/RequestsPage'
 import ConsignmentsPage from './pages/GrowPortal/ConsignmentsPage'
 import GrowOrdersLayout from './pages/GrowOrders/GrowOrdersLayout'
 import OrdersListPage from './pages/GrowOrders/OrdersListPage'
-import AddOrderPage from './pages/GrowOrders/AddOrderPage'
+import MerchantOrderForm from './pages/GrowOrders/MerchantOrderForm'
 import LocalAddConsignment from './pages/LocalConsignments/AddConsignment'
 import OrderViewPage from './pages/GrowOrders/OrderViewPage'
 import CheckoutPage from './pages/GrowOrders/CheckoutPage'
 import PickupRequestsPage from './pages/GrowOrders/PickupRequestsPage'
 import PickupRequestPage from './pages/GrowOrders/PickupRequestPage'
+/* Batch A — Grow analytics & tools pages */
+import GrowDashboardPage from './pages/GrowOrders/DashboardPage'
+import GrowTrackingPage from './pages/GrowOrders/TrackingPage'
+import GrowQuotePage from './pages/GrowOrders/QuotePage'
+import GrowReportsPage, { GrowSubscribedReportsPage } from './pages/GrowOrders/ReportsPage'
+import GrowHelpPage from './pages/GrowOrders/HelpCenterPage'
+/* Batch B — Grow money & account pages */
+import GrowWalletPage from './pages/GrowOrders/WalletPage'
+import GrowReceiptPage from './pages/GrowOrders/ReceiptPage'
+import GrowBillingPage from './pages/GrowOrders/BillingPage'
+import GrowDisputesPage, { DisputeViewPage as GrowDisputeViewPage } from './pages/GrowOrders/DisputesPage'
+import GrowAddressBookPage, { AddressFormPage as GrowAddressFormPage, AddressViewPage as GrowAddressViewPage } from './pages/GrowOrders/AddressBookPage'
+import GrowSettingsPage from './pages/GrowOrders/SettingsPage'
 import DriverApp from './pages/DriverApp'
 import PhoneDemo from './pages/PhoneDemo'
 
@@ -125,11 +145,19 @@ export default function AppRoutes() {
         <Route path="/local/pickup/:id" element={<LocalPickupRequestDetail />} />
         <Route path="/local/control-tower" element={<LocalControlTower />} />
         <Route path="/local/control-tower/trips/:id" element={<LocalTripDetail />} />
+        <Route path="/local/routing" element={<LocalRouting />} />
+        <Route path="/local/routing/vehicles" element={<LocalVehicleConfig />} />
+        <Route path="/local/routing/vehicles/:vehicleId" element={<LocalVehicleEditor />} />
+        <Route path="/local/routing/:planId" element={<LocalRoutingPlanDetail />} />
         <Route path="/local/inbound" element={<LocalInbound />} />
         <Route path="/local/inbound/scanner" element={<LocalInboundScanner />} />
         <Route path="/local/columns" element={<LocalColumnConfiguration />} />
         <Route path="/local/settings" element={<LocalSettings />} />
         <Route path="/local/settings/pickup" element={<LocalPickupSettings />} />
+        <Route path="/local/settings/masters/service_order" element={<LocalServiceOrderMasters page="category" />} />
+        <Route path="/local/settings/masters/service_order/:subId" element={<LocalServiceOrderMasters page="sub" />} />
+        <Route path="/local/settings/general" element={<LocalGeneralSettings />} />
+        <Route path="/local/settings/consignment-order" element={<LocalConsignmentOrderSettings />} />
         <Route path="/local/changes" element={<LocalPfpChanges />} />
       </Route>
 
@@ -138,12 +166,30 @@ export default function AppRoutes() {
       <Route path="/driver" element={<DriverApp />} />
       <Route path="/grow/orders" element={<GrowOrdersLayout />}>
         <Route index element={<OrdersListPage />} />
-        <Route path="add" element={<AddOrderPage />} />
-        <Route path="add/vehicle" element={<AddOrderPage />} />
+        <Route path="add" element={<MerchantOrderForm />} />
+        <Route path="add/vehicle" element={<MerchantOrderForm />} />
         <Route path="checkout" element={<CheckoutPage />} />
         {/* before :id — "pickups" must not be read as an order id */}
         <Route path="pickups" element={<PickupRequestsPage />} />
         <Route path="pickups/:id" element={<PickupRequestPage />} />
+        {/* Batch A — analytics & tools pages (literals before :id) */}
+        <Route path="dashboard" element={<GrowDashboardPage />} />
+        <Route path="tracking" element={<GrowTrackingPage />} />
+        <Route path="quote" element={<GrowQuotePage />} />
+        <Route path="reports" element={<GrowReportsPage />} />
+        <Route path="reports/subscriptions" element={<GrowSubscribedReportsPage />} />
+        <Route path="help" element={<GrowHelpPage />} />
+        {/* Batch B — money & account pages (literals before :id) */}
+        <Route path="wallet" element={<GrowWalletPage />} />
+        <Route path="wallet/:id" element={<GrowReceiptPage />} />
+        <Route path="billing" element={<GrowBillingPage />} />
+        <Route path="disputes" element={<GrowDisputesPage />} />
+        <Route path="disputes/:id" element={<GrowDisputeViewPage />} />
+        <Route path="address-book" element={<GrowAddressBookPage />} />
+        <Route path="address-book/add" element={<GrowAddressFormPage />} />
+        <Route path="address-book/:id" element={<GrowAddressViewPage />} />
+        <Route path="address-book/:id/edit" element={<GrowAddressFormPage />} />
+        <Route path="settings" element={<GrowSettingsPage />} />
         <Route path=":id" element={<OrderViewPage />} />
       </Route>
       <Route path="/grow" element={<GrowLayout />}>

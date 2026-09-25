@@ -112,7 +112,8 @@ export interface PlanningDb {
   closures: Record<string, ClosureRecord>
   cancelRemarks: Record<string, string>
   /** orderId → the notes typed on the View Consignment page's Notes tab. */
-  notes: Record<string, { text: string; at: string }[]>
+  /** `by` = who typed it; untagged (older) notes are ops'. The merchant portal shows only its own. */
+  notes: Record<string, { text: string; at: string; by?: 'merchant' | 'ops' }[]>
   /** orderIds that have LEFT the queue (planned, staged, closed or cancelled). */
   leftQueue: string[]
 }
@@ -271,6 +272,9 @@ function commit() {
   subs.forEach((f) => f())
 }
 
+/** Non-React read of the current planning db (Same/Next Day Routing's Copy Route). */
+export const planningSnapshot = (): PlanningDb => db
+
 export function usePlanning(): PlanningDb {
   return useSyncExternalStore((cb) => { subs.add(cb); return () => subs.delete(cb) }, () => db)
 }
@@ -330,7 +334,7 @@ export const planningActions = {
    *  they are Assigned. */
   planForRouting(
     stops: { orderId: string; orderNumber: string; address: string; kind?: 'delivery' | 'pickup' }[],
-    crew: { driverName?: string | null; vehicle?: string | null } = {},
+    crew: { driverName?: string | null; vehicle?: string | null; date?: string; name?: string } = {},
   ): LocalTrip {
     const driverName = crew.driverName?.trim() || null
     const vehicle = crew.vehicle?.trim() || null
@@ -339,13 +343,14 @@ export const planningActions = {
     /* a collection runs on its window's START date (scenario 24) — a request for
        Friday routed on Wednesday is a Friday trip; deliveries run today */
     const firstPickup = stops.find((s) => s.kind === 'pickup')
-    const date = (firstPickup && pickupRequestById(firstPickup.orderId)?.date) || today()
+    /* Same/Next Day Routing passes its dispatch date explicitly */
+    const date = crew.date || (firstPickup && pickupRequestById(firstPickup.orderId)?.date) || today()
     const hub = first
       ? (first.kind === 'pickup' ? pickupRequestById(first.orderId)?.destinationCode : orderById(first.orderId)?.inboundHubCode)
       : null
     const trip: LocalTrip = {
       id: newTripId(),
-      name: driverName ?? vehicle ?? 'Unassigned route',
+      name: crew.name?.trim() || driverName || vehicle || 'Unassigned route',
       createdAt: new Date().toISOString(),
       date,
       hubCode: hub ?? '',
@@ -424,6 +429,18 @@ export const planningActions = {
     mapTrip(tripId, (t) => ({ ...t, stops: resequence(t.stops.filter((x) => x !== stop)) }))
     commit()
     if (stop.prId && pickupRequestById(stop.prId)?.tripId === tripId) growOrderActions.setPickupTrip(stop.prId, null)
+  },
+
+  /** Orders whose route was discarded go back to the planning queue (Same/Next
+   *  Day Routing → Discard): they leave `leftQueue` and lose the 'Planned' state. */
+  releaseOrders(ids: string[]) {
+    if (!ids.length) return
+    const drop = new Set(ids)
+    db.leftQueue = db.leftQueue.filter((id) => !drop.has(id))
+    const next = { ...db.secondaryState }
+    ids.forEach((id) => { if (next[id] === 'Planned') delete next[id] })
+    db.secondaryState = next
+    commit()
   },
 
   /** A driver takes the trip — every collection on it becomes Assigned. */
@@ -646,9 +663,9 @@ export const planningActions = {
     commit()
   },
 
-  addNote(orderId: string, text: string) {
+  addNote(orderId: string, text: string, by?: 'merchant' | 'ops') {
     const list = db.notes[orderId] ?? []
-    db.notes = { ...db.notes, [orderId]: [...list, { text, at: new Date().toISOString() }] }
+    db.notes = { ...db.notes, [orderId]: [...list, { text, at: new Date().toISOString(), ...(by ? { by } : {}) }] }
     commit()
   },
 

@@ -8,7 +8,8 @@
  *   eligible  = `tabOf(order) === 'Ready for Pickup'` and no validation issue
  *   grouping  = `groupForPickup` (one card per pickup point → inbound hub; FTL alone)
  *   per card  = New pickup request | Add to existing (open PRs at that point,
- *               `canAddOrdersTo(pr, allowAddToExistingUntil)`)
+ *               `canAddOrdersTo(pr, allowAddToExistingUntil)`) | Split into separate
+ *               requests (one request per consignment, never merged)
  *
  * Booking a pickup does NOT touch the routing schedule (`planningActions.schedule`
  * → Secondary State "Scheduled"): the two are different steps with different
@@ -19,12 +20,15 @@
  * without the dialog saying so first.
  */
 import { useMemo, useState } from 'react'
-import { ChevronDown, ChevronRight, Truck } from 'lucide-react'
-import { Button, Input, MenuSelect, Modal } from '../../nueva/components'
-import { useGrowOrders, growOrderActions, pickupRequestById } from '../../growOrders/store'
+import { ChevronDown, ChevronRight, Info, Truck } from 'lucide-react'
+import { Button, Modal } from '../../nueva/components'
+import { useGrowOrders } from '../../growOrders/store'
 import type { GrowOrder, GrowPickupRequest, StoreLocation } from '../../growOrders/types'
 import { canAddOrdersTo, isOverduePr, isPickupEligible, rangesOverlap } from '../../growOrders/tabs'
 import { earliestWindow, pickupPolicy, violatesCutoff, windowLabel, type PickupPolicy } from '../../growOrders/pickupSlots'
+import { SlotWindowFields } from '../LocalPickup/slotFields'
+import { BookingChoiceControl } from '../LocalPickup/bookingCards'
+import { bookGroup, type BookingChoice } from '../LocalPickup/bookingPlan'
 import { usePickupModuleConfig } from '../../config/pickupModule'
 import { groupForPickup, storeAddress, storeName, type PickupGroup } from '../GrowOrders/utils'
 import { consignmentStateOf, toConsignmentRow, totalWeightKg } from '../LocalPFP/adapter'
@@ -39,7 +43,8 @@ export interface ScheduleResult {
   count: number
 }
 
-type Choice = { mode: 'new' } | { mode: 'existing'; prId: string }
+/** `split` = one request PER consignment of the card (owner, 2026-09-25), never merged. */
+type Choice = BookingChoice
 
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
 
@@ -106,10 +111,15 @@ export function SchedulePickupDialog({ orderIds, onClose, onDone }: {
      one merchant, the account's otherwise */
   const merchants = useMemo(() => [...new Set(eligible.map((o) => merchantOf(o, db.stores)))], [eligible, db.stores])
   const windowMerchant = merchants.length === 1 ? merchants[0] : null
-  /* read every render: cheap, and `usePickupModuleConfig` above re-renders on a config change */
-  const policy = pickupPolicy(windowMerchant)
+  /* one policy PER CARD — its merchant's rules + the operating calendar of its
+     pickup address → drop hub (operatingCalendar.ts); the shared window must
+     satisfy every card. Read every render: cheap, and `usePickupModuleConfig`
+     above re-renders on a config change. */
+  const whereOf = (g: (typeof groups)[number]) => ({ pickupLocationCode: g.storeCode, hubCode: g.destinationCode })
+  const cardPolicies = groups.map((g) => pickupPolicy(merchantOf(g.orders[0], db.stores), whereOf(g)))
+  const policy = cardPolicies[0] ?? pickupPolicy(windowMerchant)
 
-  const [initial] = useState(() => earliestWindow(new Date(), pickupPolicy(windowMerchant)))
+  const [initial] = useState(() => earliestWindow(new Date(), policy))
   const [startAt, setStartAt] = useState(initial.startAt)
   const [endAt, setEndAt] = useState(initial.endAt)
   const [instructions, setInstructions] = useState('')
@@ -117,14 +127,19 @@ export function SchedulePickupDialog({ orderIds, onClose, onDone }: {
   const [open, setOpen] = useState<Record<string, boolean>>({})
 
   const now = new Date()
-  const cutoffError = startAt ? violatesCutoff(startAt, now, policy) : 'Pick a start time'
+  /* the date / slot choices are DERIVED from the settings: a window is offered
+     only when the shared policy AND every selected merchant's own policy take it */
+  const policies = cardPolicies.length ? cardPolicies : [policy]
+  const ruleError = (s: string, e?: string) => policies.map((p) => violatesCutoff(s, now, p, e)).find(Boolean) ?? null
+  const slotOk = (w: { startAt: string; endAt: string }) => !ruleError(w.startAt, w.endAt) && w.endAt > w.startAt
+  const cutoffError = startAt ? ruleError(startAt, endAt) : 'Pick a date, a start time and an end time'
   const orderError = !endAt ? 'Pick an end time' : endAt <= startAt ? 'The window must end after it starts' : null
   const windowError = cutoffError || orderError
 
   /* ------------------------------------------------------- per card ---- */
   const cards = groups.map((g) => {
     const merchant = merchantOf(g.orders[0], db.stores)
-    const gPolicy = pickupPolicy(merchant)
+    const gPolicy = pickupPolicy(merchant, whereOf(g))
     const candidates = g.vehicle ? [] : db.pickupRequests
       .filter((p) => atStorePoint(p, g.storeCode) && p.shipmentType !== 'FTL'
         && canAddOrdersTo(p, cfg.allowAddToExistingUntil)
@@ -134,35 +149,26 @@ export function SchedulePickupDialog({ orderIds, onClose, onDone }: {
       .sort((a, b) => a.startAt.localeCompare(b.startAt))
     const target = mergeTargetFor(g, db.pickupRequests, gPolicy, startAt, endAt)
     const picked = choices[g.key]
-    const choice: Choice = picked && (picked.mode === 'new' || candidates.some((p) => p.id === picked.prId))
+    const choice: Choice = picked && (picked.mode !== 'existing' || candidates.some((p) => p.id === picked.prId))
       ? picked
       : target && candidates.some((p) => p.id === target.id) ? { mode: 'existing', prId: target.id } : { mode: 'new' }
     const weight = Math.round(g.orders.reduce((n, o) => n + totalWeightKg(o), 0) * 10) / 10
     return { g, merchant, candidates, target, choice, weight }
   })
 
-  const needsWindow = cards.some((c) => c.choice.mode === 'new')
+  const needsWindow = cards.some((c) => c.choice.mode !== 'existing')
+  /* how many requests the Confirm touches: a split card is one per shipment */
+  const pickupCount = cards.reduce((n, c) => n + (c.choice.mode === 'split' ? c.g.orders.length : 1), 0)
+  const allSplit = cards.length > 0 && cards.every((c) => c.choice.mode === 'split')
   const canConfirm = cards.length > 0 && !(needsWindow && windowError)
 
   const confirm = () => {
     const results: ScheduleResult[] = []
     const failed: string[] = []
     cards.forEach(({ g, merchant, choice }) => {
-      const ids = g.orders.map((o) => o.id)
-      if (choice.mode === 'existing') {
-        const { added } = growOrderActions.addOrdersToPickup(choice.prId, ids)
-        const pr = pickupRequestById(choice.prId)
-        if (!added.length || !pr) { failed.push(pr?.number ?? 'a pickup request'); return }
-        results.push({ prId: pr.id, number: pr.number, kind: 'added', count: added.length })
-        return
-      }
-      const pr = growOrderActions.createPickupRequest({
-        storeCode: g.storeCode, destinationCode: g.destinationCode, orderIds: ids,
-        instructions: instructions.trim() || undefined, vehicle: g.vehicle,
-        source: 'Console', merchantCode: merchant, startAt, endAt,
-      })
-      if (!pr) { failed.push('a new pickup (validation errors)'); return }
-      results.push({ prId: pr.id, number: pr.number, kind: pr.merged ? 'merged' : 'new', count: ids.length - pr.skipped.length })
+      bookGroup({ storeCode: g.storeCode, destinationCode: g.destinationCode, orderIds: g.orders.map((o) => o.id), vehicle: g.vehicle },
+        choice, { startAt, endAt, instructions: instructions.trim() || undefined, source: 'Console', merchantCode: merchant }, failed)
+        .forEach(({ pr, kind, count }) => results.push({ prId: pr.id, number: pr.number, kind, count }))
     })
     onDone(results, failed)
   }
@@ -170,20 +176,19 @@ export function SchedulePickupDialog({ orderIds, onClose, onDone }: {
   const total = eligible.length
 
   return (
-    <Modal open title="Schedule pickup" onClose={onClose} wide
+    <Modal open title="Schedule pickup" subtitle="Book a pickup for the selected shipments." onClose={onClose} wide
       footer={<>
-        <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button variant="outline" onClick={onClose}>Cancel</Button>
         <Button disabled={!canConfirm} icon={<Truck size={14} />} onClick={confirm}>
-          {cards.length === 0 ? 'Schedule' : `Schedule ${plural(cards.length, 'pickup')}`}
+          {cards.length === 0 ? 'Schedule' : `Schedule ${plural(pickupCount, 'pickup')}`}
         </Button>
       </>}>
       <div className="flex flex-col gap-4 pb-3">
-        <p className="-mt-2 text-[12.5px] text-ink-3">Book a pickup for the selected shipments.</p>
-
         {skipped.length > 0 && (
-          <p className="rounded-md border border-line bg-warm-50 px-3 py-2 text-[12.5px] text-ink-3">
-            <span className="font-bold text-ink-2">Skipped {skipped.length}: </span>
-            {skipped.map((s) => `${s.label} — ${s.reason}`).join(' · ')}
+          <p className="flex items-start gap-1.5 text-[12.5px] text-ink-3">
+            <Info size={13} className="mt-[3px] shrink-0 text-warm-400" />
+            <span><span className="font-bold text-ink-2">Skipped {skipped.length}:</span>{' '}
+              {skipped.map((s) => `${s.label} — ${s.reason}`).join(' · ')}</span>
           </p>
         )}
 
@@ -195,9 +200,11 @@ export function SchedulePickupDialog({ orderIds, onClose, onDone }: {
           </p>
         ) : (
           <>
-            <p className="text-[13px] text-ink">
-              <span className="font-bold">{plural(cards.length, 'pickup')}</span>
-              <span className="text-ink-3"> · {plural(total, 'shipment')} · one per pickup address and inbound hub{cards.some((c) => c.g.vehicle) ? ', FTL on its own' : ''}</span>
+            <p className="-mb-2 text-[12px] text-ink-3">
+              <span className="font-bold text-ink-2">{plural(pickupCount, 'pickup')}</span>
+              {allSplit
+                ? ' · one per shipment'
+                : <> · {plural(total, 'shipment')} · one per pickup address and inbound hub{cards.some((c) => c.g.vehicle) ? ', FTL on its own' : ''}</>}
             </p>
             <div className="flex flex-col gap-2">
               {cards.map(({ g, candidates, target, choice, weight }) => {
@@ -219,38 +226,10 @@ export function SchedulePickupDialog({ orderIds, onClose, onDone }: {
                         </button>
                       </div>
                       <div className="flex shrink-0 flex-col items-end gap-2">
-                        {/* segmented choice */}
-                        <div className="inline-flex rounded-md border border-warm-300 p-0.5" role="radiogroup">
-                          {([['new', 'New pickup request'], ['existing', 'Add to existing']] as const).map(([mode, label]) => {
-                            const active = choice.mode === mode
-                            const disabled = mode === 'existing' && candidates.length === 0
-                            return (
-                              <button key={mode} type="button" role="radio" aria-checked={active} disabled={disabled}
-                                title={disabled ? (g.vehicle ? 'FTL bookings are always their own request' : 'No open pickup request at this address can take more shipments') : undefined}
-                                onClick={() => setChoice(mode === 'new' ? { mode: 'new' }
-                                  : { mode: 'existing', prId: (candidates.find((p) => p.id === target?.id) ?? candidates[0]).id })}
-                                className={`h-7 rounded px-2.5 text-[12px] font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-50
-                                  ${active ? 'bg-brand-50 text-brand-500' : 'text-ink-2 hover:bg-warm-50'}`}>
-                                {label}
-                              </button>
-                            )
-                          })}
-                        </div>
-                        {choice.mode === 'existing' && (
-                          <div className="w-80">
-                            <MenuSelect value={choice.prId} options={candidates.map((p) => p.id)}
-                              labels={(id) => {
-                                const p = candidates.find((x) => x.id === id)
-                                return p ? `${p.number} · ${windowLabel(p)} · ${plural(p.orderIds.length, 'order')}` : id
-                              }}
-                              onChange={(id) => setChoice({ mode: 'existing', prId: id })} />
-                          </div>
-                        )}
-                        {choice.mode === 'new' && target && (
-                          <p className="max-w-80 text-right text-[12px] text-ink-3">
-                            The pickup policy adds these to {target.number} (same {pickupPolicy(merchantOf(g.orders[0], db.stores)).multiPrPolicy === 'ONE_OPEN_PER_LOCATION' ? 'address' : 'slot'}).
-                          </p>
-                        )}
+                        <BookingChoiceControl choice={choice} onChange={setChoice} candidates={candidates}
+                          shipments={g.orders.length} ftl={!!g.vehicle}
+                          labelOf={(p) => `${p.number} · ${windowLabel(p)} · ${plural(p.orderIds.length, 'order')}`}
+                          note={target ? <>The pickup policy adds these to {target.number} (same {pickupPolicy(merchantOf(g.orders[0], db.stores)).multiPrPolicy === 'ONE_OPEN_PER_LOCATION' ? 'address' : 'slot'}).</> : undefined} />
                       </div>
                     </div>
                     {expanded && (
@@ -271,17 +250,11 @@ export function SchedulePickupDialog({ orderIds, onClose, onDone }: {
 
             {/* the window applies to every NEW request; an existing one keeps its own */}
             <div className={needsWindow ? '' : 'opacity-60'}>
-              <div className="grid grid-cols-2 gap-4">
-                <label className="block">
-                  <span className="mb-1 block text-[12px] font-bold text-ink-2">Window start <span className="text-brand-500">*</span></span>
-                  <Input type="datetime-local" value={startAt} onChange={setStartAt} disabled={!needsWindow} />
-                </label>
-                <label className="block">
-                  <span className="mb-1 block text-[12px] font-bold text-ink-2">Window end <span className="text-brand-500">*</span></span>
-                  <Input type="datetime-local" value={endAt} onChange={setEndAt} disabled={!needsWindow} />
-                </label>
+              <div className={needsWindow ? '' : 'pointer-events-none'}>
+                <SlotWindowFields startAt={startAt} endAt={endAt} policy={policy} ok={slotOk} calendars={policies}
+                  onChange={(w) => { setStartAt(w.startAt); setEndAt(w.endAt) }}
+                  error={needsWindow ? windowError : null} />
               </div>
-              {needsWindow && windowError && <p className="mt-1.5 text-[12.5px] font-bold text-danger-fg">{windowError}</p>}
               {/* the standing cutoff / earliest-window rule line was removed by the
                   owner; the cutoff ERROR above and the earliest-window prefill stay */}
               {!needsWindow && (
@@ -290,7 +263,7 @@ export function SchedulePickupDialog({ orderIds, onClose, onDone }: {
             </div>
 
             <label className="block">
-              <span className="mb-1 block text-[12px] font-bold text-ink-2">Instructions</span>
+              <span className="mb-1.5 block text-[12px] font-bold uppercase tracking-wide text-ink-2">Instructions for the driver</span>
               <textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} rows={3}
                 placeholder="Gate code, dock number, contact on arrival…"
                 className="w-full rounded-md border border-warm-300 bg-surface px-3 py-2 text-[13px] text-ink placeholder:text-warm-400

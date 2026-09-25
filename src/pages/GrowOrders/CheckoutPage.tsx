@@ -6,9 +6,11 @@ import { inboundHubFor } from '../../growOrders/hubs'
 import { growOrderActions, newOrderId, newOrderNumber, orderById, pickupRequestById } from '../../growOrders/store'
 import type { GrowOrder, PaymentMode } from '../../growOrders/types'
 import { toast } from '../../nueva/toast'
-import { Button, Field, Input, MenuSelect, PageHeader, Panel } from '../../nueva/components'
+import { Button, Input, MenuSelect, PageHeader, Panel } from '../../nueva/components'
 import { money } from './utils'
+import { SFld } from '../../components/consignmentForm'
 import { usePortalMerchant } from './pickupGate'
+import { recordPayment } from '../../growOrders/ledger'
 import {
   DRAFT_KEY, DRAFT_PICKUP_KEY, clearDraftKeys, readOverageSidecar, vehiclesOf, volKg,
   type OrderDraft, type OverageSidecar,
@@ -42,6 +44,8 @@ export default function CheckoutPage() {
       </div>
     )
   }
+  /* the currency the form quoted in (₱, or $ on the Chicago network) — never re-quoted here */
+  const cur = draft.currency || CURRENCY
   const p0 = draft.parcels[0]
   /* what makes a shipment a Document is the CARGO classification, not the
      packaging it happens to be in */
@@ -58,22 +62,25 @@ export default function CheckoutPage() {
        number. A stale sidecar (scan resolved elsewhere) falls back to a normal order. */
     const ovPr = ov ? pickupRequestById(ov.prId) : undefined
     const scan = ovPr?.overages.find((v) => v.id === ov?.overageId && !v.orderId)
+    const booksVehicle = draft.shipmentType === 'FTL' || !!cf?.dedicateTruck || !!draft.vehicleType
     const o: GrowOrder = {
       /* newOrderId(), not `o${Date.now()}` — two orders checked out inside one
          millisecond would otherwise share an id */
       id: existing?.id ?? newOrderId(), orderNumber: cf?.orderNumber?.trim() || existing?.orderNumber || newOrderNumber(),
       orderType: cf?.consignmentType === 'Reverse' ? 'Reverse Order' : 'Forward Order',
       createdAt: existing?.createdAt ?? new Date().toISOString(), status: 'Order Created',
-      storeCode: draft.storeCode, inboundHubCode: inboundHubFor(draft.receiver), sender: draft.sender, receiver: draft.receiver, drops: draft.drops, shipmentType: draft.shipmentType, vehicleType: draft.shipmentType === 'FTL' ? draft.vehicleType : '',
-      ...(draft.shipmentType === 'FTL' ? { vehicleUnit: draft.vehicleUnit, actualLoad: draft.actualLoad, additionalServices: draft.additionalServices,
+      storeCode: draft.storeCode, inboundHubCode: inboundHubFor(draft.receiver), sender: draft.sender, receiver: draft.receiver, drops: draft.drops, shipmentType: draft.shipmentType, vehicleType: booksVehicle ? draft.vehicleType : '',
+      /* FTL, or a dedicated-truck parcel consignment — both keep the booked vehicles */
+      ...(booksVehicle ? { vehicleUnit: draft.vehicleUnit, actualLoad: draft.actualLoad, additionalServices: draft.additionalServices,
         ...(draft.vehicles?.length ? { vehicles: draft.vehicles } : {}) } : {}),
       pkg: { kind: draft.shipmentType === 'FTL' ? 'FTL' : isDocument ? 'Document' : 'Parcel', count: draft.parcels.reduce((n, p) => n + p.quantity, 0),
         weightKg: draft.parcels.reduce((n, p) => n + Math.max(p.weight, volKg(p)) * p.quantity, 0), lengthCm: p0.l, widthCm: p0.w, heightCm: p0.h,
-        description: draft.parcels.map((p) => p.itemInfo).filter(Boolean).join('; '), declaredValue: 0,
+        description: draft.parcels.map((p) => p.itemInfo).filter(Boolean).join('; '),
+        declaredValue: (draft.sourceParcels ?? draft.parcels).reduce((n, p) => n + (p.declaredValue ?? 0) * p.quantity, 0),
         /* carried onto the order so the view page can show what the stepper
            collected — the package preset and the SKU rows behind `description` */
         ...(draft.shipmentType === 'FTL' ? {} : { cargoType: p0.cargoType, packageType: p0.packageTypeName ?? '', ...(items.length ? { items } : {}) }) },
-      paymentMode: payment, codAmount: payment === 'COD' ? Number(cod) || 0 : 0, currency: CURRENCY,
+      paymentMode: payment, codAmount: payment === 'COD' ? Number(cod) || 0 : 0, currency: cur,
       carrier: cf?.carrier || (draft.shipmentType === 'FTL' ? '2GO Logistics' : '2GO Express'), serviceType: draft.service,
       trackingNumber: p0.trackingNumber?.trim() || '', pickupDate: '',
       /* the merchant is never a form field — it is recorded here, and on `consignment` */
@@ -85,7 +92,7 @@ export default function CheckoutPage() {
       paymentStatus: 'Paid', isDraft: false, pickupRequestId: null, pickedInRequestId: null, draft: null,
       /* FREEZE what was quoted. A rate card that changes tomorrow must not
          retroactively restate what this merchant already paid. */
-      charges: quoteOf(draft.rate, draft.service),
+      charges: cur === '$' ? { shipping: draft.rate, tax: taxes, total: Math.round((draft.rate + taxes) * 100) / 100, service: draft.service } : quoteOf(draft.rate, draft.service),
     }
     if (ovPr && scan) {
       o.trackingNumber = scan.barcode
@@ -96,6 +103,8 @@ export default function CheckoutPage() {
     }
     if (existing) growOrderActions.update(o.id, o)
     else growOrderActions.create(o)
+    /* the Payments ledger (Wallet): one checkout = one debit entry */
+    recordPayment(o)
     clearDraftKeys()
     if (ovPr && scan) {
       growOrderActions.resolveOverage(ovPr.id, scan.id, o.id)
@@ -122,7 +131,8 @@ export default function CheckoutPage() {
     toast.success(`Consignment ${o.orderNumber} created`)
     nav('/grow/orders')
   }
-  const taxes = Math.round(draft.rate * 0.15)
+  /* the form's tax rule: whole pesos, cents for dollars */
+  const taxes = cur === '$' ? Math.round(draft.rate * 15) / 100 : Math.round(draft.rate * 0.15)
   const line = (k: string, v: ReactNode, key?: number) => (
     <p key={key} className="mt-1 first:mt-0"><span className="text-ink-3">{k} </span>{v}</p>
   )
@@ -153,21 +163,21 @@ export default function CheckoutPage() {
           </Panel>
           <Panel title="Payment">
             <div className="grid grid-cols-2 gap-4 px-5 pb-5 pt-2">
-              <Field label="Payment Mode" plain>
+              <SFld label="Payment Mode">
                 <MenuSelect value={payment} options={['Prepaid', 'COD']} onChange={(v) => setPayment(v as PaymentMode)} />
-              </Field>
+              </SFld>
               {payment === 'COD' && (
-                <Field label={`COD Amount (${CURRENCY})`} plain>
+                <SFld label={`COD Amount (${cur})`}>
                   <Input type="number" value={cod} onChange={setCod} />
-                </Field>
+                </SFld>
               )}
               <div className="col-span-2">
-                <Field label="Add remarks if any" plain>
+                <SFld label="Add remarks if any">
                   <textarea rows={3} value={remarks} onChange={(e) => setRemarks(e.target.value)}
                     placeholder="Remarks for the driver or the receiver"
                     className="w-full rounded-md border border-warm-300 bg-surface px-3 py-2 text-[13px] text-ink placeholder:text-warm-400
                                transition-shadow focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/20" />
-                </Field>
+                </SFld>
               </div>
             </div>
           </Panel>
@@ -177,9 +187,9 @@ export default function CheckoutPage() {
             <p className="mb-4 text-[13px] text-ink-3">Complete the payment for your order</p>
             <div className="space-y-2 text-[13px] text-ink">
               <div className="flex justify-between"><span className="text-ink-3">Total Shipments</span><span>1</span></div>
-              <div className="flex justify-between"><span className="text-ink-3">Shipping charges</span><span>{money(draft.rate, CURRENCY)}</span></div>
-              <div className="flex justify-between"><span className="text-ink-3">Taxes</span><span>{money(taxes, CURRENCY)}</span></div>
-              <div className="mt-3 flex justify-between border-t border-line pt-3 text-[15px] font-bold"><span>Payable Amount</span><span>{money(draft.rate + taxes, CURRENCY)}</span></div>
+              <div className="flex justify-between"><span className="text-ink-3">Shipping charges</span><span>{money(draft.rate, cur)}</span></div>
+              <div className="flex justify-between"><span className="text-ink-3">Taxes</span><span>{money(taxes, cur)}</span></div>
+              <div className="mt-3 flex justify-between border-t border-line pt-3 text-[15px] font-bold"><span>Payable Amount</span><span>{money(draft.rate + taxes, cur)}</span></div>
             </div>
             <div className="mt-5 flex [&>button]:w-full"><Button onClick={proceed}>Proceed</Button></div>
           </div>

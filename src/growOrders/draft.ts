@@ -67,6 +67,8 @@ export interface Parcel {
   palletSpace?: string
   /** packageDetails[].description */
   description?: string
+  /** declared value of ONE package of this spec (merchant order form), in the order's currency */
+  declaredValue?: number
 }
 
 /**
@@ -116,7 +118,13 @@ export interface ConsignmentFields {
   paymentMode?: string
   orderAmount?: number | null
   schedulingConfirmation?: boolean
-  /** Dedicate Truck — the FTL switch: on = Vehicle Details, shipmentType 'FTL' */
+  /**
+   * "Dedicated truck (FTL / FCL)" — a whole vehicle for this consignment. On a parcel consignment
+   * it follows the Service Type's master Load type (LTL only → false, FTL only → true, LTL & FTL →
+   * the user's choice); `shipmentType` stays
+   * 'Parcel'. The optional Vehicle Type is stored (`vehicles[]` / `vehicleType`) whatever this
+   * says. Always on for the FTL variant.
+   */
   dedicateTruck?: boolean
   totalLoadingTime?: number | null
   clearanceRequired?: boolean
@@ -157,6 +165,11 @@ export interface OrderDraft {
   consignment?: ConsignmentFields
   /** Which form tier the draft was saved from, so Resume reopens it the same way. */
   formMode?: 'simplified' | 'full'
+  /** The currency `rate` is quoted in (growOrders/rates: ₱, or $ on the Chicago network). Absent = ₱. */
+  currency?: string
+  /** Full-vehicle bookings from the merchant form: the packages the merchant listed (`parcels`
+   *  carries the one synthetic FTL line every reader expects), so Resume gets them back. */
+  sourceParcels?: Parcel[]
 }
 export const DRAFT_KEY = 'grow-order-draft'
 /**
@@ -246,28 +259,42 @@ export const VEHICLE_RATE: Record<string, number> = Object.fromEntries(VEHICLE_S
 export const vehicleSpec = (type: string) => VEHICLE_SPECS.find((v) => v.type === type) ?? VEHICLE_SPECS[0]
 
 /**
- * The FTL SERVICE TYPES (owner's list, 2026-09-23) and the vehicles each one
- * can be booked with. The vehicle dropdown is filtered by this — a sea service
- * offers containers, an air service offers ULDs, an inland one offers trucks.
- * `days` is the transit the summary step quotes.
+ * The service types' VEHICLE CATALOGUES (owner's FTL list 2026-09-23, cut to the demo's 10
+ * services 2026-09-25) — the vehicles each one can be booked with. The vehicle dropdown is
+ * filtered by this: a sea service offers containers, an air service ULDs, an inland one trucks.
+ * `days` is the transit the summary step quotes. Only the FTL-load ones (Inland FTL · Sea FCL ·
+ * RORO FTL) are offered for a dedicated vehicle — `FTL_SERVICE_CODES`.
  */
 export interface FtlServiceType { code: string; days: number; vehicles: string[] }
 export const FTL_SERVICE_TYPES: FtlServiceType[] = [
   { code: 'Inland LTL', days: 2, vehicles: ['1 Ton Bakkie', '4 Ton Truck', '8 Ton Truck'] },
-  { code: 'Inland FTL', days: 1, vehicles: ['1 Ton Bakkie', '4 Ton Truck', '8 Ton Truck', '14 Ton Truck', 'Superlink (34 Ton)', 'Refrigerated 8 Ton'] },
-  { code: 'Inland Crossdocking', days: 2, vehicles: ['4 Ton Truck', '8 Ton Truck', '14 Ton Truck', 'Superlink (34 Ton)'] },
+  { code: 'Inland FTL', days: 1, vehicles: ['Courier Van', '1 Ton Bakkie', '4 Ton Truck', '8 Ton Truck', '14 Ton Truck', 'Superlink (34 Ton)', 'Refrigerated 8 Ton', 'Prime Mover + Skeletal Trailer'] },
   { code: 'Sea LCL', days: 14, vehicles: ['20 ft Container (shared)', '40 ft Container (shared)'] },
   { code: 'Sea FCL', days: 12, vehicles: ['20 ft Container', '40 ft Container', '40 ft High Cube', '20 ft Reefer', '40 ft Reefer'] },
   { code: 'RORO FTL', days: 10, vehicles: ['Car Carrier (8 units)', 'Low-bed Trailer', 'Flatbed Trailer'] },
-  { code: 'RORO LTL', days: 10, vehicles: ['Car Carrier Slot', 'Trailer Slot'] },
-  { code: 'Rolling Cargo', days: 10, vehicles: ['Self-propelled Unit', 'Towed Unit', 'Low-bed Trailer'] },
   { code: 'Air Freight LCL', days: 3, vehicles: ['LD3 Container', 'LD7 Container', 'PMC Pallet'] },
   { code: 'CEP Inland', days: 1, vehicles: ['Courier Van', '1 Ton Bakkie'] },
-  { code: 'Hustling', days: 1, vehicles: ['Prime Mover + Skeletal Trailer', '8 Ton Truck', '14 Ton Truck'] },
 ]
-export const FTL_SERVICE_CODES = FTL_SERVICE_TYPES.map((s) => s.code)
+/**
+ * A retired demo service name (2026-09-25: the demo keeps exactly 10) → its nearest kept one.
+ * The store's normalizer applies it on load, so an old blob never resurfaces a dropped name.
+ * `Delivery` is NOT mapped — the staging-pulled consignments carry it as data.
+ */
+export const RETIRED_SERVICE_TYPES: Record<string, string> = {
+  'Standard Delivery': 'Standard',
+  'Delivery & Installation': 'White Glove Delivery',
+  Installation: 'White Glove Delivery',
+  'RORO LTL': 'Sea LCL',
+  'Rolling Cargo': 'Inland FTL',
+  Hustling: 'Inland FTL',
+  'Inland Crossdocking': 'Inland FTL',
+}
+export const canonicalService = <T extends string | null | undefined>(code: T): T =>
+  (code && RETIRED_SERVICE_TYPES[code] ? RETIRED_SERVICE_TYPES[code] : code) as T
+export const FTL_SERVICE_CODES = ['Inland FTL', 'Sea FCL', 'RORO FTL']
 export const DEFAULT_FTL_SERVICE = 'Inland FTL'
-export const ftlServiceType = (code: string) => FTL_SERVICE_TYPES.find((s) => s.code === code) ?? FTL_SERVICE_TYPES[1]
+export const ftlServiceType = (code: string) =>
+  FTL_SERVICE_TYPES.find((s) => s.code === canonicalService(code)) ?? FTL_SERVICE_TYPES.find((s) => s.code === DEFAULT_FTL_SERVICE)!
 /** The vehicle specs a service type can be booked with, in catalogue order. */
 export const vehiclesFor = (serviceCode: string): VehicleSpec[] =>
   ftlServiceType(serviceCode).vehicles.map(vehicleSpec)
@@ -330,8 +357,86 @@ export const EXTRA_DROP_RATE = 650 // per delivery address after the first
  */
 export interface ParcelService { code: string; days: number; price: number }
 export const PARCEL_SERVICES: ParcelService[] = [
-  { code: 'Standard Delivery', days: 2, price: 90 },
+  { code: 'Standard', days: 2, price: 90 },
+  { code: 'Express', days: 1, price: 160 },
+  { code: 'White Glove Delivery', days: 3, price: 650 },
+  { code: 'CEP Inland', days: 1, price: 120 },
 ]
+
+/**
+ * The demo's Service Types — EXACTLY these 10, one canonical name each (owner, 2026-09-25:
+ * "keep max 10 service types only in our demo"). LTL only: Standard · Express · White Glove
+ * Delivery · CEP Inland · Inland LTL · Sea LCL · Air Freight LCL; FTL only: Inland FTL · Sea FCL ·
+ * RORO FTL. A code with no rate-card row prices at the Standard rate (`parcelQuote` falls back).
+ */
+export const SERVICE_TYPES: string[] = [
+  'Standard', 'Express', 'White Glove Delivery', 'CEP Inland',
+  'Inland LTL', 'Inland FTL', 'Sea LCL', 'Sea FCL', 'Air Freight LCL', 'RORO FTL',
+]
+
+/**
+ * Per-service LOAD TYPE, keyed by the SERVICE_TYPES entry — the Service Type master's
+ * "Load type" field: 'ltl' = LTL only, 'ftl' = FTL only, 'both' = LTL & FTL. Defaults follow the
+ * SERVICE NAME — `defaultLoadType`, also used for any service with no entry (a live master row):
+ * "LTL"/"LCL" and the demo's parcel services (Standard, Express, White Glove Delivery, CEP Inland)
+ * → LTL only; "FTL"/"FCL" → FTL only; anything else (a live row such as "Delivery") → LTL & FTL.
+ * staging's serviceType rows carry no such field — the local Service & Order master
+ * (`/local/settings/masters/service_order/service-type`) may override a row, and that override
+ * wins at read time.
+ */
+export type LoadType = 'ltl' | 'ftl' | 'both'
+export const LOAD_TYPE_LABELS: Record<LoadType, string> = { ltl: 'LTL only', ftl: 'FTL only', both: 'LTL & FTL' }
+export interface ServiceTypeMeta { loadType: LoadType }
+const PARCEL_ONLY_SERVICES = ['standard', 'express', 'white glove delivery', 'cep inland']
+export function defaultLoadType(name: string): LoadType {
+  const n = name.toLowerCase().trim()
+  if (/\b(ltl|lcl)\b/.test(n) || PARCEL_ONLY_SERVICES.includes(n)) return 'ltl'
+  if (/\b(ftl|fcl)\b/.test(n)) return 'ftl'
+  return 'both'
+}
+export const SERVICE_TYPE_META: Record<string, ServiceTypeMeta> = Object.fromEntries(
+  SERVICE_TYPES.map((code) => [code, { loadType: defaultLoadType(code) }]))
+
+/** "LTL only" / "ftl" / … → a LoadType, or null for anything else */
+export function parseLoadType(v: unknown): LoadType | null {
+  const t = String(v ?? '').trim().toLowerCase()
+  if (t === 'ltl' || t === 'ltl only') return 'ltl'
+  if (t === 'ftl' || t === 'ftl only') return 'ftl'
+  if (t === 'both' || t === 'ltl & ftl' || t === 'ltl and ftl') return 'both'
+  return null
+}
+
+/** the local Service & Order master's Service Type rows (ServiceOrderMasters' store key) */
+/* keep in step with ServiceOrderMasters' key (service-type: v4) */
+const LOCAL_SERVICE_TYPE_MASTER_KEY = 'local-masters-service_order-service-type-v4'
+/**
+ * Load-type overrides saved on the local Service Type master, by code AND name. A row saved
+ * before the field existed has no `loadType` and falls through to SERVICE_TYPE_META.
+ */
+function loadTypeOverrides(): Map<string, LoadType> {
+  const out = new Map<string, LoadType>()
+  try {
+    const rows = (JSON.parse(localStorage.getItem(LOCAL_SERVICE_TYPE_MASTER_KEY) ?? 'null') as { rows?: unknown } | null)?.rows
+    if (!Array.isArray(rows)) return out
+    for (const r of rows as Record<string, unknown>[]) {
+      const lt = r && typeof r === 'object' ? parseLoadType(r.loadType) : null
+      if (!lt) continue
+      for (const k of [r.code, r.name]) if (k) out.set(String(k), lt)
+    }
+  } catch { /* private mode / malformed — defaults */ }
+  return out
+}
+/** The load type of one service code — the master's override, else the name-rule default. */
+export function loadTypeOf(code: string, overrides = loadTypeOverrides()): LoadType {
+  return overrides.get(code) ?? SERVICE_TYPE_META[code]?.loadType ?? defaultLoadType(code)
+}
+/** Does this load type allow a dedicated truck (FTL) / a shared parcel booking (LTL)? */
+export const loadTypeAllows = (lt: LoadType, dedicated: boolean) => lt === 'both' || lt === (dedicated ? 'ftl' : 'ltl')
+/** The subset of `codes` a booking may pick — dedicated truck: FTL only + both; else LTL only + both. */
+export function servicesForLoad(codes: readonly string[], dedicated: boolean): string[] {
+  const o = loadTypeOverrides()
+  return codes.filter((c) => loadTypeAllows(loadTypeOf(c, o), dedicated))
+}
 
 /** Checkout adds this on top of every quote. */
 export const TAX_RATE = 0.15

@@ -140,10 +140,10 @@ function MonthCalendar({ view, onView, selected, focusDay, onFocusDay, onPick, m
               tabIndex={day === focusDay ? 0 : -1}
               onFocus={() => onFocusDay(day)}
               onClick={() => onPick(day)}
-              className={`mx-auto flex h-8 w-8 items-center justify-center rounded-md text-[12.5px] transition-colors
+              className={`mx-auto flex h-8 w-8 items-center justify-center rounded-md text-[12px] transition-colors
                 ${off ? 'cursor-not-allowed text-warm-300'
                   : isSel ? 'bg-brand-500 font-bold text-white'
-                  : isToday ? 'font-bold text-brand-500 hover:bg-brand-50'
+                  : isToday ? 'font-bold text-brand-500 hover:bg-warm-50'
                   : 'text-ink hover:bg-warm-50'}
                 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/40`}>
               {Number(day.slice(8))}
@@ -175,7 +175,7 @@ function TimeList({ items, value, onPick, isOff, label }: {
           return (
             <button key={it} type="button" role="option" aria-selected={sel} disabled={off} data-sel={sel ? '1' : '0'}
               onClick={() => onPick(it)}
-              className={`mb-0.5 flex h-7 w-full items-center justify-center rounded-md text-[12.5px] transition-colors
+              className={`mb-0.5 flex h-7 w-full items-center justify-center rounded-md text-[12px] transition-colors
                 ${off ? 'cursor-not-allowed text-warm-300'
                   : sel ? 'bg-brand-500 font-bold text-white'
                   : 'text-ink hover:bg-warm-50'}`}>
@@ -448,7 +448,7 @@ export function DateRangePicker({
 }: DateRangePickerProps) {
   return (
     <div className={className}>
-      {label && <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.08em] text-ink-3">{label}{required && <span className="text-brand-500"> *</span>}</p>}
+      {label && <p className="mb-2 text-[12px] text-ink-3">{label}{required && <span className="text-brand-500"> *</span>}</p>}
       <div className={stacked ? 'flex flex-col gap-4' : 'flex items-start gap-3'}>
         <DateTimePicker label={fromLabel} value={from} min={min} max={to || max} required={required}
           stepMinutes={stepMinutes} className={stacked ? '' : 'flex-1'}

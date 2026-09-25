@@ -213,7 +213,7 @@ function AttachOverageModal({ row, orders, onClose }: { row: InboundRow; orders:
           <MenuSelect value={orderId} placeholder="Search shipments" searchable
             options={[...likely, ...rest].map((o) => o.id)} labels={label} onChange={setOrderId} />
         </Field>
-        <p className="mt-2 text-[12.5px] text-ink-3">
+        <p className="mt-2 text-[12px] text-ink-3">
           {likely.length} shipment{likely.length === 1 ? '' : 's'} bound for {row.hubCode || 'this hub'} without a tracking number are listed first.
           The label becomes the order’s tracking number and the parcel is in-scanned here.
         </p>

@@ -13,9 +13,10 @@ import {
   isOverduePr, isPartiallyPicked, PR_STATUSES, rangesOverlap, reattemptPending,
 } from '../../growOrders/tabs'
 import { hubName } from '../../growOrders/hubs'
+import { pickupPointKey, prActionState, splitSiblings, type PrAction } from '../../growOrders/prActions'
 import { cancelReasonLabel, failureReasonLabel } from '../../growOrders/pickupReasons'
 import type { PickupModuleConfig } from '../../config/pickupModule'
-import { earliestWindow, pickupPolicy, violatesCutoff, windowLabel } from '../../growOrders/pickupSlots'
+import { earliestWindow, pickupPolicy, violatesCutoff, windowLabel, type PickupWhere } from '../../growOrders/pickupSlots'
 
 export type Tone = 'success' | 'info' | 'warning' | 'danger' | 'neutral'
 
@@ -93,8 +94,8 @@ export function dropLabel(p: GrowPickupRequest, stores: StoreLocation[]): string
 }
 
 /** The grouping key a duplicate / merge check uses — same as the store's. */
-export const pointKey = (p: Pick<GrowPickupRequest, 'storeCode' | 'shipFrom'>) =>
-  `${p.storeCode}|${(p.shipFrom?.line1 ?? '').trim().toLowerCase()}`
+/** the pickup point — `growOrders/prActions.pickupPointKey` */
+export const pointKey = pickupPointKey
 
 /* ----------------------------------------------------------------- loads --- */
 
@@ -148,7 +149,7 @@ export function duplicateIds(prs: GrowPickupRequest[]): Set<string> {
   const open = prs.filter((p) => isOpenPr(p.status))
   const dup = new Set<string>()
   open.forEach((a, i) => open.slice(i + 1).forEach((b) => {
-    if (pointKey(a) === pointKey(b) && rangesOverlap(a.startAt, a.endAt, b.startAt, b.endAt)) { dup.add(a.id); dup.add(b.id) }
+    if (pointKey(a) === pointKey(b) && !splitSiblings(a, b) && rangesOverlap(a.startAt, a.endAt, b.startAt, b.endAt)) { dup.add(a.id); dup.add(b.id) }
   }))
   return dup
 }
@@ -167,11 +168,9 @@ export function statusTags(p: GrowPickupRequest, dup: Set<string>, now = new Dat
   return out
 }
 
-/** The chips beside the reference: Reserved / FTL / attempt n/N. */
+/** The chips beside the reference: the type (LTL / FTL / LTL blind / FTL blind) / attempt n/N. */
 export function referenceChips(p: GrowPickupRequest): string[] {
-  const out: string[] = []
-  if (p.blind) out.push('Reserved')
-  if (p.shipmentType === 'FTL') out.push('FTL')
+  const out: string[] = [prTypeLabel(p)]
   if (p.attempt > 1 || p.status === 'Pickup Failed') out.push(`attempt ${p.attempt}/${p.maxAttempts}`)
   return out
 }
@@ -184,18 +183,25 @@ export const reasonText = (p: GrowPickupRequest): string =>
 /** Before the driver has left, a request can still be planned, moved or re-allocated. */
 export const beforeDispatch = (p: GrowPickupRequest): boolean => isOpenPr(p.status) && p.status !== 'Out For Pickup'
 
+/* Every gate is the matrix in growOrders/prActions.ts (owner, 2026-09-25) — these
+   booleans stay for the callers that only need yes / no; use prActionState for the reason. */
+const OPS_CFG = { allowAddToExistingUntil: 'Planned', merchantCancelUntil: 'Planned' } as const
+const allowed = (a: PrAction, p: GrowPickupRequest, cfg?: PickupModuleConfig) =>
+  prActionState(a, p, { cfg: cfg ?? OPS_CFG }).enabled
+
 export const can = {
-  addToRoute: (p: GrowPickupRequest) => beforeDispatch(p) && p.carrierMode !== 'CARRIER',
-  assignCarrier: (p: GrowPickupRequest) => beforeDispatch(p),
-  reschedule: (p: GrowPickupRequest) => beforeDispatch(p),
-  cancel: (p: GrowPickupRequest) => isOpenPr(p.status),
-  markFailed: (p: GrowPickupRequest) => isOpenPr(p.status),
-  manualPickup: (p: GrowPickupRequest) => p.status !== 'Cancelled' && p.status !== 'Completed' && !p.reattemptPrId && p.orderIds.length > 0,
-  reattempt: (p: GrowPickupRequest) => canReattempt(p),
-  addConsignments: (p: GrowPickupRequest, cfg: PickupModuleConfig) => canAddOrdersTo(p, cfg.allowAddToExistingUntil),
-  switchToFleet: (p: GrowPickupRequest) => isOpenPr(p.status) && p.carrierMode === 'CARRIER',
-  merge: (p: GrowPickupRequest) => (p.status === 'Requested' || p.status === 'Planned') && p.shipmentType !== 'FTL',
-  removeConsignment: (p: GrowPickupRequest) => beforeDispatch(p),
+  /** unplanned fleet → a route; a routed one before dispatch → move it */
+  addToRoute: (p: GrowPickupRequest) => allowed(p.tripId ? 'moveRoute' : 'addToRoute', p) && p.carrierMode !== 'CARRIER',
+  assignCarrier: (p: GrowPickupRequest) => allowed('assignCarrier', p),
+  reschedule: (p: GrowPickupRequest) => allowed('reschedule', p),
+  cancel: (p: GrowPickupRequest) => allowed('cancel', p),
+  markFailed: (p: GrowPickupRequest) => allowed('markFailed', p),
+  manualPickup: (p: GrowPickupRequest) => allowed('markPickedUp', p),
+  reattempt: (p: GrowPickupRequest) => allowed('reattempt', p),
+  addConsignments: (p: GrowPickupRequest, cfg: PickupModuleConfig) => allowed('addConsignments', p, cfg),
+  switchToFleet: (p: GrowPickupRequest) => allowed('switchToFleet', p),
+  merge: (p: GrowPickupRequest) => allowed('merge', p),
+  removeConsignment: (p: GrowPickupRequest) => allowed('removeConsignment', p),
 }
 
 /* --------------------------------------------------------------- carriers --- */
@@ -302,11 +308,11 @@ export function eligibleCsv(rows: EligibleRow[]): string {
 /* ------------------------------------------------------------ window rule --- */
 
 /** The earliest window a booking made now may take, for this merchant's policy. */
-export const earliestFor = (merchantCode?: string | null, now = new Date()) => earliestWindow(now, pickupPolicy(merchantCode))
+export const earliestFor = (merchantCode?: string | null, now = new Date(), where?: PickupWhere | null) => earliestWindow(now, pickupPolicy(merchantCode, where))
 
 /** The inline rule every booking dialog shows: 'Same-day pickup closes at 12:00 · earliest window Tue 24 Sep 09:00–12:00'. */
-export function ruleLine(merchantCode?: string | null, now = new Date()): string {
-  const pol = pickupPolicy(merchantCode)
+export function ruleLine(merchantCode?: string | null, now = new Date(), where?: PickupWhere | null): string {
+  const pol = pickupPolicy(merchantCode, where)
   return `Same-day pickup closes at ${pol.sameDayCutoff} · earliest window ${windowLabel(earliestWindow(now, pol))}`
 }
 
@@ -314,7 +320,7 @@ const MAX_WINDOW_MS = 7 * 86_400_000
 
 /** Why a window cannot be booked, or null. `maxDaysAhead` = the reschedule horizon. */
 export function windowError(startAt: string, endAt: string, merchantCode?: string | null,
-  opts: { maxDaysAhead?: number; now?: Date } = {}): string | null {
+  opts: { maxDaysAhead?: number; now?: Date; where?: PickupWhere | null } = {}): string | null {
   const now = opts.now ?? new Date()
   if (!startAt || !endAt || !atParts(startAt)[1] || !atParts(endAt)[1]) return 'Pick a start and an end for the window'
   const s = atDate(startAt), e = atDate(endAt)
@@ -323,5 +329,87 @@ export function windowError(startAt: string, endAt: string, merchantCode?: strin
   if (opts.maxDaysAhead != null && s.getTime() > now.getTime() + (opts.maxDaysAhead + 1) * 86_400_000) {
     return `Reschedules are allowed up to ${opts.maxDaysAhead} days ahead`
   }
-  return violatesCutoff(startAt, now, pickupPolicy(merchantCode))
+  return violatesCutoff(startAt, now, pickupPolicy(merchantCode, opts.where), endAt)
 }
+
+/* ---------------------------------------------------------- grid columns --- */
+
+/** '2026-09-25T09:00' → '25 Sep 09:00' — one datetime per cell. */
+export function fmtAt(at: string): string {
+  const [d, t] = atParts(at)
+  if (!d) return ''
+  return `${fmtDay(d).split(' ').slice(0, 2).join(' ')}${t ? ` ${t}` : ''}`
+}
+
+/** One value for the Type column — ONLY these four words (owner, 2026-09-25): LTL · FTL · LTL blind · FTL blind. */
+export const prTypeLabel = (p: GrowPickupRequest): string =>
+  `${p.shipmentType === 'FTL' ? 'FTL' : 'LTL'}${p.blind ? ' blind' : ''}`
+
+/** '2/3' once a request has been retried (or failed), else '' (the cell shows —). */
+export const prAttemptLabel = (p: GrowPickupRequest): string =>
+  (p.attempt > 1 || p.status === 'Pickup Failed' ? `${p.attempt}/${p.maxAttempts}` : '')
+
+export interface PrColumnCtx {
+  stores: StoreLocation[]
+  byId: Map<string, GrowOrder>
+  /** tags of the contained shipments (optional column) */
+  tagsOf?: (p: GrowPickupRequest) => string[]
+}
+
+export interface PrColumnDef {
+  key: string
+  label: string
+  /** fixed width (px, before the grid's 16px-a-side padding) — the grid is `table-fixed` and scrolls sideways */
+  width: number
+  align?: 'right'
+  /** in the default set (each page may drop some, e.g. Grow drops Merchant) */
+  defaultOn?: boolean
+  /** the ONE plain value the cell shows (truncated) */
+  value: (p: GrowPickupRequest, c: PrColumnCtx) => string
+  /** the full text on hover, when it differs from the value */
+  title?: (p: GrowPickupRequest, c: PrColumnCtx) => string
+}
+
+/**
+ * The pickup-request grid, ONE definition for the console `/local/pickup` list
+ * and Grow's Pickup Requests (owner, 2026-09-25): one value per cell,
+ * single-line rows, like the Consignment Order grid. Pages render the value
+ * truncated with `title`, and may swap in a richer single-line cell for
+ * Reference, Status and Trip. No Exception column (owner, 2026-09-25): the
+ * flags live on the outcome-aware Status chip and the detail page.
+ */
+export const PR_COLUMN_DEFS: PrColumnDef[] = [
+  { key: 'reference', label: 'Reference', width: 110, defaultOn: true, value: (p) => p.number, title: (p) => `${p.number} · request id ${p.id}` },
+  { key: 'status', label: 'Status', width: 150, defaultOn: true, value: (p) => statusLabel(p).label },
+  { key: 'type', label: 'Type', width: 110, defaultOn: true, value: prTypeLabel },
+  { key: 'attempt', label: 'Attempt', width: 76, align: 'right', defaultOn: true, value: prAttemptLabel },
+  /* owner, 2026-09-25: start and end are ONE value — the window — not two columns */
+  { key: 'window', label: 'Pickup Window', width: 200, defaultOn: true, value: (p) => fmtWindow(p),
+    title: (p) => { const t = windowTag(p); return `${fmtWindow(p)}${t ? ` · ${t}` : ''}` } },
+  { key: 'address', label: 'Pickup Address', width: 170, defaultOn: true, value: (p, c) => pickupPointName(p, c.stores),
+    title: (p, c) => `${pickupPointName(p, c.stores)} — ${pickupPointAddress(p, c.stores)}` },
+  { key: 'hub', label: 'Destination Hub', width: 160, defaultOn: true, value: (p, c) => dropLabel(p, c.stores) },
+  { key: 'merchant', label: 'Merchant', width: 150, defaultOn: true, value: (p, c) => merchantOfPr(p, c.stores) },
+  { key: 'shipments', label: 'Shipments', width: 90, align: 'right', defaultOn: true, value: (p) => consignmentsLabel(p) },
+  { key: 'weight', label: 'Weight', width: 90, align: 'right', defaultOn: true,
+    value: (p, c) => { const w = weightLabel(p, c.byId); return w === '—' ? '' : w } },
+  { key: 'collector', label: 'Driver / Carrier', width: 160, defaultOn: true,
+    value: (p) => p.driverName || (p.carrierName ? `${p.carrierName}${p.carrierMode === 'CARRIER' ? ' · 3PL' : ''}` : ''),
+    title: (p) => [p.driverName, p.carrierName && `${p.carrierName}${p.carrierMode === 'CARRIER' ? ' · 3PL' : ''}`].filter(Boolean).join(' · ') },
+  { key: 'trip', label: 'Trip', width: 110, defaultOn: true, value: (p) => p.tripId ?? '' },
+  { key: 'source', label: 'Source', width: 100, defaultOn: true, value: (p) => p.source },
+  /* ---- optional (⚙) ---- */
+  { key: 'tags', label: 'Tags', width: 180, value: (p, c) => c.tagsOf?.(p).join(', ') ?? '' },
+  { key: 'vehicle', label: 'Vehicle Type', width: 130, value: (p) => p.vehicleType ?? '' },
+  { key: 'instructions', label: 'Instructions', width: 220, value: (p) => p.instructions ?? '' },
+  { key: 'createdAt', label: 'Created At', width: 150, value: (p) => fmtStamp(p.createdAt) },
+]
+export const PR_COLUMN_KEYS = PR_COLUMN_DEFS.map((c) => c.key)
+export const PR_DEFAULT_COLUMN_KEYS = PR_COLUMN_DEFS.filter((c) => c.defaultOn).map((c) => c.key)
+
+/* ------------------------------------------------- consignments to book --- */
+
+/** The one-line caption above the "Eligible consignments" grid (console tab + Grow toggle). */
+export const TO_BOOK_CAPTION = 'Ready consignments with no pickup request yet — select them to book a new pickup or add them to an existing one.'
+/** Its empty state. */
+export const TO_BOOK_EMPTY = 'No consignments waiting for a pickup — every ready consignment already has a request.'

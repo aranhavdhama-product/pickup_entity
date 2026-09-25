@@ -1,8 +1,9 @@
 /**
  * `/local/consignments/add` (+ `/vehicle`) — the console's Add Consignment page.
- * The SAME form as the merchant portal (one component set, spec §15) in the
- * console shell, with the console-only additions the form's `portal` prop
- * switches on (Order Category below VAS, no checkout, no drafts). The masters
+ * Laid out exactly as staging's Add Order form (owner override, 2026-09-24;
+ * see AddOrderPage): Order Category below VAS, a Merchant select, no checkout,
+ * no drafts. The Grow merchant portal has its own form since 2026-09-25
+ * (GrowOrders/MerchantOrderForm). The masters
  * are loaded here because the Grow layout, which normally does it, is not
  * mounted on this side.
  */
@@ -14,7 +15,7 @@ export default function LocalAddConsignment() {
   useEffect(() => { void loadMasters() }, [])
   return (
     <div className="px-6 pb-10 pt-2">
-      <AddOrderPage portal="console" />
+      <AddOrderPage />
     </div>
   )
 }

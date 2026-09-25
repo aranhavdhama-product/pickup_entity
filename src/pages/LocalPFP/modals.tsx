@@ -73,12 +73,18 @@ const RESCHEDULE_REASONS = [
   'Merchant requested a new slot',
 ]
 
-export function ScheduleModal({ rows, onClose, onApply }: {
+export function ScheduleModal({ rows, pickupCount = 0, onClose, onApply }: {
   rows: LocalConsignmentRow[]
+  /** how many of `rows` are on their first mile and get a PICKUP window (pickup module on) */
+  pickupCount?: number
   onClose: () => void
   onApply: (v: { startAt: string; endAt: string; reason: string }) => void
 }) {
-  const w = rows[0]?.deliveryWindow
+  /* every row first-mile = the pickup wording; a mix = staging's wording + one note */
+  const pickupOnly = pickupCount > 0 && pickupCount === rows.length
+  const mixed = pickupCount > 0 && pickupCount < rows.length
+  const lbl = (staging: string, pickup: string) => (pickupOnly ? pickup : staging)
+  const w = pickupOnly ? rows[0]?.pickupWindow : rows[0]?.deliveryWindow
   const [startDate, setStartDate] = useState(w?.start.slice(0, 10) ?? '')
   const [startTime, setStartTime] = useState(w?.start.slice(11, 16) || '08:00')
   const [endDate, setEndDate] = useState(w?.end.slice(0, 10) ?? '')
@@ -92,24 +98,29 @@ export function ScheduleModal({ rows, onClose, onApply }: {
   const ready = !!startAt && !!endAt && !invalid && !!reason
 
   return (
-    <Modal title="Schedule" onClose={onClose} footer={
+    <Modal title={pickupOnly ? 'Schedule Pickup' : 'Schedule'} onClose={onClose} footer={
       <button type="button" className="pfp-btn" data-kind="primary" disabled={!ready}
-        onClick={() => onApply({ startAt, endAt, reason })}>Update Delivery Slot</button>
+        onClick={() => onApply({ startAt, endAt, reason })}>{lbl('Update Delivery Slot', 'Update Pickup Slot')}</button>
     }>
       <p style={{ margin: 0, fontSize: 13, color: 'var(--pfp-ink-muted)' }}>
         Do you want to proceed with the planned schedule date or you want to schedule it for a new date?
       </p>
+      {mixed && (
+        <p style={{ margin: 0, fontSize: 13, color: 'var(--pfp-ink-muted)' }}>
+          {pickupCount} on first mile get a pickup window, {rows.length - pickupCount} get a delivery window
+        </p>
+      )}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-        <Field label="Start Date" required>
+        <Field label={lbl('Start Date', 'Pickup Start Date')} required>
           <input className="pfp-input" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
         </Field>
-        <Field label="Time" required>
+        <Field label={lbl('Time', 'Pickup Start Time')} required>
           <input className="pfp-input" type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
         </Field>
-        <Field label="End Date" required error={invalid ? 'Invalid date.' : undefined}>
+        <Field label={lbl('End Date', 'Pickup End Date')} required error={invalid ? 'Invalid date.' : undefined}>
           <input className="pfp-input" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
         </Field>
-        <Field label="Time" required>
+        <Field label={lbl('Time', 'Pickup End Time')} required>
           <input className="pfp-input" type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} />
         </Field>
       </div>
@@ -290,7 +301,7 @@ export function CancelOrderModal({ rows, onClose, onApply }: {
   )
 }
 
-/* ------------------------------------------ Plan Collection For Routing ---- */
+/* -------------------------------------- Plan pickup request for routing ---- */
 
 /** What the planner chose: extend a trip that has not started, or open a new route. */
 export type PlanCollectionChoice =
@@ -335,7 +346,7 @@ export function PlanCollectionModal({ rows, hubCode, hubLabel, trips, drivers, d
   const offset = mode === 'existing' && trip ? trip.stops.length : 0
 
   return (
-    <Modal title="Plan Collection For Routing" width={640}
+    <Modal title="Plan pickup request for routing" width={640}
       subtitle={`${rows.length} pickup${rows.length === 1 ? '' : 's'} · ${hubLabel}`}
       onClose={onClose} footer={<>
         <button type="button" className="pfp-btn" onClick={onClose}>Cancel</button>

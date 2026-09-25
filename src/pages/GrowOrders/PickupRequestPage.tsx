@@ -2,7 +2,7 @@
  * Grow merchant portal — View Pickup Request, on the console PR detail's anatomy
  * (LocalPickup/PickupRequestDetail, spec §15).
  *
- * PageHeader (back + number + Reserved / FTL / outcome-aware status pills, the
+ * PageHeader (back + number + type (LTL / FTL / … blind) / outcome-aware status pills, the
  * one primary `Print Consolidated Label` and a kebab of the merchant actions
  * currently allowed) over Panels: Summary · Pickup outcome (Booked · Picked ·
  * Not picked · Overage scans, flat — an order can have two parents) on the
@@ -20,7 +20,7 @@ import { CircleAlert, Info, Plus, Printer, ScanBarcode, Truck } from 'lucide-rea
 import { growOrderActions, pickupRequestById, useGrowOrders } from '../../growOrders/store'
 import type { GrowOrder, GrowPickupRequest, PickupRequestStatus } from '../../growOrders/types'
 import {
-  LOCAL_PR_TAB_SLUG, PR_STATUSES, canAddOrdersTo, isHandedOver, isOpenPr, localPrTabOf, nextPrStatus,
+  LOCAL_PR_TAB_SLUG, PR_STATUSES, isHandedOver, isOpenPr, localPrTabOf, nextPrStatus,
   prHasNothingToCollect, tabOf,
 } from '../../growOrders/tabs'
 import { toast } from '../../nueva/toast'
@@ -31,10 +31,13 @@ import {
 import { hubName } from '../../growOrders/hubs'
 import { CANCEL_REASONS } from '../../growOrders/pickupReasons'
 import {
-  CONTACT_SUPPORT, collectorLine, isInTransitToHub, merchantMayChange,
+  CONTACT_SUPPORT, isInTransitToHub, merchantMayChange,
   outcomeReasonLine, usePortalMerchant,
 } from './pickupGate'
 import { ReschedulePickupDialog } from './pickupDialog'
+import { prTypeLabel } from '../LocalPickup/prModel'
+import { SplitPickupDialog } from '../LocalPickup/bookingCards'
+import { prActionState, type PrAction } from '../../growOrders/prActions'
 import {
   PARTIALLY_PICKED, PR_STATUS_TONE, STATUS_TONE, fmtAt, fmtDate, fmtDateTime, partyLine, pickupOutcome,
   pickupPointAddress, pickupPointName, pillTone, prExtraOrders, prOrders, prOutcomeLabel, prOutcomeWords,
@@ -139,7 +142,10 @@ function Timeline({ pr }: { pr: GrowPickupRequest }) {
     if (row) { if (e.note) row.notes.push(e.note) } else seen.set(e.status, { at: e.at, notes: e.note ? [e.note] : [] })
   })
   const isExit = (s: PickupRequestStatus) => s === 'Pickup Failed' || s === 'Cancelled'
-  const steps = PR_STATUSES.filter((s) => !isExit(s) || seen.has(s))
+  /* the merchant's milestones — routing, dispatch and driver assignment (and their notes,
+     which name the driver and the trip) are the carrier's planning steps */
+  const internal = (s: PickupRequestStatus) => s === 'Planned' || s === 'Ready For Last Mile Dispatch' || s === 'Assigned'
+  const steps = PR_STATUSES.filter((s) => !internal(s) && (!isExit(s) || seen.has(s)))
   const reached = steps.reduce((n, s, i) => (seen.has(s) ? i : n), -1)
   return (
     <ol className="flex flex-col px-5 pb-5 pt-1">
@@ -147,10 +153,10 @@ function Timeline({ pr }: { pr: GrowPickupRequest }) {
         const at = seen.get(label)
         return (
           <li key={label} className="relative border-l border-line pb-3 pl-4 last:pb-0">
-            <span className={`absolute -left-[4.5px] top-1.5 h-2 w-2 rounded-full ${i === reached ? 'bg-brand-500' : at ? 'bg-success-fg' : 'bg-warm-300'}`} />
+            <span className={`absolute -left-[5px] top-1.5 h-[9px] w-[9px] rounded-full ${i === reached ? 'bg-brand-500' : at ? 'bg-success-fg' : 'bg-warm-300'}`} />
             <p className={`text-[13px] ${at ? 'font-bold text-ink' : 'text-ink-3'}`}>{label}</p>
-            {at?.notes.map((n, k) => <p key={k} className="text-[12.5px] text-ink-2">{n}</p>)}
-            {at && <p className="text-[11.5px] text-ink-3">{fmtDateTime(at.at)}</p>}
+            {at?.notes.map((n, k) => <p key={k} className="text-[12px] text-ink-2">{n}</p>)}
+            {at && <p className="text-[12px] text-ink-3">{fmtDateTime(at.at)}</p>}
           </li>
         )
       })}
@@ -169,6 +175,7 @@ export default function PickupRequestPage() {
   useMasters()
   const [attach, setAttach] = useState(false)
   const [reschedule, setReschedule] = useState(false)
+  const [splitting, setSplitting] = useState(false)
   /* the order whose removal would empty an ORDER-BACKED request — that cancels
      the booking, so it is confirmed rather than done silently */
   const [confirmLast, setConfirmLast] = useState<GrowOrder | null>(null)
@@ -201,7 +208,6 @@ export default function PickupRequestPage() {
   const nothingToCollect = prHasNothingToCollect(pr)
   const blockedComplete = next === 'Completed' && nothingToCollect
   const windowStarted = prWindowStarted(pr)
-  const cancelled = pr.status === 'Cancelled'
   const backTo = `/grow/orders/pickups?tab=${LOCAL_PR_TAB_SLUG[localPrTabOf(pr, new Date(), pickupRequestById)]}`
   const origin = pickupPointAddress(pr, db.stores)
   /* a vehicle can be booked before anyone knows where it delivers; a parcel
@@ -218,9 +224,14 @@ export default function PickupRequestPage() {
   }
   /* M1/M2: the merchant may cancel or move a request only up to the config's
      `merchantCancelUntil` state — past it a driver is already on it */
-  const mayChange = open && merchantMayChange(pr, merchant.config)
+  /* every merchant action asks the ONE matrix (growOrders/prActions.ts, role 'merchant') */
+  const gate = (a: PrAction) => prActionState(a, pr, { cfg: merchant.config, role: 'merchant', byId: pickupRequestById })
+  const act = (a: PrAction, label: string, onClick: () => void, tone?: 'danger'): MenuItem => {
+    const g = gate(a)
+    return { label, onClick, tone, disabled: !g.enabled, reason: g.reason }
+  }
+  const mayChange = gate('cancel').enabled
   const lockedByDriver = open && !mayChange
-  const collector = collectorLine(pr)
   const reasonLine = outcomeReasonLine(pr)
   const reattempt = pr.reattemptPrId ? db.pickupRequests.find((x) => x.id === pr.reattemptPrId) : undefined
   const parent = pr.parentPrId ? db.pickupRequests.find((x) => x.id === pr.parentPrId) : undefined
@@ -284,16 +295,17 @@ export default function PickupRequestPage() {
         ) }] : []),
       ]} />
   )
-  const canAdd = pr.blind && open && canAddOrdersTo(pr, merchant.config.allowAddToExistingUntil)
+  const canAdd = pr.blind && gate('addConsignments').enabled
 
-  /* the merchant's actions — only those allowed right now (the kebab has no disabled state) */
+  /* the merchant's actions — disabled with the matrix's reason when the status does not allow them */
   const items: MenuItem[] = [
-    ...(mayChange ? [{ label: 'Reschedule', onClick: () => setReschedule(true) }] : []),
+    act('reschedule', 'Reschedule', () => setReschedule(true)),
+    act('split', 'Split pickup request', () => setSplitting(true)),
     /* dev aid for 3PL requests ONLY — a carrier's events arrive by
        integration; an own-fleet request's status comes from its trip */
     ...(pr.carrierMode === 'CARRIER' && next && !blockedComplete
       ? [{ label: `Simulate carrier event — ${next}`, onClick: advance }] : []),
-    ...(mayChange ? [{ label: 'Cancel Pickup', tone: 'danger' as const, onClick: () => setCancelOpen(true) }] : []),
+    act('cancel', 'Cancel Pickup', () => setCancelOpen(true), 'danger'),
   ]
 
   return (
@@ -302,14 +314,13 @@ export default function PickupRequestPage() {
         subtitle={`${pickupPointName(pr, db.stores)} → ${destination}`}
         right={(
           <div className="flex items-center gap-2">
-            {pr.blind && <StatusPill label="Reserved" tone="info" />}
-            {ftl && <StatusPill label="FTL" tone="neutral" />}
+            <StatusPill label={prTypeLabel(pr)} tone={pr.blind ? 'info' : 'neutral'} />
             <PrStatus pr={pr} />
             {isHandedOver(pr) && <StatusPill label="Handed Over" tone="success" />}
             {isInTransitToHub(pr) && <StatusPill label="In transit to hub" tone="info" />}
             {overdue && <StatusPill label="Overdue" tone="danger" />}
-            <span title={cancelled ? 'A cancelled pickup has no label to print' : undefined}>
-              <Button disabled={cancelled} icon={<Printer size={14} />}
+            <span title={gate('printLabel').reason}>
+              <Button disabled={!gate('printLabel').enabled} icon={<Printer size={14} />}
                 onClick={() => toast.info('Print Consolidated Label — demo')}>Print Consolidated Label</Button>
             </span>
             {items.length > 0 && <KebabMenu items={items} />}
@@ -340,7 +351,7 @@ export default function PickupRequestPage() {
         <Notice>No orders on this request yet — add orders before the pickup or it will be marked failed.</Notice>
       )}
       {overdue && (
-        <Notice action={<Button size="sm" variant="outline" disabled={!mayChange} onClick={() => setReschedule(true)}>Reschedule</Button>}>
+        <Notice action={<span title={gate('reschedule').reason}><Button size="sm" variant="outline" disabled={!gate('reschedule').enabled} onClick={() => setReschedule(true)}>Reschedule</Button></span>}>
           The pickup window closed on {prWindow(pr)} and this request is still open.
         </Notice>
       )}
@@ -351,7 +362,7 @@ export default function PickupRequestPage() {
             <Pairs pairs={[
               ['Pickup start', fmtAt(pr.startAt)],
               ['Pickup end', fmtAt(pr.endAt)],
-              ['Type', ftl ? 'FTL' : 'LTL'],
+              ['Type', prTypeLabel(pr)],
               ['Pickup address', <>{pickupPointName(pr, db.stores)}<span className="block text-[12px] text-ink-3">{origin}</span></>],
               [ftl ? 'Ship To' : 'Drops at', destination],
               ['Contact', [pr.contactName, pr.contactNumber].filter(Boolean).join(' · ')],
@@ -367,7 +378,7 @@ export default function PickupRequestPage() {
                   ['Size class', pr.sizeClass ?? ''],
                 ] as [string, ReactNode][]) : []),
               ['Instructions for driver', pr.instructions ?? ''],
-              ['Internal note', pr.note],
+              /* `note` is the carrier's internal note — not the merchant's to read */
             ]} />
           </Panel>
 
@@ -386,11 +397,11 @@ export default function PickupRequestPage() {
               empty={pr.blind
                 ? (open ? 'Reserved pickup keeps its slot — add orders before the window starts.' : 'No orders yet — the driver collects against the expected figures.')
                 : 'No orders are linked to this request.'}>
-              {orderTable(rows, open)}
+              {orderTable(rows, gate('removeConsignment').enabled)}
             </OutcomeSection>
             {/* C5 / scenario 25: orders join only while the request is at or before
                 the account's add-until state — past it the driver is on the way */}
-            {pr.blind && open && !canAddOrdersTo(pr, merchant.config.allowAddToExistingUntil) && (
+            {pr.blind && open && !gate('addConsignments').enabled && (
               <p className="px-5 pt-2 text-[12px] text-ink-3">
                 {pr.number} is already {pr.status} — new orders cannot join it. Book them as a new pickup; the driver on
                 this collection will not collect them.
@@ -415,11 +426,12 @@ export default function PickupRequestPage() {
         </div>
 
         <div className="flex min-w-0 flex-col gap-4">
-          <Panel title="Trip">
+          {/* the merchant's reading: WHO collects is a 3PL's name or "the carrier's own fleet" —
+              the fleet driver and the trip are the carrier's business */}
+          <Panel title="Collection">
             <dl className="grid grid-cols-1 gap-y-3 px-5 pb-5 pt-2">
               {([
-                [pr.carrierMode === 'CARRIER' ? 'Carrier' : 'Driver', collector || 'Not assigned yet'],
-                ['Collected by', pr.carrierMode === 'CARRIER' ? 'Carrier (3PL)' : 'Own fleet'],
+                ['Collected by', pr.carrierMode === 'CARRIER' ? (pr.carrierName ? `${pr.carrierName} (3PL)` : 'Carrier (3PL)') : 'Own fleet'],
                 ['Handover', isHandedOver(pr) ? 'Handed over at the hub' : isInTransitToHub(pr) ? 'In transit to hub' : 'Not collected yet'],
               ] as [string, ReactNode][]).map(([k, v]) => (
                 <div key={k} className="min-w-0">
@@ -451,6 +463,7 @@ export default function PickupRequestPage() {
       {cancelOpen && <CancelPickupDialog requests={[pr]} onClose={() => setCancelOpen(false)} onDone={() => setCancelOpen(false)} />}
       {attach && <AddOrdersDialog pr={pr} orders={db.orders} onClose={() => setAttach(false)} />}
       {reschedule && <ReschedulePickupDialog requests={[pr]} onClose={() => setReschedule(false)} onDone={() => setReschedule(false)} />}
+      {splitting && <SplitPickupDialog pr={pr} merchantCode={merchant.code} onClose={() => setSplitting(false)} onDone={() => setSplitting(false)} />}
     </div>
   )
 }
@@ -485,7 +498,7 @@ export function CancelPickupDialog({ requests, onClose, onDone }: {
         </Button>
       </>}>
       <div className="flex flex-col gap-4 pb-3">
-        <p className="text-[12.5px] text-ink-3">
+        <p className="text-[12px] text-ink-3">
           {one ? `${one.number} · ${prWindow(one)}` : `${targets.length} pickup request${targets.length === 1 ? '' : 's'}`}
         </p>
         {targets.length === 0 ? (
@@ -500,7 +513,7 @@ export function CancelPickupDialog({ requests, onClose, onDone }: {
               <p className="mt-1 text-[12px] text-ink-3">The orders go back to Ready for Pickup.</p>
             </div>
             {skipped > 0 && (
-              <p className="text-[12.5px] text-ink-3">
+              <p className="text-[12px] text-ink-3">
                 {skipped} selected request{skipped === 1 ? ' is' : 's are'} closed or already assigned to a driver and
                 will not be cancelled — contact support for those.
               </p>
@@ -557,7 +570,7 @@ function AddOrdersDialog({ pr, orders, onClose }: {
         <Button disabled={sel.size === 0} icon={<Plus size={13} />} onClick={apply}>Add ({sel.size})</Button>
       </>}>
       <div className="flex flex-col gap-3 pb-3">
-        <p className="text-[12.5px] text-ink-3">Paid orders without a pickup request</p>
+        <p className="text-[12px] text-ink-3">Paid orders without a pickup request</p>
         <div className="flex items-center justify-between gap-3">
           {expected !== null
             ? <StatusPill label={`${onRequest} of ${expected} expected`} tone={over ? 'warning' : 'neutral'} />
@@ -565,7 +578,7 @@ function AddOrdersDialog({ pr, orders, onClose }: {
           <div className="w-52"><SearchInput value={q} onChange={setQ} placeholder="Search order, receiver…" /></div>
         </div>
         {over && (
-          <p className="rounded-md bg-warning-bg px-3 py-2 text-[12.5px] text-warning-fg">
+          <p className="rounded-md bg-warning-bg px-3 py-2 text-[12px] text-warning-fg">
             That is more than the {expected} piece{expected === 1 ? '' : 's'} declared when {pr.number} was booked — the driver
             may not have room. Reschedule or book a second pickup if the handover has grown.
           </p>
@@ -578,7 +591,7 @@ function AddOrdersDialog({ pr, orders, onClose }: {
           ) : (
             <table className="w-full text-[13px]">
               <thead>
-                <tr className="sticky top-0 border-b border-line bg-warm-50 text-left text-[12px] text-ink-3">
+                <tr className="sticky top-0 border-b border-line bg-warm-50 text-left text-ink">
                   <th className="w-[40px] py-2.5 pl-3">
                     <Checkbox checked={allChecked} indeterminate={!allChecked && someChecked} onChange={toggleAll} />
                   </th>
@@ -590,7 +603,7 @@ function AddOrdersDialog({ pr, orders, onClose }: {
               <tbody>
                 {shown.map((o) => (
                   <tr key={o.id} onClick={() => toggle(o.id)}
-                    className={`cursor-pointer border-b border-line last:border-0 transition-colors hover:bg-warm-50 ${sel.has(o.id) ? 'bg-brand-50/60' : ''}`}>
+                    className={`cursor-pointer border-b border-line last:border-0 transition-colors hover:bg-warm-50 ${sel.has(o.id) ? 'bg-warm-50' : ''}`}>
                     <td className="py-2.5 pl-3" onClick={(e) => e.stopPropagation()}>
                       <Checkbox checked={sel.has(o.id)} onChange={() => toggle(o.id)} />
                     </td>

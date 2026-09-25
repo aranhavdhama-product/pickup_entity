@@ -1,6 +1,6 @@
 /**
  * The Consignment Order grid's columns — ONE definition, shared by
- * `/local/consignments` and the Pickup page's `Eligible for Pickup` tab, so a
+ * `/local/consignments` and anything else that lists consignments, so a
  * consignment reads the same wherever it is listed.
  *
  * DEFAULT = staging's own default set, in its order (owner, 2026-09-24):
@@ -11,13 +11,14 @@
  * chooser; the choice persists per grid (`storageKey`). With this many columns
  * the grid scrolls sideways inside its card, as staging's does.
  */
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Settings2 } from 'lucide-react'
 import { StatusPill, type Column } from '../../nueva/components'
 import { ColumnChooser } from '../../local/chrome'
 import { useColumnPrefs } from '../../local/columnPrefs'
 import { stateTone, type LocalConsignmentRow } from '../LocalPFP/adapter'
 import { stamp } from '../LocalPFP/overlayFormat'
+import { consignmentModuleSaved, readConsignmentModuleConfig } from '../../config/consignmentModule'
 
 export interface ConsignmentColumnDef {
   key: string
@@ -33,7 +34,7 @@ export interface ConsignmentColumnDef {
 
 const dash = <span className="text-ink-3">—</span>
 const mono = (v: string, strong = false) => (
-  <span className={`font-mono text-[12px] ${strong ? 'font-bold text-brand-500' : 'text-ink-2'}`}>{v || '—'}</span>
+  <span className={`font-mono text-[12px] ${strong ? 'font-bold text-ink' : 'text-ink-2'}`}>{v || '—'}</span>
 )
 
 export const CONSIGNMENT_COLUMN_DEFS: ConsignmentColumnDef[] = [
@@ -45,6 +46,9 @@ export const CONSIGNMENT_COLUMN_DEFS: ConsignmentColumnDef[] = [
   { key: 'state', label: 'State', width: 130, defaultOn: true,
     value: (r) => String(r.state), cell: (r) => <StatusPill label={String(r.state)} tone={stateTone(String(r.state))} /> },
   { key: 'secondaryState', label: 'Secondary State', width: 150, defaultOn: true, value: (r) => r.secondaryState },
+  /* staging's Data Validation Issues tab (owner, 2026-09-25): the validation error / exception
+     reason is a DEFAULT column right after Secondary State, on both portals */
+  { key: 'exception', label: 'Exception Reason', width: 200, defaultOn: true, value: (r) => r.exception || r.order.error || '' },
   /* owner, 2026-09-24: the leg the consignment is on now */
   { key: 'activeLeg', label: 'Active Leg', width: 104, defaultOn: true, value: (r) => r.activeLeg },
   { key: 'weight', label: 'Weight', width: 96, align: 'right', defaultOn: true, value: (r) => `${r.weightKg} kg` },
@@ -62,7 +66,6 @@ export const CONSIGNMENT_COLUMN_DEFS: ConsignmentColumnDef[] = [
   { key: 'ageing', label: 'Ageing (days)', width: 104, align: 'right', defaultOn: true, value: (r) => String(r.ageingDays) },
   { key: 'deliveryAttempts', label: 'Delivery Attempt Count', width: 140, align: 'right', defaultOn: true, value: (r) => String(r.deliveryAttempts) },
   /* ---- optional ---- */
-  { key: 'exception', label: 'Exception', width: 160, value: (r) => r.exception },
   { key: 'type', label: 'Type', width: 130, value: (r) => r.taskType },
   { key: 'carrier', label: 'Carrier', width: 130, value: (r) => r.carrier || '' },
   { key: 'serviceType', label: 'Service Type', width: 140, value: (r) => r.serviceType || '' },
@@ -77,6 +80,38 @@ export const CONSIGNMENT_COLUMN_DEFS: ConsignmentColumnDef[] = [
 
 const DEFAULT_KEYS = CONSIGNMENT_COLUMN_DEFS.filter((c) => c.defaultOn).map((c) => c.key)
 const ALL_KEYS = CONSIGNMENT_COLUMN_DEFS.map((c) => c.key)
+
+/** Staging Table Configuration key → this grid's key, where the two differ; equal keys pass straight through. */
+const STAGING_TO_LOCAL: Record<string, string> = {
+  totalWeight: 'weight', totalVolume: 'volume', palletQuantity: 'palletSpaces', businessUnit: 'merchant',
+  driverName: 'assignedDriver', consignmentType: 'orderType', deliveryAttemptCount: 'deliveryAttempts',
+  exceptionReason: 'exception', originFacilityCode: 'origin', destinationFacilityCode: 'destination',
+}
+/* local-only columns with no staging counterpart — the mirror never names them */
+const LOCAL_ONLY = ['activeLeg', 'pickupRequest', 'type']
+
+/**
+ * The default set, in order. Once Settings → Consignment Order has been saved
+ * (`fareye-consignment-module-config-v1`), its Table Configuration decides —
+ * mapped to local keys, in its sequence — and local-only default columns
+ * (Active Leg) are kept after their neighbours. Before that: staging's default.
+ * A per-grid ⚙ choice already stored under `storageKey` still wins.
+ */
+function mirrorDefaultKeys(): string[] {
+  if (!consignmentModuleSaved()) return DEFAULT_KEYS
+  const mapped = readConsignmentModuleConfig().tableColumns
+    .map((k) => STAGING_TO_LOCAL[k] ?? k)
+    .filter((k) => ALL_KEYS.includes(k))
+  const localOnly = DEFAULT_KEYS.filter((k) => LOCAL_ONLY.includes(k))
+  const out = [...mapped]
+  for (const k of localOnly) {
+    /* slot it in after the default column it followed */
+    const prev = DEFAULT_KEYS[DEFAULT_KEYS.indexOf(k) - 1]
+    const at = prev ? out.indexOf(prev) : -1
+    out.splice(at < 0 ? out.length : at + 1, 0, k)
+  }
+  return out.length ? out : DEFAULT_KEYS
+}
 
 /** Every cell is truncated to its column; the plain value rides on the tooltip. */
 function columnOf(c: ConsignmentColumnDef): Column {
@@ -100,8 +135,12 @@ export const consignmentColumns: Column[] = CONSIGNMENT_COLUMN_DEFS.filter((c) =
 
 /** The grid's columns for a Nueva `DataTable`, plus its ⚙ chooser; the choice persists under `storageKey`. */
 export function useConsignmentColumns(storageKey: string): { columns: Column[]; chooser: ReactNode } {
-  const [picked, setPicked] = useColumnPrefs(storageKey, DEFAULT_KEYS, ALL_KEYS)
+  const [defaults] = useState(mirrorDefaultKeys)
+  const [picked, setPicked] = useColumnPrefs(storageKey, defaults, ALL_KEYS)
+  /* follow the Table Configuration's sequence while the mirror decides the defaults */
+  const rank = (k: string) => { const i = defaults.indexOf(k); return i < 0 ? defaults.length : i }
   const cols = CONSIGNMENT_COLUMN_DEFS.filter((c) => picked.includes(c.key))
+  if (defaults !== DEFAULT_KEYS) cols.sort((a, b) => rank(a.key) - rank(b.key))
   return {
     columns: cols.map(columnOf),
     chooser: (

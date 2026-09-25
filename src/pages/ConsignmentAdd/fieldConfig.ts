@@ -184,6 +184,10 @@ export interface FormBehavior {
   /** field keys switched off in Base Modules — hidden from add/edit/view,
    * table columns and filters */
   hidden: string[]
+  /** optional field keys the account makes REQUIRED (the local app's Consignment Order →
+   * Form Fields tab). Honoured by the Grow merchant order form; the console Add form keeps
+   * staging's own required set. Absent on a staging row = none. */
+  required?: string[]
 }
 
 export const DEFAULT_FORM_BEHAVIOR: FormBehavior = { defaultMode: 'full', identifier: 'both', hidden: [] }
@@ -194,14 +198,20 @@ export function loadFormBehavior(): FormBehavior {
   try {
     const raw = localStorage.getItem(BEHAVIOR_KEY)
     const parsed = raw ? JSON.parse(raw) as Partial<FormBehavior> : {}
-    return { ...DEFAULT_FORM_BEHAVIOR, ...parsed, hidden: Array.isArray(parsed.hidden) ? parsed.hidden : [] }
+    return {
+      ...DEFAULT_FORM_BEHAVIOR, ...parsed,
+      hidden: Array.isArray(parsed.hidden) ? parsed.hidden : [],
+      required: Array.isArray(parsed.required) ? parsed.required.filter((k): k is string => typeof k === 'string') : [],
+    }
   } catch {
     return DEFAULT_FORM_BEHAVIOR
   }
 }
 
 export function cacheFormBehavior(b: FormBehavior) {
-  try { localStorage.setItem(BEHAVIOR_KEY, JSON.stringify(b)) } catch { /* private mode */ }
+  /* a writer that does not know `required` (console Base Modules, the staging fetch) keeps the local rules */
+  const next = b.required === undefined ? { ...b, required: loadFormBehavior().required } : b
+  try { localStorage.setItem(BEHAVIOR_KEY, JSON.stringify(next)) } catch { /* private mode */ }
 }
 
 /** refresh from the moduleSettings row (the source of truth) */

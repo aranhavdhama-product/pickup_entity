@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect, Fragment } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useState, useRef, useEffect, Fragment, useContext } from 'react'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   MASTERS, SUB_ICONS, findCategory, findSub, toneFor,
   type SubMaster, type EntityTab, type FilterDef, type AddForm,
@@ -10,6 +10,7 @@ import {
   UploadDataModal, MoreFilters, FilterDropdown, ClearFilters, AddUpload, Select, Field, Input,
 } from './components'
 import { MasterFormBody } from './MasterForm'
+import { MastersEnvContext, type MasterRow } from './mastersEnv'
 import { DATASTORES } from './masterDataIO'
 import {
   Upload, Download, RefreshCw, MapPinned, ChevronDown, ChevronLeft, ChevronRight,
@@ -41,6 +42,7 @@ function getFilterDefs(sub: SubMaster): FilterDef[] {
 const MASTER_NAMES = DATASTORES.map((d) => d.name)
 
 export function MastersLanding() {
+  const { base } = useContext(MastersEnvContext)
   const nav = useNavigate()
   const [upload, setUpload] = useState<'bulk' | 'update' | null>(null)
   return (
@@ -58,7 +60,7 @@ export function MastersLanding() {
       <div className="space-y-4">
         {MASTERS.map((c) => {
           const Icon = c.icon
-          return <ListCard key={c.id} icon={<Icon size={20} />} title={c.name} desc={c.desc} onClick={() => nav(`/console/settings/masters/${c.id}`)} />
+          return <ListCard key={c.id} icon={<Icon size={20} />} title={c.name} desc={c.desc} onClick={() => nav(`${base}/${c.id}`)} />
         })}
       </div>
       <UploadDataModal open={!!upload} mode={upload === 'update' ? 'update' : undefined}
@@ -70,18 +72,19 @@ export function MastersLanding() {
 /* ---------------- Category → sub-master CARDS (click opens a new page) ---------------- */
 export function CategoryPage() {
   const nav = useNavigate()
-  const { catId } = useParams()
-  const cat = findCategory(catId)
+  const env = useContext(MastersEnvContext)
+  const params = useParams()
+  const cat = findCategory(env.catId ?? params.catId)
   if (!cat) return <EmptyState title="Category not found" />
   return (
     <div className="max-w-5xl">
-      <PageHeader title={cat.name} subtitle={cat.desc} onBack={() => nav('/console/settings/masters')} />
+      <PageHeader title={cat.name} subtitle={cat.desc} onBack={() => nav(env.backTo ?? env.base)} />
       <div className="space-y-4">
         {cat.subs.map((s) => {
           const Icon = SUB_ICONS[s.id] ?? cat.icon
           return (
             <ListCard key={s.id} icon={<Icon size={20} />} title={s.name} badge={s.badge} desc={s.desc}
-              onClick={() => nav(`/console/settings/masters/${cat.id}/${s.id}`)} />
+              onClick={() => nav(`${env.base}/${cat.id}/${s.id}`)} />
           )
         })}
       </div>
@@ -92,11 +95,19 @@ export function CategoryPage() {
 /* ---------------- Sub-master page (new page) — single-level entity tabs ---------------- */
 export function SubMasterPage() {
   const nav = useNavigate()
-  const { catId, subId } = useParams()
+  const env = useContext(MastersEnvContext)
+  const params = useParams()
+  const catId = env.catId ?? params.catId
   const cat = findCategory(catId)
-  const sub = findSub(catId, subId)
-  const [tab, setTab] = useState(0)
-  const [pageForm, setPageForm] = useState<{ form: AddForm; title: string } | null>(null)
+  const sub = findSub(catId, params.subId)
+  /* `?tab=<slug of an entity tab title>` deep-links an inner tab (e.g. reason-master?tab=reason-policy) */
+  const [search] = useSearchParams()
+  const [tab, setTab] = useState(() => {
+    const want = (search.get('tab') ?? '').toLowerCase()
+    const i = want ? (sub?.entityTabs ?? []).findIndex((t) => t.title.toLowerCase().replace(/[^a-z0-9]+/g, '-') === want) : -1
+    return i < 0 ? 0 : i
+  })
+  const [pageForm, setPageForm] = useState<OpenFormArgs | null>(null)
   if (!cat || !sub) return <EmptyState title="Master not found" />
 
   // Full-page Add/Edit form — single consistent header
@@ -111,7 +122,8 @@ export function SubMasterPage() {
             ? <LineHaulLaneForm onSubmit={() => setPageForm(null)} />
             : pageForm.form.custom === 'hubToHub'
             ? <HubToHubForm onSubmit={() => setPageForm(null)} />
-            : <MasterFormBody form={pageForm.form} onCancel={() => setPageForm(null)} onSubmit={() => setPageForm(null)} />}
+            : <MasterFormBody key={pageForm.title} form={pageForm.form} initial={pageForm.initial} onCancel={() => setPageForm(null)}
+                onSubmit={(values) => { pageForm.onSave?.(values); setPageForm(null) }} />}
         </div>
       </div>
     )
@@ -119,7 +131,7 @@ export function SubMasterPage() {
 
   return (
     <div>
-      <PageHeader title={sub.name} subtitle={sub.desc} onBack={() => nav(`/console/settings/masters/${cat.id}`)} />
+      <PageHeader title={sub.name} subtitle={sub.desc} onBack={() => nav(`${env.base}/${cat.id}`)} />
       {sub.entityTabs ? (
         <>
           <Tabs tabs={sub.entityTabs.map((t) => t.title)} active={tab} onChange={setTab} />
@@ -134,10 +146,11 @@ export function SubMasterPage() {
   )
 }
 
-export type OpenForm = (v: { form: AddForm; title: string }) => void
+export type OpenFormArgs = { form: AddForm; title: string; initial?: MasterRow; onSave?: (values: MasterRow) => void }
+export type OpenForm = (v: OpenFormArgs) => void
 export function EntityContent({ tab, onOpenForm }: { tab: EntityTab; onOpenForm: OpenForm }) {
   if (tab.kind === 'zone') return <ZoneMaster />
-  return <MasterTablePanel sub={tab.sub!} onOpenForm={onOpenForm} />
+  return <MasterTablePanel key={tab.sub!.id} sub={tab.sub!} onOpenForm={onOpenForm} />
 }
 
 /* ---------------- Serviceable Area modal (opened from a row's "Add Area" action) ---------------- */
@@ -375,7 +388,11 @@ function HubToHubForm({ onSubmit }: { onSubmit: () => void }) {
 
 /* ---------------- Standardized table panel ---------------- */
 function MasterTablePanel({ sub, onOpenForm }: { sub: SubMaster; onOpenForm: OpenForm }) {
-  const [rows, setRows] = useState(sub.rows ?? [])
+  const { persist } = useContext(MastersEnvContext)
+  const [rows, setRows] = useState<MasterRow[]>(() => persist?.load(sub.id) ?? sub.rows ?? [])
+  // write-through when mounted with a persist (local app); the first render is the loaded state
+  const loadedRows = useRef(rows)
+  useEffect(() => { if (persist && rows !== loadedRows.current) persist.save(sub.id, rows) }, [persist, rows, sub.id])
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [confirm, setConfirm] = useState<{ rows: any[]; label: string } | null>(null)
   const [statusConfirm, setStatusConfirm] = useState<{ rows: any[]; toEnable: boolean } | null>(null)
@@ -403,12 +420,16 @@ function MasterTablePanel({ sub, onOpenForm }: { sub: SubMaster; onOpenForm: Ope
 
   // Every master opens its Add/Edit as a FULL PAGE (modal-kind forms are
   // coerced to page — same pattern as the live SKU master).
-  const openForm = (mode: 'Add' | 'Edit') => {
+  const openForm = (mode: 'Add' | 'Edit', row?: MasterRow) => {
     if (!form) return
-    onOpenForm({ form: form.kind === 'page' ? form : { ...form, kind: 'page' }, title: `${mode} ${form.pageTitle ?? sub.name}` })
+    onOpenForm({
+      form: form.kind === 'page' ? form : { ...form, kind: 'page' }, title: `${mode} ${form.pageTitle ?? sub.name}`,
+      initial: row && persist ? persist.toValues(sub, row) : undefined,
+      onSave: persist ? (values) => persist.upsert(sub, values, row?.id) : undefined,
+    })
   }
   const openAdd = () => openForm('Add')
-  const openEdit = () => openForm('Edit')
+  const openEdit = (row: MasterRow) => openForm('Edit', row)
   const activated = (r: any) => !/(deactiv|disabl|inactive)/i.test(String(r.status ?? 'Enabled'))
   const isActive = activated
 
@@ -503,7 +524,7 @@ function MasterTablePanel({ sub, onOpenForm }: { sub: SubMaster; onOpenForm: Ope
               {viewRows.map((row) => {
                 const sel = selected.has(row.id)
                 return (
-                  <tr key={row.id} onClick={form ? openEdit : undefined}
+                  <tr key={row.id} onClick={form ? () => openEdit(row) : undefined}
                     className={`group border-b border-line last:border-0 align-top transition-colors ${form ? 'cursor-pointer' : ''} ${sel ? 'bg-warm-100' : 'hover:bg-warm-50'}`}>
                     <td className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}><Checkbox checked={sel} onChange={() => toggle(row.id)} /></td>
                     {cols.map((c, ci) => {
@@ -535,12 +556,12 @@ function MasterTablePanel({ sub, onOpenForm }: { sub: SubMaster; onOpenForm: Ope
                             <button onClick={() => setAreaOpen(true)}
                               className="h-7 px-1.5 inline-flex items-center text-[13px] font-medium text-brand-500 hover:text-brand-600 hover:underline whitespace-nowrap">Add Area</button>
                           )}
-                          <button onClick={openEdit} title="Edit"
+                          <button onClick={() => openEdit(row)} title="Edit"
                             className="h-7 w-7 inline-flex items-center justify-center rounded-md text-ink-3 hover:bg-warm-100 hover:text-ink"><Pencil size={14} /></button>
                         </div>
                       ) : (
                         <div className="flex items-center gap-0.5">
-                          <button onClick={openEdit} title="Edit"
+                          <button onClick={() => openEdit(row)} title="Edit"
                             className="h-7 w-7 inline-flex items-center justify-center rounded-md text-ink-3 hover:bg-warm-100 hover:text-ink"><Pencil size={14} /></button>
                           <button onClick={() => setConfirm({ rows: [row], label: `"${row[cols[0]?.key]}"` })} title="Delete"
                             className="h-7 w-7 inline-flex items-center justify-center rounded-md text-ink-3 hover:bg-danger-bg hover:text-st-danger"><Trash2 size={14} /></button>

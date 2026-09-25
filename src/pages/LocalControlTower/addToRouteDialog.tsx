@@ -6,9 +6,9 @@
  *                   that fits best (same day first, then nearest date, then the
  *                   fewest stops) and says why before you confirm;
  *   Manual          — you pick an existing route, or create a new one (below);
- *   Plan for routing — the routing engine plans a NEW route for the selection
+ *   Plan pickup request for routing — the routing engine plans a NEW route for the selection
  *                   (`planningActions.planForRouting`, as Pending For Planning's
- *                   Plan Collection For Routing does).
+ *                   Plan pickup request for routing does).
  *
  * Manual:
  *   Existing trip — an Un-assigned / Yet to start trip at the request's hub;
@@ -27,14 +27,16 @@ import { isOpenPr } from '../../growOrders/tabs'
 import { planningActions, tripOf, usePlanning, type LocalTrip } from '../LocalPFP/planningStore'
 import { HUB_CODES, TRIP_TONE, fmtDay, hubLabel, knownDrivers, vehicleOf } from './tripUtils'
 
-const WAYS = ['Add to best route', 'Manual', 'Plan for routing']
+const WAYS = ['Add to best route', 'Manual', 'Plan pickup request for routing']
 const MODES = ['Existing trip', 'New trip']
 
 const dayGap = (a: string, b: string) =>
   Math.abs(new Date(`${a}T00:00:00`).getTime() - new Date(`${b}T00:00:00`).getTime()) / 86_400_000
 
-export function AddToRouteDialog({ prIds, onClose, onDone }: {
+export function AddToRouteDialog({ prIds, initialWay, onClose, onDone }: {
   prIds: string[]
+  /** open on a given tab — 'plan' = Plan pickup request for routing */
+  initialWay?: 'best' | 'manual' | 'plan'
   onClose(): void
   onDone?(tripId: string): void
 }) {
@@ -63,7 +65,7 @@ export function AddToRouteDialog({ prIds, onClose, onDone }: {
     const ga = first ? dayGap(a.date, first.date) : 0, gb = first ? dayGap(b.date, first.date) : 0
     return ga !== gb ? ga - gb : a.stops.length - b.stops.length
   })[0], [candidates, first])
-  const [way, setWay] = useState(best ? 0 : 2)
+  const [way, setWay] = useState(initialWay === 'plan' ? 2 : initialWay === 'manual' ? 1 : best ? 0 : 2)
   const [mode, setMode] = useState(candidates.length ? 0 : 1)
   const [tripId, setTripId] = useState(candidates[0]?.id ?? '')
   const [name, setName] = useState('')
@@ -105,7 +107,7 @@ export function AddToRouteDialog({ prIds, onClose, onDone }: {
   return (
     <Modal open title="Add to route" onClose={onClose}
       footer={<><Button variant="outline" onClick={onClose}>Cancel</Button><Button disabled={!canConfirm} onClick={confirm}>
-        {way === 0 ? 'Add to best route' : way === 2 ? 'Plan for routing' : mode === 0 ? 'Add to trip' : 'Create trip & add'}
+        {way === 0 ? 'Add to best route' : way === 2 ? 'Plan pickup request for routing' : mode === 0 ? 'Add to trip' : 'Create trip & add'}
       </Button></>}>
       <p className="pb-3 text-[13px] text-ink-2">
         {open.length === 0
@@ -114,12 +116,12 @@ export function AddToRouteDialog({ prIds, onClose, onDone }: {
         {skipped > 0 && open.length > 0 && <span className="text-ink-3"> {skipped} closed request{skipped === 1 ? '' : 's'} skipped.</span>}
       </p>
       {open.some((p) => tripOf(p.id)) && (
-        <p className="pb-3 text-[12.5px] text-warning-fg">
+        <p className="pb-3 text-[12px] text-warning-fg">
           {open.filter((p) => tripOf(p.id)).map((p) => `${p.number} (on ${tripOf(p.id)?.id})`).join(', ')} will move off its current trip.
         </p>
       )}
       {hubsInSelection.length > 1 && (
-        <p className="pb-3 text-[12.5px] text-warning-fg">The selection drops at {hubsInSelection.length} hubs — the trip runs from {hubLabel(mode === 0 ? prHub : hub, db.stores)}.</p>
+        <p className="pb-3 text-[12px] text-warning-fg">The selection drops at {hubsInSelection.length} hubs — the trip runs from {hubLabel(mode === 0 ? prHub : hub, db.stores)}.</p>
       )}
 
       <Tabs size="sm" tabs={WAYS} active={way} onChange={setWay} />
@@ -128,9 +130,9 @@ export function AddToRouteDialog({ prIds, onClose, onDone }: {
         <div className="py-4">
           {!best ? (
             <EmptyState title={`No open route at ${hubLabel(prHub, db.stores)}`}
-              hint="Best route picks among Un-assigned or Yet to start routes at the request's hub. Use Plan for routing to have one planned, or Manual to create it." />
+              hint="Best route picks among Un-assigned or Yet to start routes at the request's hub. Use Plan pickup request for routing to have one planned, or Manual to create it." />
           ) : (
-            <div className="rounded-md border border-brand-500 bg-brand-50 px-4 py-3 text-[13px]">
+            <div className="rounded-md border border-ink bg-warm-50 px-4 py-3 text-[13px]">
               <span className="flex items-center gap-2">
                 <span className="font-bold text-ink">{best.name} <span className="font-mono text-[12px] text-ink-3">{best.id}</span></span>
                 <StatusPill label={best.status} tone={TRIP_TONE[best.status]} />
@@ -151,7 +153,7 @@ export function AddToRouteDialog({ prIds, onClose, onDone }: {
         <p className="py-4 text-[13px] text-ink-2">
           The routing engine plans a <b>new route</b> for {open.length === 1 ? 'this collection' : `these ${open.length} collections`}
           {' '}from {hubLabel(prHub, db.stores)}, on the pickup window's date, with a driver assigned — the same step as
-          Pending For Planning → Plan Collection For Routing. The requests become Planned and Assigned.
+          Pending For Planning → Plan pickup request for routing. The requests become Planned and Assigned.
         </p>
       )}
 
@@ -171,7 +173,7 @@ export function AddToRouteDialog({ prIds, onClose, onDone }: {
                 const on = t.id === tripId
                 return (
                   <button key={t.id} type="button" onClick={() => setTripId(t.id)}
-                    className={`flex w-full items-center gap-3 border-b border-line px-4 py-2.5 text-left text-[13px] last:border-0 transition-colors ${on ? 'bg-brand-50' : 'hover:bg-warm-50'}`}>
+                    className={`flex w-full items-center gap-3 border-b border-line px-4 py-2.5 text-left text-[13px] last:border-0 transition-colors ${on ? 'bg-warm-50 hover:bg-warm-100' : 'hover:bg-warm-50'}`}>
                     <span className={`h-3.5 w-3.5 shrink-0 rounded-full border ${on ? 'border-[4px] border-brand-500' : 'border-warm-300'}`} />
                     <span className="min-w-0 flex-1">
                       <span className="block font-bold text-ink">{t.name} <span className="font-mono text-[12px] text-ink-3">{t.id}</span></span>

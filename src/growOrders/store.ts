@@ -8,17 +8,19 @@ import type {
   CarrierMode, GrowOrder, GrowOrdersDb, GrowPickupRequest, HandoverScan, HubOverage, Party, PickupHandover, PickupPod,
   PickupOverage, PickupRequestStatus, PickupSource, ShipmentType, SizeClass, StoreLocation,
 } from './types'
-import type { OrderDraft } from './draft'
+import { canonicalService, type OrderDraft } from './draft'
 import { blankParty, CURRENCY, seed, STORES } from './seed'
 import { DEFAULT_INBOUND_HUB, inboundHubFor } from './hubs'
 import {
   addHours, atDate, atParts, canAddOrdersTo, canReattempt, handoverReconciled, isOpenPr, localIso, nextPrStatus,
-  PICKUP_SLOTS, PR_ENTRY_STATUS, PR_STATUSES, prHasNothingToCollect, rangesOverlap, slotFrom, tabOf, windowFromSlot,
+  PICKUP_SLOTS, PR_ENTRY_STATUS, PR_STATUSES, prHasNothingToCollect, rangesOverlap, slotFrom, SPLITTABLE_PR_STATUSES, tabOf, windowFromSlot,
 } from './tabs'
 import { blankHandover, PR_DEFAULTS, SIZE_CLASSES } from './types'
 import { cancelReasonLabel, failureReasonLabel, NO_ORDERS_REASON } from './pickupReasons'
+import { pickupOutcomeFor } from './reasonPolicy'
+import { pickupPointKey } from './prActions'
 import { nextBusinessDay, pickupPolicy, autoPickupWindowFor, autoPickupEligible } from './pickupSlots'
-import { readPickupModuleConfig } from '../config/pickupModule'
+import { blindPickupsAllowed, readPickupModuleConfig } from '../config/pickupModule'
 
 /** -v9: `Created` and `Requested` MERGED into the single entry status `Requested`. The key bump is
  *  what re-seeds an existing browser so its rows are retagged; a hand-restored v8 blob still loads,
@@ -44,7 +46,8 @@ import { readPickupModuleConfig } from '../config/pickupModule'
 /* v14: seed clean-up (one inbound hub per parcel PR, FTL orders on their own
    PRs 138/139, PR-000129's auto re-attempt PR-000140, PR-000104 back to
    Requested) + `carrierPickupRef`; bumped TOGETHER with planningStore's v4. */
-const KEY = 'fareye-grow-orders-v16'
+/* v17: `readyToShip` — paid consignments read Created until marked ready (seed: half each). */
+const KEY = 'fareye-grow-orders-v17'
 
 /** Explicit field defaults — deliberately NOT derived from a seed row, so what a
  *  persisted blob inherits can never drift with the seed data. */
@@ -56,13 +59,17 @@ export const ORDER_DEFAULTS: GrowOrder = {
   pkg: { kind: 'Parcel', count: 1, weightKg: 0, lengthCm: 0, widthCm: 0, heightCm: 0, description: '', declaredValue: 0 },
   paymentMode: 'Prepaid', codAmount: 0, currency: CURRENCY,
   carrier: '', serviceType: '', trackingNumber: '', pickupDate: '', remarks: '', error: '',
-  paymentStatus: 'Paid', isDraft: false, pickupRequestId: null, pickedInRequestId: null, draft: null,
+  paymentStatus: 'Paid', isDraft: false, readyToShip: false, pickupRequestId: null, pickedInRequestId: null, draft: null,
   /* no stored quote unless checkout froze one — everything else derives */
   charges: null,
 }
 const DEFAULTS = ORDER_DEFAULTS
 
 export { PR_DEFAULTS, blankHandover }
+export { SPLITTABLE_PR_STATUSES }
+
+/** The driver-facing line an auto request carries while its slot awaits the shipper. */
+export const SLOT_CONFIRMATION_PENDING = 'Awaiting pickup slot confirmation from the shipper'
 
 /** The execution block of a request born NOW — this is where the config is snapshotted. */
 function freshExecution(source: PickupSource, merchantCode?: string | null) {
@@ -72,8 +79,7 @@ function freshExecution(source: PickupSource, merchantCode?: string | null) {
 }
 
 /** Two requests are the same collection POINT when store and typed-in address agree. */
-const pointKey = (p: Pick<GrowPickupRequest, 'storeCode' | 'shipFrom'>) =>
-  `${p.storeCode}|${(p.shipFrom?.line1 ?? '').trim().toLowerCase()}`
+const pointKey = pickupPointKey
 
 /** Fill fields added after a record was persisted, so an old blob never crashes a page. */
 function normalize(o: Partial<GrowOrder>): GrowOrder {
@@ -89,9 +95,12 @@ function normalize(o: Partial<GrowOrder>): GrowOrder {
     ...(Array.isArray(o.vehicles) && o.vehicles.length ? { vehicles: o.vehicles } : {}),
     paymentStatus: o.paymentStatus === 'Unpaid' ? 'Unpaid' : 'Paid',
     isDraft: o.isDraft === true,
+    readyToShip: o.readyToShip === true,
     pickupRequestId: o.pickupRequestId ?? null,
     pickedInRequestId: o.pickedInRequestId ?? null,
-    draft: o.draft ?? null,
+    /* the demo keeps 10 service types (2026-09-25) — a retired name maps to its nearest kept one */
+    serviceType: canonicalService(o.serviceType ?? DEFAULTS.serviceType),
+    draft: o.draft ? { ...o.draft, service: canonicalService(o.draft.service) } : null,
     pkg: { ...DEFAULTS.pkg, ...(o.pkg ?? {}) },
     sender: { ...DEFAULTS.sender, ...(o.sender ?? {}) },
     receiver,
@@ -160,7 +169,7 @@ function normalizePr(p: Partial<GrowPickupRequest>): GrowPickupRequest {
     expectedWeightKg: num(p.expectedWeightKg),
     sizeClass: (SIZE_CLASSES as readonly string[]).includes(p.sizeClass as string) ? (p.sizeClass as SizeClass) : null,
     vehicleType: p.vehicleType ?? null,
-    ftlServiceType: p.ftlServiceType ?? null,
+    ftlServiceType: canonicalService(p.ftlServiceType ?? null),
     contactName: p.contactName ?? '',
     contactNumber: p.contactNumber ?? '',
     note: p.note ?? '',
@@ -177,12 +186,14 @@ function normalizePr(p: Partial<GrowPickupRequest>): GrowPickupRequest {
     cancelReason: strOrNull(p.cancelReason),
     manualOverride: p.manualOverride === 'Picked Up' || p.manualOverride === 'Failed' ? p.manualOverride : null,
     parentPrId: strOrNull(p.parentPrId),
+    splitFromPrId: strOrNull(p.splitFromPrId),
     reattemptPrId: strOrNull(p.reattemptPrId),
     handover: normalizeHandover(p.handover),
     notPickedReasons: p.notPickedReasons && typeof p.notPickedReasons === 'object'
       ? Object.fromEntries(Object.entries(p.notPickedReasons).filter(([, v]) => typeof v === 'string'))
       : {},
     source: oneOf(p.source, ['Merchant', 'Console', 'API', 'Auto'] as const, PR_DEFAULTS.source),
+    slotConfirmed: typeof p.slotConfirmed === 'boolean' ? p.slotConfirmed : PR_DEFAULTS.slotConfirmed,
   }
 }
 
@@ -306,6 +317,8 @@ function nextPrNumber(): string {
 function orderFromDraft(d: OrderDraft, base?: GrowOrder): GrowOrder {
   const p0 = d.parcels[0]
   const isFtl = d.shipmentType === 'FTL'
+  /* FTL, a dedicated truck, or a parcel that simply names its vehicle type */
+  const booksVehicle = isFtl || !!d.consignment?.dedicateTruck || !!d.vehicleType
   return {
     ...(base ?? DEFAULTS),
     id: base?.id ?? newOrderId(),
@@ -313,8 +326,9 @@ function orderFromDraft(d: OrderDraft, base?: GrowOrder): GrowOrder {
     createdAt: base?.createdAt ?? new Date().toISOString(),
     storeCode: d.storeCode, inboundHubCode: inboundHubFor(d.receiver),
     sender: d.sender, receiver: d.receiver, drops: d.drops,
-    shipmentType: d.shipmentType, vehicleType: isFtl ? d.vehicleType : '',
-    ...(isFtl ? { vehicleUnit: d.vehicleUnit, actualLoad: d.actualLoad, additionalServices: d.additionalServices,
+    /* a dedicated-truck PARCEL consignment keeps its vehicles too; it still classifies by shipmentType */
+    shipmentType: d.shipmentType, vehicleType: booksVehicle ? d.vehicleType : '',
+    ...(booksVehicle ? { vehicleUnit: d.vehicleUnit, actualLoad: d.actualLoad, additionalServices: d.additionalServices,
       ...(d.vehicles?.length ? { vehicles: d.vehicles } : {}) } : {}),
     pkg: {
       kind: isFtl ? 'FTL' : p0?.cargoType === 'Document' ? 'Document' : 'Parcel',
@@ -459,7 +473,7 @@ export const growOrderActions = {
     const after = db.orders.find((o) => o.id === id)
     const cfg = readPickupModuleConfig()
     if (before && after && cfg.enabled && cfg.mode === 'auto'
-      && !autoPickupEligible(before, cfg.autoPickup.afterState) && autoPickupEligible(after, cfg.autoPickup.afterState)) {
+      && !autoPickupEligible(before, cfg.autoPickup.triggerEvent) && autoPickupEligible(after, cfg.autoPickup.triggerEvent)) {
       growOrderActions.autoBookOnConsignment(id)
     }
     /* an emptied request that was routed leaves its trip, like a cancel */
@@ -468,6 +482,21 @@ export const growOrderActions = {
     }
   },
 
+  /**
+   * FarEye's `consignment::marked-ready-for-ship`: CREATED → READY_TO_SHIP. Only a
+   * live, paid, error-free consignment still in Created (not drafted, not in a
+   * request) moves. Goes through `update`, so an auto-pickup trigger on this event
+   * raises its request here. Returns the ids actually marked (the caller notes them).
+   */
+  markReadyToShip(ids: string[]): string[] {
+    const marked = ids.filter((id) => {
+      const o = db.orders.find((x) => x.id === id)
+      return !!o && !o.isDraft && o.paymentStatus === 'Paid' && !o.error && !o.readyToShip
+        && o.status === 'Order Created' && !o.pickupRequestId
+    })
+    for (const id of marked) growOrderActions.update(id, { readyToShip: true })
+    return marked
+  },
   /** Cancel a consignment — `update` does the pickup-side consequences. */
   cancelOrder(id: string) {
     growOrderActions.update(id, { status: 'Cancelled' })
@@ -519,8 +548,10 @@ export const growOrderActions = {
    * a selection spanning several (pickup location → destination) pairs — or
    * carrying a dedicated vehicle — is several calls, one per group.
    */
-  createPickupRequest({ storeCode, destinationCode = null, orderIds, instructions, vehicle, source = 'Merchant', merchantCode, ...win }: {
+  createPickupRequest({ storeCode, destinationCode = null, orderIds, instructions, vehicle, source = 'Merchant', merchantCode, split = false, ...win }: {
     storeCode: string; destinationCode?: string | null; orderIds: string[]; instructions?: string
+    /** "Split into separate requests" (owner, 2026-09-25): the user asked for its own request — never merged. */
+    split?: boolean
     /** Who raised it — the merchant portal by default; the console passes 'Console'. */
     source?: PickupSource
     /** Whose `merchantOverrides` apply (multi-PR policy, attempts). */
@@ -542,7 +573,7 @@ export const growOrderActions = {
        the same destination hub — a request drops at ONE hub. A vehicle booking
        is always its own request. `merged: true` tells the caller which happened. */
     const policy = pickupPolicy(merchantCode).multiPrPolicy
-    if (!vehicle && policy !== 'UNLIMITED') {
+    if (!vehicle && !split && policy !== 'UNLIMITED') {
       const key = pointKey({ storeCode, shipFrom: null })
       const until = pickupPolicy(merchantCode).allowAddToExistingUntil
       const target = db.pickupRequests
@@ -589,7 +620,8 @@ export const growOrderActions = {
   /**
    * RESERVE a collection BEFORE any order exists (internally `blind`). The
    * merchant declares roughly what will be handed over; `orderIds` stays empty
-   * until orders are attached.
+   * until orders are attached. Returns null (no write) when the pickup config
+   * forbids Reserved pickups — see blindPickupsAllowed().
    */
   createBlindPickup({ storeCode, destinationCode = null, shipmentType = 'Parcel', expectedPieces, expectedWeightKg,
     sizeClass, vehicleType, vehicleUnit, ftlServiceType, shipFrom, shipTo,
@@ -601,7 +633,10 @@ export const growOrderActions = {
     sizeClass?: SizeClass | null; vehicleType?: string | null; vehicleUnit?: number | null; ftlServiceType?: string | null
     shipFrom?: Party | null; shipTo?: Party | null
     contactName?: string; contactNumber?: string; note?: string; instructions?: string
-  }): GrowPickupRequest {
+  }): GrowPickupRequest | null {
+    /* owner, 2026-09-25: Settings → Pickup module → Manual → "Reserved (blind)
+       pickups" = No forbids this on EVERY path — nothing is written */
+    if (!blindPickupsAllowed(readPickupModuleConfig())) return null
     const createdAt = new Date().toISOString()
     const ftl = shipmentType === 'FTL'
     const { startAt, endAt, date, slot } = pickupWindow(win)
@@ -609,7 +644,7 @@ export const growOrderActions = {
       id: newPrId(), number: nextPrNumber(), storeCode, destinationCode, startAt, endAt, date, slot,
       orderIds: [], pickedOrderIds: [], overages: [], status: PR_ENTRY_STATUS, createdAt, instructions,
       statusHistory: [{ status: PR_ENTRY_STATUS, at: createdAt, note: ftl
-        ? `Reserved vehicle booking — ${vehicleUnit ?? 1} × ${vehicleType ?? 'vehicle'}, ~${expectedWeightKg ?? 0} kg`
+        ? `Reserved vehicle booking — ${vehicleUnit ?? 1} × ${vehicleType ?? 'vehicle'}${expectedWeightKg != null ? `, ~${expectedWeightKg} kg` : ''}`
         : `Reserved pickup — ${expectedPieces ?? 0} order${expectedPieces === 1 ? '' : 's'} expected` }],
       blind: true, shipmentType, expectedPieces, expectedWeightKg,
       /* each branch only keeps the fields its own form collected */
@@ -686,9 +721,11 @@ export const growOrderActions = {
   /** Pickup attempted and failed — same release as a cancel, different state.
    *  `reason` is free text (existing callers pass prose); `reasonCode` is a
    *  PICKUP_FAILURE_REASONS code and becomes the note when no text is given. */
-  /*  With `autoRescheduleOnFail` on and attempts left, the retry is raised at
-   *  once (see reattemptPickupRequest) — except for NO_ORDERS: an empty request
-   *  retried is still empty. */
+  /*  What happens next is the Reason Policy's call (`pickupOutcomeFor`):
+   *  Re-attempt pickup → with `autoRescheduleOnFail` on and attempts left the
+   *  retry is raised at once (see reattemptPickupRequest), else it is held;
+   *  Hold for review → stays Pickup Failed with a note; Cancel pickup → Cancelled.
+   *  NO_ORDERS is outside the policy: an empty request retried is still empty. */
   failPickupRequest(id: string, reason?: string, reasonCode?: string) {
     db.pickupRequests = db.pickupRequests.map((p) => (p.id === id
       ? { ...stamp(p, 'Pickup Failed', reason ?? (reasonCode ? failureReasonLabel(reasonCode) : undefined)),
@@ -697,8 +734,28 @@ export const growOrderActions = {
     releaseOrders(id)
     commit()
     const failed = db.pickupRequests.find((p) => p.id === id)
-    if (failed && reasonCode !== NO_ORDERS_REASON && canReattempt(failed) && pickupPolicy().autoRescheduleOnFail) {
+    /* NO_ORDERS stays outside the policy: an empty request is simply failed */
+    if (!failed || reasonCode === NO_ORDERS_REASON) return
+    const autoRetry = canReattempt(failed) && pickupPolicy().autoRescheduleOnFail
+    const code = reasonCode ?? failed.failureReason
+    /* no reason code at all (prose-only callers) — the pre-policy behaviour */
+    if (!code) {
+      if (autoRetry) growOrderActions.reattemptPickupRequest(id)
+      return
+    }
+    /* Reason Master → Reason Policy decides (growOrders/reasonPolicy) */
+    const outcome = pickupOutcomeFor(code, failed.attempt, failed.maxAttempts)
+    if (outcome === 'reattempt' && autoRetry) {
       growOrderActions.reattemptPickupRequest(id)
+    } else if (outcome === 'cancel') {
+      /* orders were already released by the failure above; the history keeps both steps */
+      mapPr(id, (p) => ({ ...stamp(p, 'Cancelled', `Cancelled by reason policy — ${failureReasonLabel(code)}`),
+        cancelReason: 'ORDER_CANCELLED' }))
+      commit()
+    } else {
+      /* hold — or a re-attempt rule with no attempts left / auto re-attempt switched off */
+      mapPr(id, (p) => noted(p, `Held for review — ${failureReasonLabel(code)}`))
+      commit()
     }
   },
 
@@ -734,11 +791,11 @@ export const growOrderActions = {
   /* A ROUTED request is different: the trip it was on no longer fits the new
      window, so it leaves the trip and — if it was Planned / Assigned there —
      goes back to Requested to be planned again. */
-  reschedulePickupRequest(id: string, win: { startAt?: string; endAt?: string; date?: string; slot?: string }) {
+  reschedulePickupRequest(id: string, win: { startAt?: string; endAt?: string; date?: string; slot?: string; reason?: string }) {
     const cur = db.pickupRequests.find((p) => p.id === id)
     if (!cur) return
     const { startAt, endAt, date, slot } = pickupWindow(win)
-    const note = `Rescheduled to ${date} ${slot}`
+    const note = `Rescheduled to ${date} ${slot}${win.reason ? ` (${win.reason})` : ''}`
     mapPr(id, (p) => {
       const moved = { ...p, startAt, endAt, date, slot }
       if (!p.tripId) return noted(moved, note)
@@ -753,6 +810,63 @@ export const growOrderActions = {
       emitDetached({ prId: id, number: cur.number, tripId: cur.tripId, cause: 'rescheduled',
         note: `${cur.number} rescheduled to ${date} ${slot}` })
     }
+  },
+
+  /**
+   * SPLIT an existing request (owner, 2026-09-25): move `orderIds` out of `prId`
+   * into a NEW request at the same pickup point and destination hub — same
+   * source, merchant, shipment type / vehicle and handover mode, same window
+   * unless `win` gives another. Never merged (split semantics). Only while the
+   * request is still editable (`SPLITTABLE_PR_STATUSES`), and the original must
+   * keep at least one consignment. The new request is NEVER on a trip: it
+   * enters the queue as Requested (the original keeps its trip, so nothing is
+   * detached). Returns the new request, or null when the split is refused.
+   */
+  splitPickupRequest(prId: string, orderIds: string[], win?: { startAt?: string; endAt?: string }): GrowPickupRequest | null {
+    const cur = db.pickupRequests.find((p) => p.id === prId)
+    /* LTL only (owner, 2026-09-25) — a full-vehicle booking is never split */
+    if (!cur || cur.shipmentType === 'FTL' || !SPLITTABLE_PR_STATUSES.includes(cur.status)) return null
+    const move = new Set(orderIds.filter((i) => cur.orderIds.includes(i)))
+    if (!move.size || move.size >= cur.orderIds.length) return null
+    const createdAt = new Date().toISOString()
+    const w = win?.startAt && win?.endAt ? pickupWindow(win) : { startAt: cur.startAt, endAt: cur.endAt, date: cur.date, slot: cur.slot }
+    const n = move.size
+    const pr: GrowPickupRequest = {
+      ...cur,
+      id: newPrId(), number: nextPrNumber(), ...w,
+      orderIds: [...move], pickedOrderIds: [], overages: [], createdAt,
+      status: PR_ENTRY_STATUS,
+      statusHistory: [{ status: PR_ENTRY_STATUS, at: createdAt, note: `Split out of ${cur.number} — ${n} consignment${n === 1 ? '' : 's'}` }],
+      tripId: null, driverName: null, carrierCode: null, carrierName: null, carrierMode: null, carrierPickupRef: null,
+      failureReason: null, cancelReason: null, manualOverride: null, reattemptPrId: null, notPickedReasons: {},
+      splitFromPrId: cur.id,
+      handover: blankHandover(cur.handover?.mode ?? 'both'),
+    }
+    db.pickupRequests = [pr, ...db.pickupRequests.map((p) => (p.id === prId
+      ? noted({ ...p, orderIds: p.orderIds.filter((i) => !move.has(i)) }, `${n} consignment${n === 1 ? '' : 's'} split into ${pr.number}`)
+      : p))]
+    db.orders = db.orders.map((o) => (move.has(o.id) ? { ...o, pickupRequestId: pr.id, pickupDate: w.date } : o))
+    commit()
+    return pr
+  },
+
+  /**
+   * BULK split (owner, 2026-09-25): every request in `prIds` is split into one
+   * request per consignment — same window, `splitFromPrId` set, notes on both —
+   * through `splitPickupRequest`, so the same refusals apply (a request that is
+   * not splittable or holds one consignment is skipped). Returns what was made.
+   */
+  splitAllPickupRequests(prIds: string[]): { split: string[]; created: GrowPickupRequest[] } {
+    const split: string[] = []
+    const created: GrowPickupRequest[] = []
+    prIds.forEach((id) => {
+      const cur = db.pickupRequests.find((p) => p.id === id)
+      if (!cur || cur.shipmentType === 'FTL' || cur.orderIds.length < 2) return
+      /* the first consignment stays on the original; each other one moves out alone */
+      const made = cur.orderIds.slice(1).map((oid) => growOrderActions.splitPickupRequest(id, [oid])).filter((p): p is GrowPickupRequest => !!p)
+      if (made.length) { split.push(id); created.push(...made) }
+    })
+    return { split, created }
   },
 
   /**
@@ -986,7 +1100,8 @@ export const growOrderActions = {
     /* the NEXT BUSINESS DAY after the failed window, same time of day (spec E9);
        from today when that is already past */
     const time = atParts(cur.startAt)[1] || '09:00'
-    const policy = pickupPolicy()
+    /* the pickup address → drop hub operating calendar (holidays skipped) */
+    const policy = pickupPolicy(null, { pickupLocationCode: cur.storeCode, hubCode: cur.destinationCode })
     const nextDay = (from: Date) => localIso(nextBusinessDay(from, policy)).slice(0, 10)
     let startAt = `${nextDay(atDate(cur.startAt))}T${time}`
     if (atDate(startAt) < new Date()) startAt = `${nextDay(new Date())}T${time}`
@@ -1041,7 +1156,7 @@ export const growOrderActions = {
     if (late) return { ok: false, reason: `${late.number} is ${late.status} — only Requested or Planned requests can merge` }
     if (new Set(list.map(pointKey)).size > 1) return { ok: false, reason: 'Pickup requests are at different pickup points' }
     const hubs = [...new Set(list.map((p) => p.destinationCode ?? ''))]
-    if (list.some((p) => p.shipmentType === 'FTL')) return { ok: false, reason: 'FTL bookings are never merged' }
+    if (list.some((p) => p.shipmentType === 'FTL')) return { ok: false, reason: 'Full-vehicle bookings are never merged' }
     const [keep, ...rest] = [...list].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
     const moved = new Set(rest.flatMap((p) => p.orderIds).filter((i) => !keep.orderIds.includes(i)))
     const sum = (f: (p: GrowPickupRequest) => number | null) =>
@@ -1098,16 +1213,38 @@ export const growOrderActions = {
     if (!cfg.enabled || cfg.mode !== 'auto') return null
     const o = db.orders.find((x) => x.id === orderId)
     /* the trigger STATE is configurable (Created · Label Generated · Ready To Ship) */
-    if (!o || !autoPickupEligible(o, cfg.autoPickup.afterState)) return null
+    if (!o || !autoPickupEligible(o, cfg.autoPickup.triggerEvent)) return null
     /* the date rule is the account's (owner, 2026-09-24); slots and cutoff may be the merchant's */
     /* the user's own pickup window (Ship From window on the form) counts when the module lets them choose */
-    const w = autoPickupWindowFor(new Date(), pickupPolicy(merchantCode), cfg.autoPickup, { startAt: o.sender.windowStart, endAt: o.sender.windowEnd })
+    const w = autoPickupWindowFor(new Date(), pickupPolicy(merchantCode, { pickupLocationCode: o.storeCode, hubCode: o.shipmentType === 'FTL' ? null : o.inboundHubCode }), cfg.autoPickup, { startAt: o.sender.windowStart, endAt: o.sender.windowEnd })
     const ftl = o.shipmentType === 'FTL'
-    return growOrderActions.createPickupRequest({
+    const pr = growOrderActions.createPickupRequest({
       storeCode: o.storeCode, destinationCode: ftl ? null : o.inboundHubCode, orderIds: [o.id], source: 'Auto',
       merchantCode, startAt: w.startAt, endAt: w.endAt,
       ...(ftl ? { vehicle: { vehicleType: o.vehicleType, vehicleUnit: o.vehicleUnit ?? 1, shipTo: o.receiver, ftlServiceType: o.serviceType || null } } : {}),
     })
+    /* owner, 2026-09-24: `slotConfirmation` = the shipper confirms the slot before
+       ops plans it. Only a request that never needed one is marked — joining one
+       already pending (or confirmed) leaves it as it is. */
+    if (!pr || !cfg.autoPickup.slotConfirmation || pr.slotConfirmed !== null) return pr
+    mapPr(pr.id, (p) => noted({ ...p, slotConfirmed: false,
+      instructions: [p.instructions?.trim(), SLOT_CONFIRMATION_PENDING].filter(Boolean).join('\n') },
+    'Auto pickup · slot confirmation pending'))
+    commit()
+    return { ...db.pickupRequests.find((p) => p.id === pr.id)!, merged: pr.merged }
+  },
+
+  /** The shipper confirmed the pickup slot of an auto request (the console's
+   *  "Confirm slot" stands in for them) — from here ops may plan it. */
+  confirmPickupSlot(prId: string): boolean {
+    const cur = db.pickupRequests.find((p) => p.id === prId)
+    if (!cur || cur.slotConfirmed !== false) return false
+    mapPr(prId, (p) => {
+      const rest = (p.instructions ?? '').split('\n').filter((l) => l.trim() !== SLOT_CONFIRMATION_PENDING).join('\n').trim()
+      return noted({ ...p, slotConfirmed: true, instructions: rest || undefined }, `Pickup slot confirmed · ${p.slot}`)
+    })
+    commit()
+    return true
   },
 
   /** H4 — ops prints the 3PL manifest: `manifestRef` = `MNF-<PR digits>` (kept if one exists). */

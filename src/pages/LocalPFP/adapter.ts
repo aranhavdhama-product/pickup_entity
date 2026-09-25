@@ -17,6 +17,7 @@ import type { ConsignmentOrderRow, ConsignmentState, TimeWindow } from '../../da
 import type { GrowOrder, GrowOrdersDb, GrowPickupRequest, StoreLocation } from '../../growOrders/types'
 import { displayStatus, isOpenPr, type DisplayStatus } from '../../growOrders/tabs'
 import { hubName, inboundHubFor } from '../../growOrders/hubs'
+import { can } from '../LocalPickup/prModel'
 import {
   PARTIALLY_PICKED, pickupPointAddress, pickupPointName, pickupSummary, prDisplayQty,
   prDisplayWeight, prOutcomeLabel, prOverdue, prReconciled, prSpan, prWindow,
@@ -84,10 +85,10 @@ export const palletSpacesOf = (o: GrowOrder): number =>
  * rule. Pickup progress is a SECONDARY state while the parcel is still with the
  * merchant, becomes the STATE once it is collected (`Pickedup` / `Partially
  * Pickedup`) and hands over to `At Facility` at the hub in-scan. Nothing here is
- * invented: every value below is in staging's 41-option list.
+ * invented: the full filter list (staging's 41 options + the official primaries it lacks) lives in ./stateVocabulary.
  */
 export const FAREYE_STATES = [
-  'Created', 'Ready To Ship', 'Pickedup', 'Partially Pickedup', 'At Facility', 'Intransit',
+  'Created', 'Pickup Requested', 'Ready To Ship', 'Pickedup', 'Partially Pickedup', 'At Facility', 'Intransit',
   'Driver Out', 'Delivered', 'Undelivered', 'Cancelled',
 ] as const
 export const FAREYE_PICKUP_SECONDARY = [
@@ -129,12 +130,16 @@ export function fareyeStatesOf(
   /* still with the merchant: Ready for Pickup / Pickup Scheduled */
   const booked = prs.find((p) => p.id === o.pickupRequestId)
   if (booked && isOpenPr(booked.status)) {
-    return { state: 'Ready To Ship', secondary: PR_SECONDARY[booked.status] ?? 'Scheduled' }
+    /* FarEye's own lifecycle (owner's list, 2026-09-24): PICKUP_REQUESTED is a PRIMARY
+       state, between CREATED and READY_TO_SHIP; the request's stage is the secondary */
+    return { state: 'Pickup Requested', secondary: PR_SECONDARY[booked.status] ?? 'Scheduled' }
   }
   /* released by a failed attempt and not rebooked: FarEye shows the failure */
   const failed = prs.find((p) => p.status === 'Pickup Failed' && p.orderIds.includes(o.id))
   if (!o.pickupRequestId && failed) return { state: 'Ready To Ship', secondary: 'Pickup Failed' }
-  return { state: 'Ready To Ship', secondary: 'Label Generated' }
+  /* FarEye: CREATED (sub LABEL_GENERATED) until `consignment::marked-ready-for-ship`
+     lands it in READY_TO_SHIP (owner, 2026-09-25: show both) */
+  return { state: o.readyToShip ? 'Ready To Ship' : 'Created', secondary: 'Label Generated' }
 }
 
 /** May a pickup be scheduled for this row? The FarEye-state rule, used by every
@@ -145,6 +150,23 @@ export function canSchedulePickup(o: GrowOrder, prs: Parameters<typeof fareyeSta
   return (SCHEDULE_PICKUP_STATES as readonly string[]).includes(state)
     && !(SCHEDULE_PICKUP_BLOCKING_SECONDARY as readonly string[]).includes(secondary)
     && !o.pickupRequestId
+}
+
+/**
+ * Owner, 2026-09-25: with the pickup module ON, the PFP Schedule popup moves a
+ * FIRST-MILE consignment's PICKUP window instead of writing a delivery slot.
+ * First mile = FarEye state "Pickup Requested" or Active Leg "First Mile".
+ * Returns the pickup request to move, or null when the row keeps the delivery
+ * schedule — including a first-mile row whose request can no longer be moved
+ * (the Pickup page's own rule: `can.reschedule`, i.e. open and not yet out).
+ */
+export function pickupScheduleTargetOf(
+  row: Pick<LocalConsignmentRow, 'state' | 'activeLeg' | 'order'>,
+  prs: GrowPickupRequest[],
+): GrowPickupRequest | null {
+  if ((row.state as string) !== 'Pickup Requested' && row.activeLeg !== 'First Mile') return null
+  const pr = prs.find((p) => p.id === row.order.pickupRequestId)
+  return pr && can.reschedule(pr) ? pr : null
 }
 
 /** Console state of an order (no pickup context) — kept for the many callers. */
@@ -210,7 +232,9 @@ export const legChainOf = (o: GrowOrder, stores: StoreLocation[]): string =>
   legsOf(o, stores).join('-')
 
 /** The leg the consignment is ON right now (owner, 2026-09-24): the Active Leg column. */
-export const ACTIVE_LEGS = ['First Mile', 'Mid Mile', 'Last Mile'] as const
+/* owner, 2026-09-25: only TWO legs are shown anywhere — First Mile (collection side) and
+   Last Mile (everything after the origin hub); the mid mile is folded into Last Mile. */
+export const ACTIVE_LEGS = ['First Mile', 'Last Mile'] as const
 export type ActiveLeg = (typeof ACTIVE_LEGS)[number]
 
 /**
@@ -219,12 +243,12 @@ export type ActiveLeg = (typeof ACTIVE_LEGS)[number]
  */
 export function activeLegOf(o: GrowOrder, legs: Leg[]): ActiveLeg | '' {
   if (o.isDraft || o.status === 'Cancelled') return ''
-  const first = legs.includes('FM') ? 'First Mile' : legs.includes('MM') ? 'Mid Mile' : 'Last Mile'
+  const first = legs.includes('FM') ? 'First Mile' : 'Last Mile'
   switch (o.status) {
     case 'Order Created':
     case 'Pickup Scheduled':
     case 'Picked Up': return first
-    case 'In Transit': return legs.includes('MM') ? 'Mid Mile' : 'Last Mile'
+    case 'In Transit': return 'Last Mile'
     case 'Out for Delivery':
     case 'Delivered':
     case 'Undelivered': return 'Last Mile'
@@ -267,7 +291,7 @@ export interface LocalConsignmentRow extends ConsignmentOrderRow {
   taskType: TaskType
   /** 'FM-MM-LM' — which legs this consignment actually generates */
   legChain: string
-  /** The leg it is on now — First Mile · Mid Mile · Last Mile ('' when closed). */
+  /** The leg it is on now — First Mile · Last Mile ('' when closed). */
   activeLeg: ActiveLeg | ''
   shipByDate: string
   dispatchDate: string
@@ -615,8 +639,11 @@ export function toPickupRow(
  */
 /* A pickup leaves the planning queue once it is on a trip OR handed to a 3PL carrier —
    a carrier-run collection is never routed on our fleet. */
+/* owner, 2026-09-25: ONLY unplanned requests — Requested, on no trip, not on a
+   3PL carrier. A request awaiting slot confirmation still shows; its routing
+   items are disabled with the reason by the prActions matrix. */
 export const isPendingPickup = (p: GrowPickupRequest): boolean =>
-  isOpenPr(p.status) && !p.tripId && p.carrierMode !== 'CARRIER'
+  p.status === 'Requested' && !p.tripId && p.carrierMode !== 'CARRIER'
 
 /* ------------------------------------------------------------ the queue ----- */
 

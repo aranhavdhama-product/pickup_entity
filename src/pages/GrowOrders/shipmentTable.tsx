@@ -69,7 +69,7 @@ const COLUMNS: Col[] = [
         {r.orderTypeLabel === 'Reverse'
           ? <CornerUpLeft size={14} className="shrink-0 text-ink-3" aria-label="Reverse" />
           : <ArrowRight size={14} className="shrink-0 text-ink-3" aria-label="Forward" />}
-        <span className="truncate font-mono text-[12px] font-bold text-brand-500">{r.orderNumber || '—'}</span>
+        <span className="truncate font-mono text-[12px] font-bold text-ink">{r.orderNumber || '—'}</span>
       </span>
     ) },
   { key: 'referenceNumber', label: 'Reference Number', width: 130, value: (r) => r.referenceNumber,
@@ -78,12 +78,14 @@ const COLUMNS: Col[] = [
     cell: (r) => <StatusPill label={r.state} tone={stateChipTone(r.state)} /> },
   { key: 'secondaryState', label: 'Secondary State', width: 136, value: (r) => r.secondaryState },
   { key: 'activeLeg', label: 'Active Leg', width: 100, value: (r) => r.activeLeg },
-  { key: 'exception', label: 'Exception', width: 150, value: (r) => r.exception,
-    cell: (r) => (r.exception
-      ? <span className="flex min-w-0 items-center gap-1 text-danger-fg" title={r.exception}>
-          <CircleAlert size={15} className="shrink-0" /><span className="truncate">{r.exception}</span>
+  /* staging's Data Validation Issues tab (owner, 2026-09-25): the validation error / exception
+     reason is a DEFAULT column right after Secondary State — same as the console grid */
+  { key: 'exception', label: 'Exception Reason', width: 200, value: (r) => r.exception || r.order.error || '',
+    cell: (r) => { const v = r.exception || r.order.error; return v
+      ? <span className="flex min-w-0 items-center gap-1 text-danger-fg" title={v}>
+          <CircleAlert size={15} className="shrink-0" /><span className="truncate">{v}</span>
         </span>
-      : dash) },
+      : dash } },
   { key: 'tags', label: 'Tags', width: 190, value: (r) => r.tags.join(', '), cell: (r) => tagsCell(r.tags) },
   { key: 'shipByDate', label: 'Ship By Date', width: 104, value: (r) => (r.shipByDate ? fmtDate(r.shipByDate) : '') },
   { key: 'serviceType', label: 'Service Type', width: 140, value: (r) => r.serviceType },
@@ -102,7 +104,7 @@ const COLUMNS: Col[] = [
   { key: 'pickupRequest', label: 'Pickup Request', width: 120, value: (r) => r.pickupRequestNumber,
     cell: (r) => (r.order.pickupRequestId && r.pickupRequestNumber
       ? <Link to={`/grow/orders/pickups/${r.order.pickupRequestId}`} onClick={(e) => e.stopPropagation()}
-          className="truncate font-mono text-[12px] font-bold text-brand-500 hover:text-brand-600">{r.pickupRequestNumber}</Link>
+          className="truncate font-mono text-[12px] font-bold text-ink hover:underline">{r.pickupRequestNumber}</Link>
       : dash) },
   { key: 'deliveryWindow', label: 'Delivery Window', width: 250, value: (r) => windowText(r.deliveryWindow) },
   { key: 'attempts', label: 'Delivery Attempt Count', width: 130, align: 'right', value: (r) => String(r.deliveryAttempts) },
@@ -140,7 +142,7 @@ const COLUMNS: Col[] = [
 
 /* the console's default 18, in staging's order */
 const DEFAULT_KEYS = [
-  'orderNumber', 'referenceNumber', 'state', 'secondaryState', 'activeLeg', 'weight', 'volume', 'palletSpace', 'sku',
+  'orderNumber', 'referenceNumber', 'state', 'secondaryState', 'exception', 'activeLeg', 'weight', 'volume', 'palletSpace', 'sku',
   'serviceTime', 'shipByDate', 'shipToName', 'shipToAddress', 'merchant', 'assignedDriver', 'orderType',
   'createdAt', 'ageing', 'attempts',
 ]

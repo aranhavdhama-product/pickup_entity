@@ -37,6 +37,7 @@ import { ArrowRightLeft, Boxes, CalendarClock, Clock3, Package, SlidersHorizonta
 import type { LiveMasterConfig } from '../LiveMaster'
 import { fetchMasterRows, type MasterRecord } from '../settingsApi'
 import { CODE_NAME_COLUMNS, labeledCodesOf, SVC } from './shared'
+import { LOAD_TYPE_LABELS, loadTypeOf, parseLoadType, SERVICE_TYPE_META } from '../../growOrders/draft'
 
 const VAS_CATEGORY_LABELS: Record<string, string> = { UNLOADING: 'Unloading', WHITE_GLOVE: 'White glove', REMOVALS: 'Removals' }
 const EXECUTION_LABELS: Record<string, string> = { PRE_ACTIVITY: 'Pre activity', POST_ACTIVITY: 'Post activity' }
@@ -93,6 +94,19 @@ const consignmentTypesColumn = {
   render: (r: MasterRecord) => String(r.consignmentTypeNames ?? '') || '—',
 }
 
+/**
+ * "Load type" (LTL only · FTL only · LTL & FTL) — READ-ONLY here. staging's serviceType rows
+ * carry no such field, so it is not a form field (a POST would send an unknown key): a row that
+ * ever carries `loadType` shows it, every other row shows the prototype default for its code/name
+ * (draft.ts `defaultLoadType` — by service name: LTL/LCL → LTL only, FTL/FCL → FTL only, else LTL & FTL).
+ */
+const loadTypeColumn = {
+  key: 'loadType',
+  label: 'Load type',
+  render: (r: MasterRecord) => LOAD_TYPE_LABELS[parseLoadType(r.loadType)
+    ?? (SERVICE_TYPE_META[String(r.code ?? '')] ? loadTypeOf(String(r.code)) : loadTypeOf(String(r.name ?? '')))],
+}
+
 /** design-system tag editor for free-form value lists (Business Parameter) —
  * Enter/comma adds, Backspace removes the last, blur commits the rest */
 function TagInput({ value, readOnly, placeholder, onChange }: {
@@ -144,7 +158,7 @@ export const SERVICEORDER_MASTERS: Record<string, LiveMasterConfig> = {
     subtitle: 'Add various services offered by your carriers, this helps in setting up & managing serviceability',
     catPath: SVC,
     fetchRows: withConsignmentTypeNames('serviceType'),
-    columns: [...CODE_NAME_COLUMNS, consignmentTypesColumn],
+    columns: [...CODE_NAME_COLUMNS, consignmentTypesColumn, loadTypeColumn],
     fields: [
       { key: 'code', label: 'Service Code', type: 'text', required: true, placeholder: 'eg, SAME_DAY', section: 'Service Type Details' },
       { key: 'name', label: 'Service Type Name', type: 'text', required: true, placeholder: 'eg, Same Day', section: 'Service Type Details' },

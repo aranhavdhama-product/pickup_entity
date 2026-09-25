@@ -33,7 +33,7 @@ Merchant books for ready orders · merchant reserves a slot before orders exist 
 schedule from the consignment list (Merchant → Pickup Address → select → Schedule) · ops
 reserve from the Pickup page · auto-create on consignment (config, off by default) ·
 API / bulk upload · add to an existing request. Every path: request Requested, consignments
-Pickup Scheduled, visible on Pickup (Active), PFP (Pickups tab) and Grow.
+Pickup Scheduled, visible on Pickup (Active), PFP (First Mile tab) and Grow.
 
 **Several requests a day from one merchant:** policy per account (or per merchant):
 one open request per pickup point, one per slot (default — same slot merges, another slot
@@ -49,15 +49,22 @@ slot; after that the earliest slot is the next business day. Every booking dialo
 | Add consignments | until Planned | until Assigned with a note | never once Out for Pickup — extras become overages |
 | Remove one | yes | yes | an empty request fails as "No orders to collect" |
 | Switch fleet ↔ 3PL | — | yes | back to Requested, plan again |
+| Split | while it may change (until Planned) | Requested … Assigned, ≥ 2 consignments | the split-off request is Requested, never on a trip, never a Duplicate of its sibling |
+| Assign carrier / Add to route | — | Requested, or Planned with no trip; fleet only for a route; not while a slot confirmation is pending | on a trip → remove it from the route first |
+| Mark picked up / failed by hand | — | Assigned or Out for Pickup | a request nobody was sent for is rescheduled or cancelled instead |
+
+Every row above is enforced by one matrix (`src/growOrders/prActions.ts`): an action the status does not
+allow stays visible but disabled, with the reason ("Already out for pickup", "You can cancel until Planned
+— contact support"); in a multi-select it is enabled only when every selected request allows it.
 
 ## Planning: two paths, one request
-**Managed fleet:** PFP → Pickups → Plan Collection for Routing (routing engine) or
+**Managed fleet:** PFP → First Mile → Plan pickup request for routing (routing engine) or
 Pickup → Add to route (existing route/trip at that hub and date, or a new one) → Control
 Tower → Change Assignee → the trip appears on the driver's phone. A route with no driver
 is a trip in Un-assigned.
 **3PL:** Pickup → Assign carrier (or allocation rules) → booking sent, carrier reference
 stored → Carrier Portal lists it → carrier events move it; ops can override.
-Unplanned past the window = Overdue in the Exception tab.
+Unplanned past the window = Overdue in the Attention Required tab.
 
 ## Execution (driver)
 Start trip → every pickup on it is Out for Pickup (merchant sees it). At the stop: the
@@ -77,10 +84,15 @@ trip gets Attention Required, ops reassign.
 Overage and misroute always surface in Inbound's tabs.
 
 ## Exceptions live in one queue
-Exception tab = failed with attempts left (and until its re-attempt is done) · partially
-picked · discrepancy · overdue. Ops overrides (reason + audit): manually picked up,
+Attention Required tab (was "Exception") = failed with attempts left (and until its re-attempt is done) ·
+overdue. Completed requests never sit here (owner, 2026-09-25): a partial pick or a
+discrepancy stays flagged on the row and the request page under Closed. Ops overrides (reason + audit): manually picked up,
 manually failed, reschedule, cancel, re-attempt now, add to route, reassign, switch to
 3PL, close handover with a note.
+What a failure does next is the **Reason Policy** (owner, 2026-09-25): Settings → Pickup module →
+Pickup attempts links straight to Reason Master → Reason Policy, where each pickup failure reason is
+*Re-attempt pickup* (Before attempt N — the cap is set on the rule), *Hold for review* (stays failed, noted, in Attention Required)
+or *Cancel pickup*; a reason with no rule is held. Ops "Re-attempt now" still overrides it.
 
 ## Account switches (Settings → Base Modules → Pickup Request)
 **Pickup request mode** (two cards under the module switch): *Auto* raises a request the moment
@@ -90,7 +102,9 @@ Create Pickup button with an "Auto pickup · rule" pill; *Manual* keeps today's 
 Module on/off (turning it off hides only the pickup additions; every current page keeps
 working) · auto-create · handover scan mode · max attempts + auto re-attempt · reschedule
 window · merchant cancel until · add-to-existing until · proof of pickup · overage policy ·
-send to carriers · cutoffs, lead time, slots · multi-request policy · per-merchant rules.
+send to carriers · cutoffs, lead time, slots · multi-request policy · per-merchant rules ·
+**Pickup days follow** (merchant location preference, else hub calendar · hub operating days and
+holidays) — hub holidays come from the Holiday Master and always block.
 Driver-side switches also appear under Pilot Driver App settings.
 
 ## What the prototype shows (routes)
@@ -113,7 +127,7 @@ Start clean: LOCAL sidebar → Demos → **Reset demo data** (reseeds orders, re
 2. **Console** `/local/consignments` → Merchant 2GO Express → Pickup Address Cebu Mandaue Hub →
    select the two Created rows → Schedule → one card per destination hub → Schedule; rows read
    Pickup Scheduled with the new PR numbers.
-3. `/local/pickup` → Eligible for Pickup → select SO642491M → Add to existing → PR-000122 →
+3. `/local/pickup` → Eligible consignments (last tab) → select SO642491M → Add to existing pickup → PR-000122 →
    now 3 consignments. Open PR-000122 → Add to route → Manual → New trip, driver Jun Santos →
    PR Assigned on a new trip.
 4. `/local/control-tower` → that trip → Start Trip → stop Complete, untick one (2 of 3) →
@@ -122,8 +136,8 @@ Start clean: LOCAL sidebar → Demos → **Reset demo data** (reseeds orders, re
    reconciles and closes); UNKNOWN-0001 → held overage; a scan on a closed request (e.g.
    GR084982B, PR-000135) → "Already closed — logged". `/local/inbound` → Overage tab →
    Attach / Create / Reject.
-6. `/local/pickup` Exception tab → PR-000136 / PR-000129 failed with "Re-attempt · PR-000137 /
-   PR-000140"; PR-000134 Discrepancy → Close handover with a note → Handed Over.
+6. `/local/pickup` Attention Required tab → PR-000136 / PR-000129 failed with "Re-attempt · PR-000137 /
+   PR-000140"; Closed tab → PR-000134 Discrepancy → Close handover with a note → Handed Over.
 7. `/driver` → sign in as a driver with a Yet-to-start trip → Checklist → Loading → Start →
    pickup stop → scan / Not picked / Unable to pick up → Debrief.
 8. `/console/settings/base-modules` → Pickup Request → switches; toggle off and show
@@ -147,7 +161,9 @@ Proof-of-pickup capture is mocked.
   (the error still blocks a bad window).
 - Console PR detail = "Pickup outcome" (Booked · Picked · Not picked · Overage scans) with
   "+ Add shipments", per-row Remove, and the two-parent markers; Grow's card says the same.
-- Grow pickups page tabs = All · Active · Closed · Exception · Eligible for Pickup.
+- Pickup page tabs (2026-09-25) = All · Active · Closed · Attention Required · Eligible consignments
+  (Grow: a "Eligible consignments (n)" toggle); the Consignment Order pages also offer Schedule Pickup
+  and Add to existing pickup.
 - Audit + hardening: 14 gaps fixed by the audit, 16 decisions implemented (see spec §10).
 - "Reset demo data" sits at the bottom of the local sidebar — use it on demo morning.
 - I did not use the staging password anywhere (the signed-in tab was enough).

@@ -234,6 +234,11 @@ export const FIELDS: FieldDef[] = [
     consoleDefault: true, pickupDefault: 'Pickup Request',
     note: 'The Row Type column already carries this for pickups — keeping both means two cells saying the same thing.',
   }),
+  f({
+    key: 'activeLeg', label: 'Active Leg', group: 'Service', capability: 'both',
+    consoleDefault: true, pickupDefault: 'First Mile',
+    note: 'Owner addition (2026-09-24): the leg the consignment is on now — First Mile · Last Mile (no mid mile, owner 2026-09-25).',
+  }),
   f({ key: 'createdAt', label: 'Created At', group: 'Windows', capability: 'both', consoleDefault: true }),
   f({ key: 'ageing', label: 'Ageing (days)', group: 'Windows', capability: 'both', consoleDefault: true, align: 'right' }),
   f({
@@ -414,6 +419,7 @@ export const FILTERS: FilterDef[] = [
   { key: 'rowType', label: 'Row Type', consignment: 'yes', pickup: 'yes', placement: 'advanced', defaultVisible: true, isNew: true, note: 'The most-used control on a mixed list, and the escape hatch back to a consignments-only view.' },
   { key: 'destination', label: 'Destination', consignment: 'yes', pickup: 'yes', placement: 'advanced', defaultVisible: true },
   { key: 'orderType', label: 'Order Type', consignment: 'yes', pickup: 'partial', placement: 'advanced', defaultVisible: true },
+  { key: 'activeLeg', label: 'Active Leg', consignment: 'yes', pickup: 'yes', placement: 'visible', defaultVisible: true, isNew: true, note: 'The leg the row is on now; a pickup request is always First Mile.' },
   { key: 'merchant', label: 'Merchant', consignment: 'yes', pickup: 'yes', placement: 'advanced', defaultVisible: true },
   { key: 'facility', label: 'Facility', consignment: 'yes', pickup: 'partial', placement: 'advanced', defaultVisible: true },
   { key: 'sortCode', label: 'Sort Code', consignment: 'yes', pickup: 'no', placement: 'advanced', defaultVisible: true },

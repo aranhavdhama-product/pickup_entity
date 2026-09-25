@@ -1,0 +1,5 @@
+/* Same/Next Day Routing replica — staging's toolbar is one row beside its 69px rail;
+   beside this app's 256px rail it may wrap, the right-hand buttons keeping their order. */
+.pfp-filters:has(> .lr-toolbar) { flex-wrap: wrap; row-gap: 8px; }
+.pfp-filters:has(> .lr-toolbar) { height: auto; min-height: 32px; }
+.lc-page > .pfp-filters:has(> .lr-toolbar) + * { margin-top: 0; }

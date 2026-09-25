@@ -431,3 +431,30 @@
 /* a multi pill's checkbox rows, and the funnel panel's pills at full width */
 .pfp-pop-option input[type='checkbox'] { flex: none; accent-color: var(--pfp-brand); pointer-events: none; }
 .pfp-funnel-pop .pfp-pop-scroll > div { width: 100%; flex: none; }
+
+/* ------------------------------------------ one palette (owner, 2026-09-25) --- */
+
+/* Brand orange is an ACCENT (text, underline, count badge, checkbox), never a
+   background wash. These overrides apply to every non-PFP local page and to
+   chrome.tsx's own popovers (`data-lc-pop`) — the PFP replica keeps its measured
+   staging look, since it renders neither `.lc-page` nor `data-lc-pop`. A selected
+   pill / pressed control = ink border + warm-50 fill + ink bold text. */
+.lc-page .pfp-funnel { border-color: var(--color-warm-300); }
+.lc-page .pfp-funnel[data-active='true'],
+.lc-page .pfp-toggle[aria-pressed='true'],
+.lc-page .pfp-chip[aria-pressed='true'] {
+  border-color: var(--color-ink);
+  background: var(--color-warm-50);
+  color: var(--color-ink);
+  font-weight: 700;
+}
+.lc-page .pfp-chip[data-tone='danger'][aria-pressed='true'] {
+  border-color: var(--color-danger-fg);
+  background: var(--color-danger-bg);
+  color: var(--color-danger-fg);
+}
+.lc-page .pfp-pop-option[aria-selected='true'],
+.pfp-pop[data-lc-pop] .pfp-pop-option[aria-selected='true'] {
+  background: var(--color-warm-50);
+  color: var(--color-ink);
+}

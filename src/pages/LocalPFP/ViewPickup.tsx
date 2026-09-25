@@ -32,8 +32,10 @@ import {
 import { EmptyState, StatusPill } from '../../nueva/components'
 import { useGrowOrders } from '../../growOrders/store'
 import { cancelReasonLabel, failureReasonLabel } from '../../growOrders/pickupReasons'
-import { pickupRowType, toPickupRow } from './adapter'
+import { toPickupRow } from './adapter'
+import { prTypeLabel } from '../LocalPickup/prModel'
 import { fmtDateTime, pickupSummary, prOrders, prOutcomeWords } from '../GrowOrders/utils'
+import { ArrowRight } from './icons'
 import { Section } from './overlayBits'
 import { dash, stamp } from './overlayFormat'
 import { cssVars } from './stagingTokens'
@@ -82,6 +84,15 @@ function ViewPickupBody({ basePath }: { basePath: string }) {
   const pr = db.pickupRequests.find((p) => p.id === prId)
   const row = useMemo(() => (pr ? toPickupRow(pr, db) : null), [pr, db])
   const byId = useMemo(() => new Map(db.orders.map((o) => [o.id, o])), [db.orders])
+  /* owner, 2026-09-25: on Pending for Planning a booked order opens its
+     consignment overlay; pushed (not replaced), so Back returns here */
+  const inPfp = basePath.startsWith('/local/pending-for-planning')
+  const orderLink = (id: string, number: string) => (inPfp ? (
+    <button type="button" className="pfp-order pfp-orderlist-num" title={`View ${number}`}
+      onClick={() => nav(`${basePath}/${id}${search}`, { state: { fromPickup: true } })}>
+      <ArrowRight size={16} />{number}
+    </button>
+  ) : <span className="pfp-orderlist-num">{number}</span>)
 
   if (!pr || !row) {
     return (
@@ -125,7 +136,7 @@ function ViewPickupBody({ basePath }: { basePath: string }) {
           </button>
           <span className="pfp-overlay-title">{row.reference}</span>
           <span className="pfp-pill">{row.state}</span>
-          <span className="pfp-kindtag" data-tone="pickup">{pickupRowType(pr)}</span>
+          <span className="pfp-kindtag" data-tone="pickup">Pickup request</span>
           {row.overdue && <span className="pfp-kindtag" data-tone="danger">Overdue</span>}
           {/* from the Pickup page the full request page (actions, handover) is one click away */}
           {basePath === '/local/pickup' && (
@@ -170,7 +181,7 @@ function ViewPickupBody({ basePath }: { basePath: string }) {
                   )}
                   <Section title="Summary" pairs={[
                     ['Request Number', row.reference],
-                    ['Type', pickupRowType(pr)],
+                    ['Type', prTypeLabel(pr)],
                     ['Status', <StatusPill key="s" label={row.state} tone="info" />],
                     ['Secondary Status', dash(row.secondaryState)],
                     ['Merchant', row.merchant],
@@ -255,7 +266,7 @@ function ViewPickupBody({ basePath }: { basePath: string }) {
                           const picked = pr.pickedOrderIds.includes(o.id)
                           return (
                             <li key={o.id}>
-                              <span className="pfp-orderlist-num">{o.orderNumber}</span>
+                              {orderLink(o.id, o.orderNumber)}
                               <span className="pfp-orderlist-to">{o.receiver.name}</span>
                               <span className="pfp-kindtag" data-tone={picked ? 'ok' : undefined}>
                                 {picked ? 'Picked' : 'Not picked'}
@@ -279,7 +290,7 @@ function ViewPickupBody({ basePath }: { basePath: string }) {
                           const o = byId.get(id)
                           return (
                             <li key={id}>
-                              <span className="pfp-orderlist-num">{o?.orderNumber ?? id}</span>
+                              {o ? orderLink(o.id, o.orderNumber) : <span className="pfp-orderlist-num">{id}</span>}
                               <span className="pfp-orderlist-to">{o?.receiver.name ?? ''}</span>
                               <span className="pfp-kindtag" data-tone="warn">Picked here</span>
                             </li>

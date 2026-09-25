@@ -7,7 +7,8 @@
  * console's six status tabs (`LocalTabs`, below the filter line via the shared
  * `.lc-page` order rule, `?tab=` in the URL, "Add ▾ | upload" on the strip's
  * right) → Nueva `DataTable` with `selectionActions` → `Pagination` /
- * `PageSize` → a drawer (`?order=<id>`) in the console drawer's markup.
+ * `PageSize` → the console's View Consignment overlay (`?order=<id>`), merchant
+ * reading (`GrowConsignmentView`).
  *
  * Tabs follow the console's rules exactly: a row carrying an error sits ONLY in
  * Data Validation Issues; Undelivered → Exception; reverse / RTO → Returns;
@@ -22,7 +23,7 @@
  */
 import { useMasters } from '../../growOrders/masters'
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   AlertTriangle, ChevronDown, Download, Handshake, Package, Pencil, Printer, RotateCcw,
   Route as RouteIcon, ShieldAlert, Truck, Undo2, Upload, X,
@@ -32,13 +33,12 @@ import { usePickupModuleConfig } from '../../config/pickupModule'
 import { isOpenPr } from '../../growOrders/tabs'
 import { datePart } from '../../growOrders/datetime'
 import { planningActions, usePlanning } from '../LocalPFP/planningStore'
-import { FAREYE_PICKUP_SECONDARY, FAREYE_STATES, canSchedulePickup, downloadCsv } from '../LocalPFP/adapter'
-import { dash, stamp } from '../LocalPFP/overlayFormat'
-import { Section } from '../LocalPFP/overlayBits'
+import { canSchedulePickup, downloadCsv } from '../LocalPFP/adapter'
+import { PRIMARY_STATES, SECONDARY_STATES, matchesState, stateGroupOf } from '../LocalPFP/stateVocabulary'
 import { Download as DownloadGlyph } from '../LocalPFP/icons'
 import { toast } from '../../nueva/toast'
 import {
-  Button, DataTable, EmptyState, IconButton, PageSize, Pagination, Panel, StatusPill, Tabs,
+  Button, DataTable, EmptyState, IconButton, PageSize, Pagination, Panel,
   type SelectionAction,
 } from '../../nueva/components'
 import {
@@ -49,8 +49,9 @@ import { BulkUploadDialog } from './bulkUploadDialog'
 import { BookPickupDialog } from './pickupDialog'
 import { CONTACT_SUPPORT, merchantMayChange, usePortalMerchant } from './pickupGate'
 import { storeName } from './utils'
-import { DRAFT_SECONDARY, DRAFT_STATE, shipmentCsv, shipmentRowsOf, stateChipTone, type ShipmentRow } from './shipmentRows'
+import { DRAFT_SECONDARY, DRAFT_STATE, shipmentCsv, shipmentRowsOf, type ShipmentRow } from './shipmentRows'
 import { useShipmentColumns } from './shipmentTable'
+import GrowConsignmentView from './GrowConsignmentView'
 
 /* ------------------------------------------------------------------ tabs --- */
 
@@ -74,17 +75,13 @@ const tabIndexOf = (slug: string | null) => {
   return i < 0 ? 1 : i
 }
 
-const DRAWER_TABS = ['Details', 'SKU / Package', 'Tracking', 'Notes']
-
-/** The combined State / Secondary State list keeps one value space: `state:X` / `sec:Y`. */
-const ST = 'state:', SEC = 'sec:'
 const uniq = (xs: string[]) => [...new Set(xs.filter(Boolean))].sort()
 const plural = (n: number, w = 'shipment') => `${n} ${w}${n === 1 ? '' : 's'}`
 
 /* ------------------------------------------------------- the Add split ---- */
 
 /** Add ▾ — the console's primary, with the LTL / FTL choice in the caret's menu. */
-function AddSplit({ onAdd, onAddFtl }: { onAdd: () => void; onAddFtl: () => void }) {
+function AddSplit({ onAdd, onAddFtl }: { onAdd: () => void; onAddFtl?: () => void }) {
   const [open, setOpen] = useState(false)
   useEffect(() => {
     if (!open) return
@@ -108,7 +105,7 @@ function AddSplit({ onAdd, onAddFtl }: { onAdd: () => void; onAddFtl: () => void
       {open && (
         <div role="menu" className="absolute right-0 top-full z-40 mt-1.5 min-w-[196px] rounded-lg border border-line bg-surface py-1.5 shadow-ds-overlay">
           {item('Add consignment', onAdd)}
-          {item('Add FTL consignment', onAddFtl)}
+          {onAddFtl && item('Add FTL consignment', onAddFtl)}
         </div>
       )}
     </div>
@@ -154,14 +151,12 @@ export default function OrdersListPage() {
   const all = useMemo(() => shipmentRowsOf(db, plan), [db, plan])
   const inTab = useMemo(() => all.filter(TABS[tab].test), [all, tab])
   const tabCounts = useMemo(() => TABS.map((t) => all.filter(t.test).length), [all])
-  const { columns, chooser } = useShipmentColumns('grow-shipments-columns-v2', all)
+  const { columns, chooser } = useShipmentColumns('grow-shipments-columns-v3', all)
 
-  /* FarEye's own vocabulary, always the full list (spec §14) — plus Draft / Save
-     for later, the portal's one addition */
-  const stateOptions = useMemo(() => [
-    ...[...FAREYE_STATES, DRAFT_STATE].map((v) => ST + v),
-    ...[...FAREYE_PICKUP_SECONDARY, 'Out For Delivery', 'RTO Initiated', DRAFT_SECONDARY].map((v) => SEC + v),
-  ], [])
+  /* the ONE State/Secondary State list (shared with Pending for Planning and the
+     console Consignment Order page) — plus Draft / Save for later, the portal's
+     one addition, appended to their groups so a draft row stays filterable */
+  const stateOptions = useMemo(() => [...PRIMARY_STATES, DRAFT_STATE, ...SECONDARY_STATES, DRAFT_SECONDARY], [])
   const facilities = useMemo(() => uniq(all.map((r) => r.destination)), [all])
   /* the merchant's own pickup addresses: the store list, plus any origin a row carries */
   const origins = useMemo(() => uniq([...db.stores.map((s) => s.code), ...all.map((r) => r.shipFromCode ?? '')]), [db.stores, all])
@@ -180,12 +175,9 @@ export default function OrdersListPage() {
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase()
     const f = datePart(from), t = datePart(to)
-    const states = stateSel.filter((v) => v.startsWith(ST)).map((v) => v.slice(ST.length))
-    const secs = stateSel.filter((v) => v.startsWith(SEC)).map((v) => v.slice(SEC.length))
     const has = (k: string, v: string) => !adv[k]?.length || adv[k].includes(v)
     return inTab.filter((r) => {
-      if (states.length && !states.includes(r.state)) return false
-      if (secs.length && !secs.includes(r.secondaryState)) return false
+      if (!matchesState(stateSel, r.state, r.secondaryState)) return false
       if (origin && r.shipFromCode !== origin) return false
       const day = r.order.createdAt.slice(0, 10)
       if (f && day < f) return false
@@ -262,7 +254,6 @@ export default function OrdersListPage() {
     ]
   }
 
-  const drawerRow = drawerId ? all.find((r) => r.orderId === drawerId) ?? null : null
   const reset = (fn: () => void) => { fn(); setPage(1) }
 
   return (
@@ -277,8 +268,8 @@ export default function OrdersListPage() {
           </IconBtn>
         </>}>
         <DateRange start={from} end={to} onStart={(v) => reset(() => setFrom(v))} onEnd={(v) => reset(() => setTo(v))} />
-        <FilterMultiSelect values={stateSel} placeholder="State/Secondary State" width={190} options={stateOptions}
-          labels={(v) => v.slice(v.indexOf(':') + 1)} groupOf={(v) => (v.startsWith(ST) ? 'State' : 'Secondary State')}
+        <FilterMultiSelect values={stateSel} placeholder="State/Secondary State" width={200} options={stateOptions}
+          groupOf={(v) => (v === DRAFT_STATE ? 'State' : stateGroupOf(v))}
           onChange={(v) => reset(() => setStateSel(v))} />
         <FilterSelect value={origin} placeholder="Origin" options={origins} width={170}
           labels={(c) => storeName(c, db.stores)} searchable={origins.length > 6}
@@ -328,168 +319,8 @@ export default function OrdersListPage() {
         <BulkUploadDialog stores={db.stores} onClose={() => setBulkOpen(false)}
           onCreated={() => setBulkOpen(false)} />
       )}
-      {drawerId && <ShipmentDrawer row={drawerRow} onClose={() => setDrawer(null)} />}
+      {/* the console's View Consignment overlay, merchant reading — shared with /grow/orders/:id */}
+      {drawerId && <GrowConsignmentView orderId={drawerId} onClose={() => setDrawer(null)} />}
     </LocalPage>
-  )
-}
-
-/* ----------------------------------------------------------- the drawer ---- */
-
-const prLink = (id: string | null, number: string) => (id && number
-  ? <Link to={`/grow/orders/pickups/${id}`} className="font-mono text-brand-500 hover:underline">{number}</Link>
-  : '—')
-
-/** The console's consignment drawer (`LocalConsignments`), same markup, merchant links. */
-function ShipmentDrawer({ row, onClose }: { row: ShipmentRow | null; onClose: () => void }) {
-  const nav = useNavigate()
-  const plan = usePlanning()
-  const [tab, setTab] = useState(0)
-
-  const shell = (head: React.ReactNode, body: React.ReactNode, foot?: React.ReactNode) => (
-    <>
-      <div className="fixed inset-0 z-[60] bg-warm-900/40" onClick={onClose} />
-      <aside className="fixed inset-y-0 right-0 z-[61] flex w-[62%] min-w-[720px] flex-col bg-surface shadow-ds-overlay" role="dialog">
-        <header className="flex items-center gap-3 border-b border-line px-4 py-4">
-          {head}
-          <button onClick={onClose} className="ml-auto text-ink-3 hover:text-ink" aria-label="Close"><X size={18} /></button>
-        </header>
-        {body}
-        {foot && <footer className="flex items-center justify-end gap-2 border-t border-line px-4 py-3">{foot}</footer>}
-      </aside>
-    </>
-  )
-
-  if (!row) {
-    return shell(<span className="text-[16px] font-bold text-ink">Shipment</span>,
-      <div className="p-6"><EmptyState title="This shipment no longer exists." /></div>)
-  }
-
-  const o = row.order
-  const notes = plan.notes[row.orderId] ?? []
-
-  return shell(
-    <>
-      <span className="font-mono text-[16px] font-bold text-ink">{row.consignmentNumber}</span>
-      <StatusPill label={row.state} tone={stateChipTone(row.state)} />
-      {row.exception && <StatusPill label={row.exception} tone="danger" />}
-    </>,
-    <>
-      <div className="px-4"><Tabs tabs={DRAWER_TABS} active={tab} onChange={setTab} /></div>
-      <div className="flex-1 overflow-auto p-4">
-        <div className="flex flex-col gap-3">
-          {DRAWER_TABS[tab] === 'Details' && (
-            <>
-              <Section title="Shipment" pairs={[
-                ['Consignment Number', row.consignmentNumber],
-                ['Reference Number', row.referenceNumber],
-                ['Order Number', row.orderNumber],
-                ['Type', row.taskType],
-                ['State', row.state],
-                ['Secondary State', dash(row.secondaryState)],
-                ['Exception', dash(row.exception)],
-                ['Carrier', dash(row.carrier)],
-                ['Service Type', dash(row.serviceType)],
-                ['Created At', stamp(o.createdAt)],
-                ['Ageing', `${row.ageingDays} days`],
-              ]} />
-              <Section title="Ship From" pairs={[
-                ['Location', row.origin],
-                ['Code', dash(row.shipFromCode)],
-                ['Pickup Window', row.pickupWindow ? `${stamp(row.pickupWindow.start)} → ${stamp(row.pickupWindow.end)}` : '—'],
-                ['Pickup Request', prLink(o.pickupRequestId, row.pickupRequestNumber)],
-                ['Picked In', prLink(o.pickedInRequestId, row.pickedInNumber)],
-              ]} />
-              <Section title="Ship To" pairs={[
-                ['Name', dash(row.shipToName)],
-                ['Address', dash(row.address)],
-                ['City', dash(row.shipToCity)],
-                ['Pin Code', dash(row.shipToPincode)],
-                ['Destination Hub', dash(row.destination)],
-                ['Delivery Window', row.deliveryWindow ? `${stamp(row.deliveryWindow.start)} → ${stamp(row.deliveryWindow.end)}` : '—'],
-              ]} />
-            </>
-          )}
-
-          {DRAWER_TABS[tab] === 'SKU / Package' && (
-            <>
-              <Section title="Package" pairs={[
-                ['Kind', o.shipmentType === 'FTL' ? 'FTL' : `LTL · ${o.pkg.kind}`],
-                ['Package Type', dash(o.pkg.packageType)],
-                ['Pieces', String(row.pieces)],
-                ['Weight', `${row.weightKg} kg`],
-                ['Volume', `${row.volumeMm3.toLocaleString()} mm³`],
-                ['Pallet Spaces', String(row.palletSpaces ?? 1)],
-                ['Dimensions', `${o.pkg.lengthCm} × ${o.pkg.widthCm} × ${o.pkg.heightCm} cm`],
-                ['Description', dash(o.pkg.description)],
-                ['Declared Value', `${o.currency} ${o.pkg.declaredValue.toLocaleString()}`],
-              ]} />
-              {(o.pkg.items?.length ?? 0) > 0 && (
-                <Panel title={`SKU (${o.pkg.items!.length})`}>
-                  <table className="w-full table-fixed text-[13px]">
-                    <thead><tr className="border-b border-line bg-warm-25">
-                      {['SKU', 'Name', 'Qty', 'Weight'].map((h) => <th key={h} className="px-5 py-2.5 text-left font-bold text-ink">{h}</th>)}
-                    </tr></thead>
-                    <tbody>
-                      {o.pkg.items!.map((it, i) => (
-                        <tr key={i} className="border-b border-line last:border-0">
-                          <td className="truncate px-5 py-2.5 font-mono text-[12px] text-ink-2">{dash(it.skuCode)}</td>
-                          <td className="truncate px-5 py-2.5 text-ink-2">{it.name}</td>
-                          <td className="px-5 py-2.5 text-ink-2">{it.quantity}</td>
-                          <td className="px-5 py-2.5 text-ink-2">{it.weightKg} kg</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </Panel>
-              )}
-            </>
-          )}
-
-          {DRAWER_TABS[tab] === 'Tracking' && (
-            row.shipments.length === 0
-              ? <EmptyState title="No packages tracked yet" />
-              : (
-                <Panel title={`Packages (${row.shipments.length})`}>
-                  <div className="px-5 pb-4">
-                    {row.shipments.map((s) => (
-                      <div key={s.id} className="flex items-center gap-3 border-b border-line py-2 text-[13px] last:border-0">
-                        <span className="font-mono font-bold text-ink">{s.trackingNumber}</span>
-                        <span className="ml-auto text-ink-3">{s.outcome ?? (row.draft ? 'Not submitted' : row.state)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </Panel>
-              )
-          )}
-
-          {DRAWER_TABS[tab] === 'Notes' && (
-            notes.length === 0 && !o.remarks
-              ? <EmptyState title="No notes" hint="Special instructions and notes on this shipment appear here." />
-              : (
-                <Panel title="Notes">
-                  <div className="px-5 pb-4">
-                    {o.remarks && (
-                      <div className="border-b border-line py-2 last:border-0">
-                        <p className="text-[13px] text-ink">{o.remarks}</p>
-                        <p className="text-[11.5px] text-ink-3">Special instructions</p>
-                      </div>
-                    )}
-                    {notes.map((n, i) => (
-                      <div key={i} className="border-b border-line py-2 last:border-0">
-                        <p className="text-[13px] text-ink">{n.text}</p>
-                        <p className="text-[11.5px] text-ink-3">{stamp(n.at)}</p>
-                      </div>
-                    ))}
-                  </div>
-                </Panel>
-              )
-          )}
-        </div>
-      </div>
-    </>,
-    <>
-      <Button variant="outline" onClick={() => nav(`/grow/orders/${row.orderId}`)}>Open full page</Button>
-      {row.draft && <Button icon={<Pencil size={14} />} onClick={() => nav(`/grow/orders/add?draft=${row.orderId}`)}>Resume</Button>}
-    </>,
   )
 }

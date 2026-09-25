@@ -13,14 +13,16 @@
  * what the pixel diff for that route is measured against.
  */
 import { useLocation } from 'react-router-dom'
+import { pickupPagesVisible, usePickupModuleConfig } from '../config/pickupModule'
 import {
-  CalendarClock, FileClock, Package, Radar, RotateCcw, Settings, Smartphone, Store, Truck,
+  CalendarClock, FileClock, Package, Radar, RotateCcw, Route, Settings, Smartphone, Store, Truck,
   Warehouse,
 } from 'lucide-react'
 import { ShellRowBody, ShellSidebar, type ShellNavItem } from './shell'
 import { shellRowClass } from './shellClasses'
 import { growOrderActions } from '../growOrders/store'
 import { planningActions } from '../pages/LocalPFP/planningStore'
+import { routingPlanActions } from '../pages/LocalRouting/routingPlans'
 
 interface LocalNavItem extends ShellNavItem {
   path: string
@@ -45,16 +47,12 @@ const LOCAL_NAV: LocalNavItem[] = [
     path: '/local/pending-for-planning',
     owns: '/local/pending-for-planning',
   },
-  /* the faithful STAGING replica of the same page — same icon, muted suffix */
-  {
-    id: 'pending-for-planning-replica',
-    label: 'Pending for Planning',
-    suffix: 'replica',
-    icon: CalendarClock,
-    path: '/local/pending-for-planning-replica',
-    owns: '/local/pending-for-planning-replica',
-  },
+  /* the -replica route stays for the pixel-diff tooling but is not in the rail
+     (owner, 2026-09-24): ONE Pending for Planning, whose look follows the module */
+  /* owner, 2026-09-25: Pickup sits ABOVE Routing */
   { id: 'pickup', label: 'Pickup', icon: Truck, path: '/local/pickup', owns: '/local/pickup' },
+  /* Same/Next Day Routing (staging Route → Same/Next Day Routing) + its Vehicle Config */
+  { id: 'routing', label: 'Routing', icon: Route, path: '/local/routing', owns: '/local/routing' },
   { id: 'control-tower', label: 'Control Tower', icon: Radar, path: '/local/control-tower', owns: '/local/control-tower' },
   { id: 'inbound', label: 'Inbound', icon: Warehouse, path: '/local/inbound', owns: '/local/inbound' },
   /* Settings landing: Column configuration (/local/columns) + Pickup Request */
@@ -76,21 +74,26 @@ const DEMO_LINKS = [
 function resetDemoData() {
   growOrderActions.reset()
   planningActions.reset()
+  /* plans reference trip ids, which a reseed hands out again — drop them too */
+  routingPlanActions.reset()
   window.location.reload()
 }
 
 export default function LocalSidebar() {
   const { pathname } = useLocation()
+  /* owner, 2026-09-24: with the pickup module OFF there is no Pickup page in the rail */
+  const pickupOn = pickupPagesVisible(usePickupModuleConfig())
+  const items = pickupOn ? LOCAL_NAV : LOCAL_NAV.filter((i) => i.id !== 'pickup')
 
   const activeId = LOCAL_NAV.find((i) =>
     pathname === i.path || (i.owns && pathname.startsWith(i.owns + '/'))
     || i.also?.some((a) => pathname === a || pathname.startsWith(a + '/')))?.id ?? ''
 
   return (
-    <ShellSidebar items={LOCAL_NAV} activeId={activeId} footer={(collapsed) => (
+    <ShellSidebar items={items} activeId={activeId} footer={(collapsed) => (
       <>
         {!collapsed && (
-          <p className="px-5 pb-1 pt-1 text-[10.5px] font-bold uppercase tracking-wide text-gray-400">Demos</p>
+          <p className="px-5 pb-1 pt-1 text-[11px] font-bold uppercase tracking-wide text-ink-3">Demos</p>
         )}
         {DEMO_LINKS.map(({ href, label, icon }) => (
           <a key={href} href={href} target="_blank" rel="noreferrer" title={label} aria-label={label}

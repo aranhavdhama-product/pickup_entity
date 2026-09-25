@@ -24,8 +24,8 @@ focus. Note FarEye uses orange sparingly — most buttons are neutral white.
 
 | Token | Hex | Use |
 |-------|-----|-----|
-| brand-50  | `#FFF3F1` | active-page/tab tint, selected-row tint |
-| brand-100 | `#FDE3DE` | hover tint |
+| brand-50  | `#FFF3F1` | NOT a highlight fill (owner, 2026-09-25) — legacy hover on outline buttons only; selected rows / cards / pills / nav rows use `warm-50` |
+| brand-100 | `#FDE3DE` | — (no background washes) |
 | brand-200 | `#FAC3B9` | borders on tinted elements |
 | brand-300 | `#F69C8C` | — |
 | brand-400 | `#F27462` | — |
@@ -130,6 +130,17 @@ same shell (chevron/calendar on the right). States: default · focused · disabl
 Full-round (pill), soft tint, ~11.5px text. The vocabulary of shipment state:
 Created · Label Generated · At Facility · Driver Assigned For Delivery ·
 Exception · Failed · Closed · Delivered. Tint by semantic group above.
+Colourful, but ONLY through Nueva `StatusPill` tones (success · info · warning · danger · neutral);
+no hand-rolled chip colours, and the same status reads the same tone on every page —
+`stateTone` (consignment state) and `prModel.PR_STATUS_TONE` (pickup request) are the sources.
+
+### Orange is an accent, never a wash (owner, 2026-09-25)
+Brand orange marks: the primary button, link text, the active tab underline, the
+active nav item's TEXT + 3px bar, focus rings, checkbox/radio accents, count badges.
+It is NOT a background: a selected row → `warm-50` (hover `warm-100`); a selected
+card / pill / segment → `border-ink` + `warm-50` + bold ink text (optionally a check);
+an info banner → the info pair. Every colour is a token — no Tailwind palette
+classes (`gray-*`, `slate-*`, `emerald-*` …) and no hex in TSX.
 
 ### Checkbox
 14px box, 3px radius, **orange-500 when checked** (white check). Unchecked = hairline border.
@@ -137,10 +148,10 @@ Exception · Failed · Closed · Delivered. Tint by semantic group above.
 ### Tabs & pagination
 - **Tabs:** active tab is an **orange underline** with an inline count
   (e.g. `Active : 1411   Closed : 33   All : 1446`). Inactive = neutral text.
-- **Pagination:** current page = **filled orange circle**; `‹ 1 2 3 … 73 ›`.
+- **Pagination:** current page = **warm-50 box, warm-400 border, bold ink text**; `‹ 1 2 3 … 73 ›`.
 
 ### Sidebar nav
-Active item: **orange-50 fill, orange text, 3px orange accent bar** on the left.
+Active item: **warm-50 fill, orange text, 3px orange accent bar** on the left (no orange fill).
 Icon + label rows; inactive rows are neutral-600 text. Section group headers in
 small muted uppercase (e.g. *Platform · Ship · Execute · Experience*).
 
@@ -153,7 +164,7 @@ The heart of the console:
 - **Sticky 700-weight headers**, neutral text.
 - **Hairline row separators** (neutral-200), no vertical grid lines.
 - **Monospace IDs**; right-aligned tabular numbers for quantities/weights.
-- Faint **warm tint on hover**; **orange-50 tint on selected rows**.
+- Faint **warm tint on hover**; **warm-50 on selected rows** (hover warm-100) — the brand checkbox marks the selection, never an orange row wash.
 - Leading **checkbox column** for multi-select.
 - Status rendered as a pill in its own column.
 

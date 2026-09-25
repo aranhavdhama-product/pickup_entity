@@ -8,7 +8,7 @@ import type { GrowPickupRequest, PickupRequestStatus } from '../../growOrders/ty
 import { isHandedOver } from '../../growOrders/tabs'
 import { PR_STATUS_TONE, type Tone } from '../LocalPickup/prModel'
 import { PARTIALLY_PICKED, prOutcomeLabel, prOutcomeWords } from './utils'
-import { collectorLine, isInTransitToHub } from './pickupGate'
+import { isInTransitToHub } from './pickupGate'
 
 /** The one status whose full name cannot fit a pill in a narrow column. */
 const SHORT_STATUS: Partial<Record<PickupRequestStatus, string>> = {
@@ -21,16 +21,24 @@ const SHORT_STATUS: Partial<Record<PickupRequestStatus, string>> = {
  * than a green `Completed`, and any overage scans hang a small `+n` badge off
  * the pill. The full numbers are on the tooltip.
  */
-export function PrStatusChip({ p, short = false }: { p: GrowPickupRequest; short?: boolean }) {
+export function PrStatusChip({ p, short = false, flags = [] }: {
+  p: GrowPickupRequest
+  short?: boolean
+  /** extra pills after the status — the merchant's Overdue · Duplicate · Re-attempt (never Discrepancy) */
+  flags?: { label: string; tone: Tone }[]
+}) {
   const label = prOutcomeLabel(p)
   const partial = label === PARTIALLY_PICKED
   const tone: Tone = partial ? 'warning' : PR_STATUS_TONE[p.status]
   const text = partial ? label : (short && SHORT_STATUS[p.status]) || label
   const n = p.overages.length
+  /* owner, 2026-09-25: ONE status chip per row — the flags (Overdue · Duplicate ·
+     Re-attempt …) and an overage count live in the tooltip and on the request page */
+  const extra = [...flags.map((f) => f.label), ...(n > 0 ? [`${n} overage scan${n === 1 ? '' : 's'}`] : [])]
+  const title = [prOutcomeWords(p) || p.status, ...extra].join(' · ')
   return (
-    <span className="inline-flex min-w-0 items-center gap-1" title={prOutcomeWords(p) || p.status}>
+    <span className="inline-flex min-w-0 items-center" title={title}>
       <StatusPill label={text} tone={tone} />
-      {n > 0 && <StatusPill label={`+${n}`} tone="danger" />}
     </span>
   )
 }
@@ -43,7 +51,9 @@ export function PrStatusChip({ p, short = false }: { p: GrowPickupRequest; short
 export function PrExecutionLine({ p }: { p: GrowPickupRequest }) {
   if (isHandedOver(p)) return <span className="mt-0.5 flex"><StatusPill label="Handed Over" tone="success" /></span>
   if (isInTransitToHub(p)) return <span className="mt-0.5 block truncate text-[12px] text-ink-3">In transit to hub</span>
-  const who = p.status === 'Out For Pickup' ? collectorLine(p) : null
+  /* the merchant sees a 3PL's name, never the fleet driver's */
+  const who = p.status !== 'Out For Pickup' ? null
+    : p.carrierMode === 'CARRIER' && p.carrierName ? `${p.carrierName} (carrier)` : 'Driver on the way'
   return who ? <span className="mt-0.5 block truncate text-[12px] text-ink-3" title={who}>{who}</span> : null
 }
 

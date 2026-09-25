@@ -36,9 +36,9 @@ export const cutoffRuleLine = (policy: PickupPolicy) => `Same-day pickup closes 
  * Why a RESCHEDULE window is refused: the booking cutoff / lead time first,
  * then the `rescheduleWindowDays` horizon (measured on the start date).
  */
-export function rescheduleError(startAt: string, now: Date, policy: PickupPolicy, cfg: PickupModuleConfig): string | null {
+export function rescheduleError(startAt: string, now: Date, policy: PickupPolicy, cfg: PickupModuleConfig, endAt?: string): string | null {
   if (!startAt) return null
-  const cut = violatesCutoff(startAt, now, policy)
+  const cut = violatesCutoff(startAt, now, policy, endAt)
   if (cut) return cut
   const limit = new Date(now.getFullYear(), now.getMonth(), now.getDate() + cfg.rescheduleWindowDays)
   const lastDay = localIso(limit).slice(0, 10)

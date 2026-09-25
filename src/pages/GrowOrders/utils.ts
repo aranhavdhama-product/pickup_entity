@@ -8,10 +8,12 @@ import {
   nextHalfHourAt, rangesOverlap, type DisplayStatus,
 } from '../../growOrders/tabs'
 import { hubName } from '../../growOrders/hubs'
+import { pickupPointKey, splitSiblings } from '../../growOrders/prActions'
 import { masterStoreLocations } from '../../growOrders/masters'
+import { PR_STATUS_TONE as CONSOLE_PR_STATUS_TONE } from '../LocalPickup/prModel'
 
 /** The status vocabulary's tone (kept for callers); render it with `pillTone` → Nueva StatusPill. */
-export type ChipTone = 'success' | 'info' | 'warning' | 'error' | 'primary' | 'neutral'
+export type ChipTone = 'success' | 'info' | 'warning' | 'error' | 'danger' | 'primary' | 'neutral'
 export type PillTone = 'success' | 'info' | 'warning' | 'danger' | 'neutral'
 export const pillTone = (t: ChipTone): PillTone =>
   t === 'error' ? 'danger' : t === 'primary' ? 'info' : t
@@ -88,27 +90,26 @@ export function useSelectionAnchor(
 }
 
 /**
- * Tone for the ONE status vocabulary the merchant sees (`displayStatus`). The
+ * Tone for the ONE status vocabulary the merchant sees (`displayStatus`). Kept in
+ * step with the console's `stateTone` (LocalPFP/adapter): Created neutral, in
+ * flight info, Out for Delivery warning, Delivered success, Undelivered AND
+ * Cancelled danger (owner, 2026-09-25: the same status reads the same tone). The
  * raw-status map below it is kept for the places that still render a platform
  * status, such as the pickup request's own order table.
  */
 export const DISPLAY_TONE: Record<DisplayStatus, ChipTone> = {
   Draft: 'neutral', 'Ready for Pickup': 'info', 'Pickup Scheduled': 'info',
   'Picked Up': 'primary', 'In Transit': 'primary', 'Out for Delivery': 'warning',
-  Delivered: 'success', Undelivered: 'error', Cancelled: 'neutral',
+  Delivered: 'success', Undelivered: 'error', Cancelled: 'error',
 }
 
 export const STATUS_TONE: Record<OrderStatus, ChipTone> = {
-  'Order Created': 'success', 'Pickup Scheduled': 'info', 'Picked Up': 'info', 'In Transit': 'primary',
-  'Out for Delivery': 'warning', Delivered: 'success', Undelivered: 'error', Cancelled: 'neutral',
+  'Order Created': 'neutral', 'Pickup Scheduled': 'info', 'Picked Up': 'info', 'In Transit': 'primary',
+  'Out for Delivery': 'warning', Delivered: 'success', Undelivered: 'error', Cancelled: 'error',
 }
 
-/** Chip has six tones and the flow has eight states, so tones deliberately repeat. */
-export const PR_STATUS_TONE: Record<PickupRequestStatus, ChipTone> = {
-  Requested: 'neutral', Planned: 'info', 'Ready For Last Mile Dispatch': 'info',
-  Assigned: 'primary', 'Out For Pickup': 'warning', Completed: 'success',
-  'Pickup Failed': 'error', Cancelled: 'neutral',
-}
+/** The console's pickup-request tones (`LocalPickup/prModel`), the ONE source for both portals. */
+export const PR_STATUS_TONE: Record<PickupRequestStatus, ChipTone> = CONSOLE_PR_STATUS_TONE
 
 /** 'YYYY-MM-DD' → 'DD/MM/YYYY' (pickup dates are plain dates, not ISO timestamps). */
 export const fmtDay = (d: string) => (d ? d.split('-').reverse().join('/') : '-')
@@ -342,15 +343,14 @@ export const prReconciled = (p: GrowPickupRequest) => p.status === 'Completed' |
 
 /** The key two requests must share to be the same van turning up twice: the
  *  pickup POINT, which is the typed-in collection address when there is one. */
-const pointKey = (p: GrowPickupRequest) =>
-  `${p.storeCode}|${(p.shipFrom?.line1 ?? '').trim().toLowerCase()}`
+const pointKey = pickupPointKey
 
 /** Ids of OPEN requests whose window OVERLAPS another open request at the same pickup point. */
 export function prDuplicateIds(requests: GrowPickupRequest[]): Set<string> {
   const open = requests.filter((p) => isOpenPr(p.status))
   const dup = new Set<string>()
   open.forEach((a, i) => open.slice(i + 1).forEach((b) => {
-    if (pointKey(a) !== pointKey(b)) return
+    if (pointKey(a) !== pointKey(b) || splitSiblings(a, b)) return
     if (rangesOverlap(a.startAt, a.endAt, b.startAt, b.endAt)) { dup.add(a.id); dup.add(b.id) }
   }))
   return dup
@@ -500,10 +500,10 @@ export function prStatusLabels(p: GrowPickupRequest): string[] {
   return out
 }
 
-/** The Exception dimension's values, in the order the grid shows them. */
+/** The Attention Required filter's values (owner, 2026-09-25 — was "Exception"). */
 export const PR_EXCEPTIONS = ['Overdue', 'Discrepancy', 'Duplicate', 'Re-attempt available'] as const
 
-/** What needs the merchant's attention on a request (the Exception column). */
+/** What needs the merchant's attention on a request (the Attention Required filter). */
 export function prExceptionFlags(p: GrowPickupRequest, dupes: ReadonlySet<string>, now = Date.now()): string[] {
   const out: string[] = []
   if (prOverdue(p, now)) out.push('Overdue')

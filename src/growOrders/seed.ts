@@ -76,7 +76,7 @@ function draftOf(store: StoreLocation, receiver: Party, parcels: Parcel[]): Orde
     storeCode: store.code, sender: store.party, receiver, drops: [], shipmentType: 'Parcel', vehicleType: '',
     vehicleUnit: 1, actualLoad: 0, additionalServices: [], parcels,
     authority: 'Leave at the door', instructions: '', secure: false,
-    service: 'Standard Delivery', rate: 90, etaDays: 2,
+    service: 'Standard', rate: 90, etaDays: 2,
   }
 }
 
@@ -232,7 +232,7 @@ function genOrder(n: number, storeCode: string, hub: string, o: Partial<GrowOrde
     codAmount: cod ? 400 + spin(n, 60, 19) * 50 : 0,
     currency: CURRENCY,
     carrier: ftl ? '2GO Logistics' : '2GO Express',
-    serviceType: ftl ? 'Inland FTL' : 'Standard Delivery',
+    serviceType: ftl ? 'Inland FTL' : 'Standard',
     trackingNumber: '', pickupDate: '', remarks: '',
     /* a few free shipper tags, from index math like everything else here */
     tags: n % 7 === 3 ? ['Priority'] : n % 9 === 4 ? ['Gift wrap', 'Call before delivery'] : [],
@@ -559,7 +559,7 @@ export function seed(): GrowOrdersDb {
   const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString()
   const autoOrder = (i: number, store: StoreLocation, prId: string, o: Partial<GrowOrder>): GrowOrder => order(i, {
     storeCode: store.code, sender: store.party, status: 'Pickup Scheduled', pickupRequestId: prId, pickupDate: autoDate,
-    carrier: '2GO Express', serviceType: 'Standard Delivery', ...o,
+    carrier: '2GO Express', serviceType: 'Standard', ...o,
   })
   const autoOrders: GrowOrder[] = [
     autoOrder(60, cebu, 'pr141', { orderNumber: 'AUTO1K7AUTO01', createdAt: minutesAgo(4), receiver: RCV[2], inboundHubCode: 'MNL-01', trackingNumber: '2GO00141',
@@ -583,13 +583,13 @@ export function seed(): GrowOrdersDb {
     order(2, { orderNumber: 'OMXH4GONRY1LS', inboundHubCode: 'MNL-01', error: 'Address line 1 is required' }),
     order(3, { orderNumber: '25X7RK25XI0G', inboundHubCode: 'MNL-01', error: 'Pincode 5000 not serviceable',
       pkg: { kind: 'Parcel', count: 2, weightKg: 4, lengthCm: 40, widthCm: 30, heightCm: 20, description: 'Office supplies', declaredValue: 3400 } }),
-    order(7, { orderNumber: '7ZSIX87ZT1LS', inboundHubCode: 'CEB-01', carrier: '2GO Express', serviceType: 'Standard Delivery',
+    order(7, { orderNumber: '7ZSIX87ZT1LS', inboundHubCode: 'CEB-01', carrier: '2GO Express', serviceType: 'Standard',
       pkg: { kind: 'Document', count: 1, weightKg: 0.2, lengthCm: 32, widthCm: 24, heightCm: 1, description: 'Signed contracts', declaredValue: 0 } }),
 
     /* Pickup Scheduled — o4 inside PR-000101 (San Pablo, tomorrow 09:00–13:00); o9 on its own FTL PR-000138 */
     /* a parcel request drops at ONE inbound hub — o4 and o41 both go to MNL-01 */
     order(4, { orderNumber: 'SB9DLCSB9OO0', status: 'Pickup Scheduled', storeCode: sanPablo.code, sender: sanPablo.party,
-      inboundHubCode: 'MNL-01', pickupRequestId: PR_ID, pickupDate, carrier: '2GO Express', serviceType: 'Standard Delivery', trackingNumber: 'TEST_0014' }),
+      inboundHubCode: 'MNL-01', pickupRequestId: PR_ID, pickupDate, carrier: '2GO Express', serviceType: 'Standard', trackingNumber: 'TEST_0014' }),
     order(9, { orderNumber: 'FTL7Q2FTL9KD', status: 'Pickup Scheduled', shipmentType: 'FTL', vehicleType: '8 Ton Truck', drops: [RCV[2], RCV[4]],
       vehicleUnit: 2, actualLoad: 6400,
       vehicles: [{ vehicleType: '8 Ton Truck', actualLoadKg: 4000, addressIdx: [0, 1] }, { vehicleType: '4 Ton Truck', actualLoadKg: 2400, addressIdx: [2] }],
@@ -607,19 +607,19 @@ export function seed(): GrowOrdersDb {
        Pending For Planning queue. */
     order(40, { orderNumber: 'RTN9A1RTNLM1', orderType: 'Reverse Order',
       storeCode: sanPablo.code, sender: sanPablo.party, inboundHubCode: 'MNL-01',
-      carrier: '2GO Express', serviceType: 'Standard Delivery',
+      carrier: '2GO Express', serviceType: 'Standard',
       pkg: { kind: 'Parcel', count: 1, weightKg: 1.8, lengthCm: 28, widthCm: 20, heightCm: 12, description: 'Returned handset', declaredValue: 18500 },
       remarks: 'Customer return — wrong model shipped.' }),
     order(41, { orderNumber: 'RTN4B7RTNFM2', orderType: 'Reverse Order', status: 'Pickup Scheduled',
       storeCode: sanPablo.code, sender: sanPablo.party, inboundHubCode: 'MNL-01',
-      pickupRequestId: PR_ID, pickupDate, carrier: '2GO Express', serviceType: 'Standard Delivery',
+      pickupRequestId: PR_ID, pickupDate, carrier: '2GO Express', serviceType: 'Standard',
       pkg: { kind: 'Parcel', count: 2, weightKg: 3.6, lengthCm: 36, widthCm: 26, heightCm: 18, description: 'Returned apparel', declaredValue: 4200 },
       remarks: 'Customer return — size exchange, collected with the San Pablo run.' }),
 
     /* In flight / closed */
-    order(5, { orderNumber: 'SHPLC0SHPUHC', status: 'In Transit', carrier: '2GO Express', serviceType: 'Standard Delivery', trackingNumber: 'TEST_0015', paymentMode: 'COD', codAmount: 1850 }),
-    order(6, { orderNumber: '1X2KQ81X2S55', status: 'Delivered', carrier: '2GO Express', serviceType: 'Standard Delivery', trackingNumber: '2GO00080' }),
-    order(8, { orderNumber: 'QW3ERTQW3E88', status: 'Undelivered', carrier: '2GO Express', serviceType: 'Standard Delivery', trackingNumber: '2GO00082', paymentMode: 'COD', codAmount: 640 }),
+    order(5, { orderNumber: 'SHPLC0SHPUHC', status: 'In Transit', carrier: '2GO Express', serviceType: 'Standard', trackingNumber: 'TEST_0015', paymentMode: 'COD', codAmount: 1850 }),
+    order(6, { orderNumber: '1X2KQ81X2S55', status: 'Delivered', carrier: '2GO Express', serviceType: 'Standard', trackingNumber: '2GO00080' }),
+    order(8, { orderNumber: 'QW3ERTQW3E88', status: 'Undelivered', carrier: '2GO Express', serviceType: 'Standard', trackingNumber: '2GO00082', paymentMode: 'COD', codAmount: 640 }),
 
     /* ---- orders behind the other seeded pickup requests (so every row has weight) ---- */
     prOrder(10, 'MNL-01', { orderNumber: 'MNL5K2MNLA01', pickupRequestId: 'pr102', pickupDate: daysFromNow(1),
@@ -639,7 +639,7 @@ export function seed(): GrowOrdersDb {
     prOrder(17, 'CEB-01', { orderNumber: 'CEB3M6CEBP08', inboundHubCode: 'SANPABLO', pickupRequestId: 'pr106', pickupDate: daysFromNow(0), paymentMode: 'COD', codAmount: 2400,
       pkg: { kind: 'Parcel', count: 1, weightKg: 1.9, lengthCm: 22, widthCm: 18, heightCm: 14, description: 'Headphones', declaredValue: 2400 } }),
     prOrder(18, 'SANPABLO', { orderNumber: 'SNP4C2SNPD09', status: 'Picked Up', pickupRequestId: 'pr107', pickupDate: daysFromNow(-3),
-      carrier: '2GO Express', serviceType: 'Standard Delivery', trackingNumber: '2GO00091',
+      carrier: '2GO Express', serviceType: 'Standard', trackingNumber: '2GO00091',
       pkg: { kind: 'Parcel', count: 5, weightKg: 9.7, lengthCm: 45, widthCm: 35, heightCm: 30, description: 'Gift hampers', declaredValue: 6600 } }),
     /* released by a failed request, but still listed on it */
     prOrder(19, 'MNL-01', { orderNumber: 'MNL2Z7MNLA10', status: 'Order Created', pickupRequestId: null, inboundHubCode: 'CEB-01',
@@ -650,32 +650,32 @@ export function seed(): GrowOrdersDb {
 
     /* ---- PR-000107, the RECONCILED handover: 4 booked, 3 of them collected ---- */
     prOrder(29, 'SANPABLO', { orderNumber: 'SNP4C2SNPD16', status: 'Picked Up', inboundHubCode: 'SANPABLO', pickupRequestId: 'pr107', pickupDate: daysFromNow(-3),
-      carrier: '2GO Express', serviceType: 'Standard Delivery', trackingNumber: '2GO00092',
+      carrier: '2GO Express', serviceType: 'Standard', trackingNumber: '2GO00092',
       pkg: { kind: 'Parcel', count: 2, weightKg: 3.5, lengthCm: 34, widthCm: 26, heightCm: 20, description: 'Apparel restock', declaredValue: 2900 } }),
     /* LEFT BEHIND — never collected, so completion released it back to Ready for
        Pickup (spec E8); PR-000107's orderIds still records that it was expected */
     prOrder(30, 'SANPABLO', { orderNumber: 'SNP4C2SNPD17', status: 'Order Created', pickupRequestId: null, pickupDate: '',
-      carrier: '2GO Express', serviceType: 'Standard Delivery',
+      carrier: '2GO Express', serviceType: 'Standard',
       pkg: { kind: 'Parcel', count: 1, weightKg: 2.8, lengthCm: 30, widthCm: 22, heightCm: 18, description: 'Coffee beans', declaredValue: 1800 } }),
     prOrder(31, 'SANPABLO', { orderNumber: 'SNP4C2SNPD18', status: 'Picked Up', pickupRequestId: 'pr107', pickupDate: daysFromNow(-3),
-      carrier: '2GO Express', serviceType: 'Standard Delivery', trackingNumber: '2GO00093',
+      carrier: '2GO Express', serviceType: 'Standard', trackingNumber: '2GO00093',
       pkg: { kind: 'Parcel', count: 3, weightKg: 5.2, lengthCm: 40, widthCm: 30, heightCm: 24, description: 'Home decor', declaredValue: 4100 } }),
     /* the order created AFTERWARDS for overage scan 2GO-OV-88214 — the barcode the
        driver scanned becomes the order's tracking number, and it is deliberately NOT
        in PR-000107's `orderIds`: it was never booked, only collected */
     prOrder(32, 'SANPABLO', { orderNumber: 'SNP4C2SNPD19', status: 'Picked Up', pickupRequestId: 'pr107', pickedInRequestId: 'pr107',
-      pickupDate: daysFromNow(-3), carrier: '2GO Express', serviceType: 'Standard Delivery', trackingNumber: '2GO-OV-88214',
+      pickupDate: daysFromNow(-3), carrier: '2GO Express', serviceType: 'Standard', trackingNumber: '2GO-OV-88214',
       pkg: { kind: 'Parcel', count: 1, weightKg: 1.1, lengthCm: 24, widthCm: 18, heightCm: 12, description: 'Unlabelled carton — reconciled', declaredValue: 800 } }),
     /* booked into PR-000109 but handed over on the PR-000107 run: it shows as
        "Also picked here" on 107 and "Picked in PR-000107" on 109 */
     prOrder(33, 'SANPABLO', { orderNumber: 'SNP5E1SNPD20', status: 'Picked Up', pickupRequestId: 'pr109', pickedInRequestId: 'pr107',
-      pickupDate: daysFromNow(-1), carrier: '2GO Express', serviceType: 'Standard Delivery', trackingNumber: '2GO00094',
+      pickupDate: daysFromNow(-1), carrier: '2GO Express', serviceType: 'Standard', trackingNumber: '2GO00094',
       pkg: { kind: 'Parcel', count: 2, weightKg: 4.4, lengthCm: 36, widthCm: 28, heightCm: 22, description: 'Gift hampers', declaredValue: 3600 } }),
 
     /* booked into PR-000107 but not collected on that run — the next van (PR-000109)
        took it, so 107 reports it as "Picked in another request" */
     prOrder(35, 'SANPABLO', { orderNumber: 'SNP4C2SNPD22', status: 'Picked Up', pickupRequestId: 'pr107', pickedInRequestId: 'pr109',
-      pickupDate: daysFromNow(-1), carrier: '2GO Express', serviceType: 'Standard Delivery', trackingNumber: '2GO00095',
+      pickupDate: daysFromNow(-1), carrier: '2GO Express', serviceType: 'Standard', trackingNumber: '2GO00095',
       pkg: { kind: 'Parcel', count: 1, weightKg: 2.0, lengthCm: 26, widthCm: 20, heightCm: 14, description: 'Board games', declaredValue: 1600 } }),
 
     /* the vehicle order behind the completed reserved FTL booking PR-000121 — a
@@ -794,7 +794,15 @@ export function seed(): GrowOrdersDb {
     }),
   ]
   const bulk = bulkVolume()
-  const allOrders = [...orders, ...bulk.orders]
+  /* FarEye CREATED vs READY_TO_SHIP (owner, 2026-09-25): of the paid consignments
+     not yet in a pickup request, the EVEN ids have been marked ready to ship; the
+     rest still read Created / Label Generated. Index math, never random. */
+  const allOrders = [...orders, ...bulk.orders].map((o) => ({
+    ...o,
+    readyToShip: o.paymentStatus === 'Paid' && !o.isDraft && o.status === 'Order Created'
+      && !o.pickupRequestId && !o.orderNumber.startsWith('AUTO')
+      && Number(o.id.replace(/\D/g, '')) % 2 === 0,
+  }))
   const byId = new Map(allOrders.map((o) => [o.id, o]))
   /* a parcel request drops at ONE inbound hub — the hub its orders are going to.
      FTL carries its destination in `shipTo`, and a reserved slot has none yet. */

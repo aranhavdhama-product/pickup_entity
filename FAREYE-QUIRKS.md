@@ -1,6 +1,7 @@
 # FarEye — system quirks & gotchas (staging)
 
 The one-page memory of everything that bit us. Detail + payloads live in **FAREYE-APIS.md**;
+the platform's state lifecycle, sub-states and event catalog live in **FAREYE-STATES-EVENTS.md**;
 this is the scannable "why did that fail" index. Verified live on staging (dms 20106, prod0003 20773).
 
 ## Auth & sessions

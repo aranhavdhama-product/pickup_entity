@@ -7,6 +7,8 @@
  * between the two surfaces.
  */
 import type { GrowOrder, GrowPickupRequest, PickupRequestStatus } from './types'
+import { NO_ORDERS_REASON } from './pickupReasons'
+import { pickupOutcomeFor } from './reasonPolicy'
 
 /**
  * The order's FLOW BUCKET — where it stands in the merchant's lifecycle. No
@@ -168,6 +170,11 @@ export const PR_STATUSES = [
 
 /** The state every booking is born in — see the note on `PickupRequestStatus`. */
 export const PR_ENTRY_STATUS: PickupRequestStatus = 'Requested'
+/** The states a request can still be SPLIT from — before the driver is on the way (owner, 2026-09-25). */
+export const SPLITTABLE_PR_STATUSES: PickupRequestStatus[] = ['Requested', 'Planned', 'Ready For Last Mile Dispatch', 'Assigned']
+/** May `p` be split? Still editable and holding at least two consignments (one must stay). */
+export const canSplitPr = (p: Pick<GrowPickupRequest, 'status' | 'orderIds'>): boolean =>
+  SPLITTABLE_PR_STATUSES.includes(p.status) && p.orderIds.length >= 2
 
 /** The happy path a request walks; `Pickup Failed` / `Cancelled` are side exits. */
 export const PR_FLOW: PickupRequestStatus[] = [
@@ -203,6 +210,13 @@ export const isOpenPr = (s: PickupRequestStatus): boolean =>
  */
 type PrFacts = Pick<GrowPickupRequest,
   'id' | 'status' | 'orderIds' | 'pickedOrderIds' | 'endAt' | 'attempt' | 'maxAttempts' | 'reattemptPrId' | 'handover'>
+  & Partial<Pick<GrowPickupRequest, 'failureReason'>>
+
+/** A failure the Reason Policy parks as "Hold for review" needs a human whatever the
+ *  attempt count — the final-attempt hold must not slip into Closed unseen. */
+export const isHeldForReview = (p: Pick<GrowPickupRequest, 'status' | 'attempt' | 'maxAttempts'> & Partial<Pick<GrowPickupRequest, 'failureReason'>>): boolean =>
+  p.status === 'Pickup Failed' && !!p.failureReason && p.failureReason !== NO_ORDERS_REASON
+  && pickupOutcomeFor(p.failureReason, p.attempt, p.maxAttempts) === 'hold'
 
 /** Completed, but something booked here was not collected here — the same rule
  *  as Grow's `prOutcomeLabel` (GrowOrders/utils.ts), restated because this
@@ -267,9 +281,9 @@ export type PrLookup = (id: string) => Pick<GrowPickupRequest, 'status'> | undef
 export const reattemptPending = (p: Pick<GrowPickupRequest, 'status' | 'reattemptPrId'>, byId: PrLookup): boolean => {
   if (p.status !== 'Pickup Failed' || !p.reattemptPrId) return false
   const clone = byId(p.reattemptPrId)
-  /* a retry that itself FAILED is done too — it carries its own Exception (or
+  /* a retry that itself FAILED is done too — it carries its own Attention Required (or
      Closed, on the last attempt); otherwise every attempt in a chain of three
-     failures would sit in Exception forever */
+     failures would sit in Attention Required forever */
   return !!clone && isOpenPr(clone.status)
 }
 
@@ -291,26 +305,36 @@ export const canAddOrdersTo = (
 }
 
 /**
- * The console's Pickup Requests tabs. `Eligible for Pickup` is NOT a request
- * list — it is the consignments that could be booked (`tabOf(o) === 'Ready for
- * Pickup'`) — so no request ever lands on it and its count comes from the caller.
+ * The console's Pickup Requests tabs. `Eligible consignments` (owner, 2026-09-25;
+ * formerly "Eligible for Pickup", slug kept as `eligible`) is NOT a request list —
+ * it is the ready consignments with no request yet — so no request ever lands on
+ * it and its count comes from the caller. It is always the LAST tab. The same
+ * consignments can also be booked from the Consignment Order pages.
  */
-export const LOCAL_PR_TABS = ['All', 'Eligible for Pickup', 'Active', 'Closed', 'Exception'] as const
+export const CONSIGNMENTS_TO_BOOK = 'Eligible consignments'
+/** Requests someone must act on (owner, 2026-09-25 — was "Exception"; the wording Control Tower uses for trips). */
+export const ATTENTION_REQUIRED = 'Attention Required'
+export const LOCAL_PR_TABS = ['All', 'Active', 'Closed', ATTENTION_REQUIRED, CONSIGNMENTS_TO_BOOK] as const
 export type LocalPrTab = (typeof LOCAL_PR_TABS)[number]
-export type LocalPrBucket = Exclude<LocalPrTab, 'All' | 'Eligible for Pickup'>
+export type LocalPrBucket = Exclude<LocalPrTab, 'All' | typeof CONSIGNMENTS_TO_BOOK>
 
 export const LOCAL_PR_TAB_SLUG: Record<LocalPrTab, string> = {
-  All: 'all', 'Eligible for Pickup': 'eligible', Active: 'active', Closed: 'closed', Exception: 'exception',
+  All: 'all', Active: 'active', Closed: 'closed', [ATTENTION_REQUIRED]: 'attention', [CONSIGNMENTS_TO_BOOK]: 'eligible',
 }
-export const localPrTabFromSlug = (slug: string | null): LocalPrTab =>
-  LOCAL_PR_TABS.find((t) => LOCAL_PR_TAB_SLUG[t] === slug) ?? 'All'
+/** Old slugs that still land: `exception` → Attention Required. */
+const LOCAL_PR_SLUG_ALIAS: Record<string, string> = { exception: 'attention' }
+export const localPrTabFromSlug = (slug: string | null): LocalPrTab => {
+  const s = slug ? LOCAL_PR_SLUG_ALIAS[slug] ?? slug : slug
+  /* no / unknown slug lands on the first tab of the Pickup page: Attention Required */
+  return LOCAL_PR_TABS.find((t) => LOCAL_PR_TAB_SLUG[t] === s) ?? ATTENTION_REQUIRED
+}
 
 /**
  * Request → tab. Precedence, deliberately in this order:
  *  1. a CLOSED handover is Closed — ops has finished with it, even a partial pick;
  *  2. collected but still on the truck ("In transit to hub") is Active — nothing
  *     can be reconciled before arrival;
- *  3. anything needing ops attention is Exception — a re-attemptable failure, a
+ *  3. anything needing ops attention is Attention Required — a re-attemptable failure, a
  *     failure whose retry is still open (`byId` given), a partial pick, a scan
  *     discrepancy, an overdue window;
  *  4. an open request is Active;
@@ -320,18 +344,21 @@ export const localPrTabFromSlug = (slug: string | null): LocalPrTab =>
 export function localPrTabOf(p: PrFacts, now = new Date(), byId?: PrLookup): LocalPrBucket {
   if (p.handover.closedAt != null) return 'Closed'
   if (isInTransitToHub(p)) return 'Active'
+  /* owner, 2026-09-25: a COMPLETED request never sits under Attention Required — its
+     partial pick / discrepancy flags stay on the row and the detail page, under Closed */
+  if (p.status === 'Completed') return 'Closed'
   if (canReattempt(p) || (byId && reattemptPending(p, byId)) || isPartiallyPicked(p) || hasDiscrepancy(p)
-    || isOverduePr(p, now)) return 'Exception'
+    || isHeldForReview(p) || isOverduePr(p, now)) return ATTENTION_REQUIRED
   if (isOpenPr(p.status)) return 'Active'
   return 'Closed'
 }
 
 export const inLocalPrTab = (p: PrFacts, tab: LocalPrTab, now = new Date(), byId?: PrLookup): boolean =>
-  tab === 'All' || (tab !== 'Eligible for Pickup' && localPrTabOf(p, now, byId) === tab)
+  tab === 'All' || (tab !== CONSIGNMENTS_TO_BOOK && localPrTabOf(p, now, byId) === tab)
 
-/** Tab counts off the UNFILTERED lists; `eligibleCount` = Ready-for-Pickup consignments. */
-export function localPrTabCounts(prs: PrFacts[], eligibleCount: number, now = new Date()): Record<LocalPrTab, number> {
-  const c: Record<LocalPrTab, number> = { All: prs.length, 'Eligible for Pickup': eligibleCount, Active: 0, Closed: 0, Exception: 0 }
+/** Tab counts off the UNFILTERED lists; `toBookCount` = ready consignments with no request. */
+export function localPrTabCounts(prs: PrFacts[], toBookCount: number, now = new Date()): Record<LocalPrTab, number> {
+  const c: Record<LocalPrTab, number> = { All: prs.length, Active: 0, Closed: 0, [ATTENTION_REQUIRED]: 0, [CONSIGNMENTS_TO_BOOK]: toBookCount }
   const byId = new Map(prs.map((p) => [p.id, p]))
   prs.forEach((p) => { c[localPrTabOf(p, now, (id) => byId.get(id))] += 1 })
   return c

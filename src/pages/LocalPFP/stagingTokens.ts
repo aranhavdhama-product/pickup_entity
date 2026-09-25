@@ -19,9 +19,9 @@ export const COLOR = tokens.color
 export const LAYOUT = tokens.layout
 export const ROLE = tokens.roles
 /**
- * ONE DELIBERATE DEVIATION from the measured capture: the `orderType` column is
- * relabelled **Type** and moved forward to sit immediately after Reference
- * Number, so it is on screen without scrolling.
+ * DELIBERATE DEVIATION from the measured capture (history): the `orderType`
+ * column was first relabelled **Type** and moved forward to sit after Reference
+ * Number; on 2026-09-24 the owner removed it from the page entirely (see COLUMNS).
  *
  * Staging's list holds one kind of thing, so "Order Type" (Forward / Reverse)
  * sitting at column 17 was enough. This list holds four — consignments plus
@@ -54,15 +54,18 @@ const FLAGS_WIDTH = 112
 const MEASURED: StagingColumn[] = tokens.table.columns.map((c) =>
   (c.key === '_flags' ? { ...c, width: FLAGS_WIDTH } : c))
 
+/* Owner, 2026-09-24: the Type column is REMOVED from the page altogether (the
+   row kind is already told by the tinted pickup row and the Consignments /
+   Pickups tabs). The measured `orderType` column therefore never renders on
+   either look — a second deliberate deviation, logged in pixel-diff-log.md. */
 export const COLUMNS: StagingColumn[] = (() => {
-  const type = MEASURED.find((c) => c.key === 'orderType')
-  /** it goes directly AFTER this column */
-  const anchor = 'referenceNumber'
-  if (!type) return MEASURED
-  const rest = MEASURED.filter((c) => c.key !== 'orderType')
-  const at = rest.findIndex((c) => c.key === anchor)
-  if (at < 0) return MEASURED
-  return [...rest.slice(0, at + 1), { ...type, label: 'Type' }, ...rest.slice(at + 1)]
+  const base = MEASURED.filter((c) => c.key !== 'orderType')
+  /* owner, 2026-09-24: ACTIVE LEG (First Mile · Last Mile) is a column
+     of this page too — an addition to the measured capture, placed right after
+     Secondary State like the Consignment Order grid; logged in pixel-diff-log.md */
+  const at = base.findIndex((c) => c.key === 'secondaryState')
+  const leg: StagingColumn = { key: 'activeLeg', label: 'Active Leg', width: 120 }
+  return at < 0 ? [...base, leg] : [...base.slice(0, at + 1), leg, ...base.slice(at + 1)]
 })()
 export const FUNNEL_FILTERS: string[] = tokens.funnelFilters
 

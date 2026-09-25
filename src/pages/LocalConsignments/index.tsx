@@ -19,10 +19,10 @@
  * a draft is not yet a consignment), which is why it carries the status tabs.
  */
 import { useMemo, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
-  AlertTriangle, CalendarClock, Download, Handshake, Package, PackageCheck, Pencil,
-  Printer, RotateCcw, Route as RouteIcon, ShieldAlert, Truck, Undo2, X,
+  AlertTriangle, BadgeCheck, CalendarClock, Download, Handshake, Package, PackageCheck, Pencil,
+  PackageSearch, Printer, RotateCcw, Route as RouteIcon, ShieldAlert, Truck, Undo2, X,
 } from 'lucide-react'
 import {
   AddUpload, DataTable, EmptyState,
@@ -30,19 +30,24 @@ import {
   type SelectionAction,
 } from '../../nueva/components'
 import {
-  ClearFilters, DateRange, FilterLine, FilterSelect, FunnelFilters, IconBtn, LocalPage, LocalTabs, SearchBox,
+  ClearFilters, DateRange, FilterLine, FilterMultiSelect, FilterSelect, FunnelFilters, IconBtn, LocalPage, LocalTabs, SearchBox,
 } from '../../local/chrome'
 import { Download as DownloadGlyph } from '../LocalPFP/icons'
+import { STATE_OPTIONS, matchesState, stateGroupOf } from '../LocalPFP/stateVocabulary'
 import { toast } from '../../nueva/toast'
 import { useGrowOrders, growOrderActions } from '../../growOrders/store'
-import { isOpenPr } from '../../growOrders/tabs'
+import { isOpenPr, isPickupEligible } from '../../growOrders/tabs'
+import type { GrowOrder } from '../../growOrders/types'
 import {
   csvOf, downloadCsv, executionOverlay, toConsignmentRow, type LocalConsignmentRow,
 } from '../LocalPFP/adapter'
 import { planningActions, usePlanning } from '../LocalPFP/planningStore'
 import { merchantsOf } from '../LocalPFP/merchants'
 import { usePickupModuleConfig } from '../../config/pickupModule'
+import type { ConsignmentDateField } from '../../config/consignmentModuleUniverse'
+import { consignmentModuleSaved, dateRangeWindow, readConsignmentModuleConfig } from '../../config/consignmentModule'
 import { SchedulePickupDialog, type ScheduleResult } from './SchedulePickupDialog'
+import { BookConsignmentsDialog } from '../LocalPickup/dialogs'
 import { useConsignmentColumns } from './columns'
 import { BulkUploadDialog } from '../GrowOrders/bulkUploadDialog'
 import ConsignmentView from './ConsignmentView'
@@ -56,14 +61,22 @@ import ConsignmentView from './ConsignmentView'
  */
 const hasValidationError = (r: LocalConsignmentRow) => !!r.exception
 
-const TABS: { label: string; test: (r: LocalConsignmentRow) => boolean }[] = [
-  { label: 'Data Validation Issues', test: hasValidationError },
-  { label: 'Active', test: (r) => !hasValidationError(r) && r.state !== 'Delivered' && r.state !== 'Cancelled' },
-  { label: 'Closed', test: (r) => !hasValidationError(r) && (r.state === 'Delivered' || r.state === 'Cancelled') },
-  { label: 'Exception', test: (r) => !hasValidationError(r) && String(r.state) === 'Undelivered' },
-  { label: 'Returns', test: (r) => !hasValidationError(r) && (r.orderTypeLabel === 'Reverse' || r.secondaryState.includes('RTO')) },
-  { label: 'All', test: (r) => !hasValidationError(r) },
+/* `slug` = the `?tab=` value, the same six Grow's Shipments page uses (`OrdersListPage`), so a
+   link lands on the same tab on both portals; no / unknown slug → Active */
+const TABS: { slug: string; label: string; test: (r: LocalConsignmentRow) => boolean }[] = [
+  { slug: 'data-validation-issues', label: 'Data Validation Issues', test: hasValidationError },
+  { slug: 'active', label: 'Active', test: (r) => !hasValidationError(r) && r.state !== 'Delivered' && r.state !== 'Cancelled' },
+  { slug: 'closed', label: 'Closed', test: (r) => !hasValidationError(r) && (r.state === 'Delivered' || r.state === 'Cancelled') },
+  { slug: 'exception', label: 'Exception', test: (r) => !hasValidationError(r) && String(r.state) === 'Undelivered' },
+  { slug: 'returns', label: 'Returns', test: (r) => !hasValidationError(r) && (r.orderTypeLabel === 'Reverse' || r.secondaryState.includes('RTO')) },
+  { slug: 'all', label: 'All', test: (r) => !hasValidationError(r) },
 ]
+const TAB_SLUG_ALIAS: Record<string, string> = { error: 'data-validation-issues', undelivered: 'exception' }
+const tabIndexOf = (slug: string | null): number => {
+  const s = slug ? TAB_SLUG_ALIAS[slug] ?? slug : ''
+  const i = TABS.findIndex((t) => t.slug === s)
+  return i === -1 ? 1 : i
+}
 const TAB_ICONS = [ShieldAlert, RouteIcon, Handshake, AlertTriangle, Undo2, Package]
 
 
@@ -73,6 +86,20 @@ const PICKUP_SCHEDULED = 'Pickup Scheduled'
 const uniq = (xs: string[]) => [...new Set(xs.filter(Boolean))].sort()
 
 /* ------------------------------------------------------------- the page ---- */
+
+/**
+ * The day the date filter reads, per Settings → Date Filter → Default Date Field.
+ * Delivery/Pickup Date reads the row's ship-by day (its pickup/delivery day locally).
+ * TODO(fareye-consignment-module-config-v1): no local `last_updated_at` — it falls back to Created Date.
+ */
+function dayOf(r: LocalConsignmentRow, field: ConsignmentDateField | undefined): string {
+  switch (field) {
+    case 'ship_by_date':
+    case 'ship_to_delivery_date': return r.shipByDate.slice(0, 10)
+    case 'dispatch_date': return r.dispatchDate.slice(0, 10)
+    default: return r.order.createdAt.slice(0, 10)
+  }
+}
 
 export default function LocalConsignments() {
   const nav = useNavigate()
@@ -85,18 +112,24 @@ export default function LocalConsignments() {
   /* owner, 2026-09-24: auto mode books at creation — ops schedule nothing by hand */
   const manualPickup = pickupOn && pickupCfg.mode === 'manual'
 
-  const [tab, setTab] = useState(1)
+  const [params, setParams] = useSearchParams()
+  const tab = tabIndexOf(params.get('tab'))
+  const setTab = (i: number) => setParams((prev) => { const n = new URLSearchParams(prev); n.set('tab', TABS[i].slug); return n }, { replace: true })
   const [q, setQ] = useState('')
-  const [state, setState] = useState('')
+  const [stateSel, setStateSel] = useState<string[]>([])
   const [merchant, setMerchant] = useState('')
   /** a store code of the selected merchant ('' = every address) */
   const [pickupAddress, setPickupAddress] = useState('')
-  const [from, setFrom] = useState('')
-  const [to, setTo] = useState('')
+  /* Settings → Consignment Order → Date Filter, once saved there (fareye-consignment-module-config-v1) */
+  const [dateCfg] = useState(() => (consignmentModuleSaved() ? readConsignmentModuleConfig() : null))
+  const [from, setFrom] = useState(() => (dateCfg ? dateRangeWindow(dateCfg.selectedDateRange).from : ''))
+  const [to, setTo] = useState(() => (dateCfg ? dateRangeWindow(dateCfg.selectedDateRange).to : ''))
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   /** the Schedule dialog: the ticked ids, and the table's own clear() */
   const [scheduling, setScheduling] = useState<{ ids: string[]; clear: () => void } | null>(null)
+  /** Add to existing pickup (owner, 2026-09-25 — was the Pickup page's Eligible tab action) */
+  const [joining, setJoining] = useState<{ orders: GrowOrder[]; clear: () => void } | null>(null)
   /** the last booking, as links — the toast is text-only */
   const [booked, setBooked] = useState<ScheduleResult[] | null>(null)
   const [uploading, setUploading] = useState(false)
@@ -118,7 +151,6 @@ export default function LocalConsignments() {
 
   const inTab = useMemo(() => all.filter(TABS[tab].test), [all, tab])
   const tabCounts = useMemo(() => TABS.map((t) => all.filter(t.test).length), [all])
-  const states = useMemo(() => uniq(all.map((r) => String(r.state))), [all])
   const merchants = useMemo(() => uniq(all.map((r) => r.merchant)), [all])
   /* the selected merchant's stores: its locations in the store list, plus any
      origin its rows carry (a store with no business name is named by its code) */
@@ -138,28 +170,26 @@ export default function LocalConsignments() {
     { key: 'Carrier', label: 'Carrier', options: uniq(all.map((r) => r.carrier)) },
     { key: 'Service Type', label: 'Service Type', options: uniq(all.map((r) => r.serviceType)) },
     { key: 'Destination', label: 'Destination', options: uniq(all.map((r) => r.destination)) },
-    { key: 'Secondary State', label: 'Secondary State', options: uniq(all.map((r) => r.secondaryState)) },
     { key: 'Active Leg', label: 'Active Leg', options: uniq(all.map((r) => r.activeLeg)) },
     { key: 'Tag', label: 'Tag', options: uniq(all.flatMap((r) => r.tag.split(', '))) },
   ], [all])
 
-  const filtersOn = !!(q || state || merchant || addressFilter || from || to
+  const filtersOn = !!(q || stateSel.length || merchant || addressFilter || from || to
     || Object.values(more).some((v) => v.length))
 
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase()
     return inTab.filter((r) => {
-      if (state && String(r.state) !== state) return false
+      if (!matchesState(stateSel, String(r.state), r.secondaryState)) return false
       if (merchant && r.merchant !== merchant) return false
       if (addressFilter && r.shipFromCode !== addressFilter) return false
-      const day = r.order.createdAt.slice(0, 10)
+      const day = dayOf(r, dateCfg?.dateAppliedOn)
       if (from && day < from) return false
       if (to && day > to) return false
       if (more.Type?.length && !more.Type.includes(r.taskType)) return false
       if (more.Carrier?.length && !more.Carrier.includes(r.carrier)) return false
       if (more['Service Type']?.length && !more['Service Type'].includes(r.serviceType)) return false
       if (more.Destination?.length && !more.Destination.includes(r.destination)) return false
-      if (more['Secondary State']?.length && !more['Secondary State'].includes(r.secondaryState)) return false
       if (more['Active Leg']?.length && !more['Active Leg'].includes(r.activeLeg)) return false
       if (more.Tag?.length && !more.Tag.some((t) => r.tag.includes(t))) return false
       if (needle) {
@@ -168,17 +198,17 @@ export default function LocalConsignments() {
       }
       return true
     })
-  }, [inTab, q, state, merchant, addressFilter, from, to, more])
+  }, [inTab, q, stateSel, merchant, addressFilter, from, to, more, dateCfg])
 
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize))
   const safePage = Math.min(page, totalPages)
   const paged = rows.slice((safePage - 1) * pageSize, safePage * pageSize)
-  const clearAll = () => { setQ(''); setState(''); setMerchant(''); setPickupAddress(''); setFrom(''); setTo(''); setMore({}); setPage(1) }
+  const clearAll = () => { setQ(''); setStateSel([]); setMerchant(''); setPickupAddress(''); setFrom(''); setTo(''); setMore({}); setPage(1) }
 
   /* ---------------------------------------------------------- the columns -- */
 
   /* staging's default 18 + the ⚙ chooser; persists per browser */
-  const { columns, chooser } = useConsignmentColumns('local-consignments-columns-v1')
+  const { columns, chooser } = useConsignmentColumns('local-consignments-columns-v2')
 
   /* ----------------------------------------------------------- the actions - */
 
@@ -192,6 +222,8 @@ export default function LocalConsignments() {
     const ids = sel.map((r) => r.orderId)
     const closable = sel.every((r) => ['Created', 'At Facility', 'Ready To Ship'].includes(String(r.state)))
     const done = (msg: string) => { clear(); toast.success(msg) }
+    const markable = sel.length > 0 && sel.every((r) => String(r.state) === 'Created'
+      && !r.order.isDraft && r.order.paymentStatus === 'Paid' && !r.order.error)
     return [
       {
         label: 'Modify Shipment Details',
@@ -208,7 +240,22 @@ export default function LocalConsignments() {
            Pickup Request module.
          - Schedule Routing = the console's own delivery schedule, as before;
            the row reads Secondary State "Scheduled". */
+      /* FarEye `consignment::marked-ready-for-ship`: Created → Ready To Ship. With an
+         auto-pickup trigger on that event, the store raises the request here too. */
+      { label: 'Mark Ready To Ship', icon: <BadgeCheck size={14} />,
+        disabled: !markable,
+        onClick: markable ? () => {
+          const marked = growOrderActions.markReadyToShip(ids)
+          for (const id of marked) planningActions.addNote(id, 'Marked Ready To Ship')
+          done(`${marked.length} consignment${marked.length === 1 ? '' : 's'} marked Ready To Ship.`)
+        } : undefined },
       ...(manualPickup ? [{ label: 'Schedule Pickup', icon: <Truck size={14} />, onClick: () => setScheduling({ ids, clear }) }] : []),
+      /* only shipments still waiting for a pickup can join an open request */
+      ...(manualPickup ? (() => {
+        const joinable = sel.map((r) => r.order).filter(isPickupEligible)
+        return [{ label: 'Add to existing pickup', icon: <PackageSearch size={14} />, disabled: joinable.length === 0,
+          onClick: joinable.length ? () => setJoining({ orders: joinable, clear }) : undefined }]
+      })() : []),
       { label: 'Schedule Routing', icon: <CalendarClock size={14} />, onClick: () => {
         const startAt = `${new Date().toISOString().slice(0, 10)}T09:00`
         planningActions.schedule(ids, { startAt, endAt: `${startAt.slice(0, 10)}T18:00`, reason: 'Scheduled from Consignment Order' })
@@ -267,7 +314,10 @@ export default function LocalConsignments() {
           </IconBtn>
         </>}>
         <DateRange start={from} end={to} onStart={(v) => { setFrom(v); setPage(1) }} onEnd={(v) => { setTo(v); setPage(1) }} />
-        <FilterSelect value={state} placeholder="State" options={states} width={150} onChange={(v) => { setState(v); setPage(1) }} />
+        {/* the ONE State/Secondary State popup — same list as Pending for Planning */}
+        <FilterMultiSelect values={stateSel} placeholder="State/Secondary State" width={200}
+          options={STATE_OPTIONS} groupOf={stateGroupOf}
+          onChange={(v) => { setStateSel(v); setPage(1) }} />
         <FilterSelect value={merchant} placeholder="Merchant" options={merchants} width={170} onChange={(v) => { setMerchant(v); setPickupAddress(''); setPage(1) }} />
         {pickupOn && (
           /* inert until a merchant is picked, and says why */
@@ -334,6 +384,11 @@ export default function LocalConsignments() {
             }
             if (failed.length) toast.error(`${failed.join(', ')} can no longer take shipments — nothing added there.`)
           }} />
+      )}
+
+      {joining && manualPickup && (
+        <BookConsignmentsDialog orders={joining.orders} prefer="existing" onClose={() => setJoining(null)}
+          onDone={() => { joining.clear(); setJoining(null) }} />
       )}
 
       {uploading && (

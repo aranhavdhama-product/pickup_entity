@@ -155,6 +155,12 @@
 
 /* -------------------------------------------------------------- table ----- */
 
+/* Carriers / Categories strip hidden → the tab strip sits directly on the
+   grid. Its own 12px bottom margin was the strip's gap; without the strip it
+   must go, so tab → table is the measured table margin-top alone (the same
+   24px as strip → table), not 12 + 24. No new value. */
+.pfp > .lc-tabs:has(+ .pfp-tablewrap) { margin-bottom: 0; }
+
 .pfp-tablewrap {
   margin-top: 24px;
   background: var(--pfp-surface);
@@ -590,6 +596,8 @@
 }
 
 .pfp-orderlist-num { font-weight: 700; color: var(--pfp-ink); }
+/* a booked order opens its consignment — the order-number column's hover colour */
+.pfp-orderlist .pfp-order:hover { color: var(--pfp-brand); }
 .pfp-orderlist-to  { color: var(--pfp-ink-hint); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .pfp-empty-note { margin: 0 0 8px; font-size: 12.5px; line-height: 1.5; color: var(--pfp-ink-hint); }

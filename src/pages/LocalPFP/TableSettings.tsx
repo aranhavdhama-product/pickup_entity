@@ -39,10 +39,15 @@ import {
   type AppliesTo, type FieldGroup,
 } from './fieldRegistry'
 import {
-  PRESETS, activePreset, applyPreset, hasOverrides, loadStoredConfig, resetStoredConfig,
+  PRESETS, STAGING_TO_FIELD, activePreset, applyPreset, hasOverrides, loadStoredConfig, resetStoredConfig,
   resolveConfig, saveStoredConfig, toStoredConfig,
   type ColumnPreset, type ResolvedColumn, type ResolvedFilter,
 } from './columnConfig'
+import { pickupPagesVisible, usePickupModuleConfig } from '../../config/pickupModule'
+import { CONSIGNMENT_TAB_KEYS } from './viewColumns'
+
+/** the registry keys of the consignment tabs' 19 columns */
+const TAB_FIELD_KEYS = new Set<string>(CONSIGNMENT_TAB_KEYS.map((k) => STAGING_TO_FIELD[k] ?? k))
 
 /* the console's own tab names, minus the two with no local meaning
    (General = user types, Add Form = the console's add/edit form) */
@@ -51,9 +56,15 @@ const TABS = ['Date Filter', 'Table Configuration', 'On Page Filters']
 export default function TableSettings() {
   const nav = useNavigate()
   const initial = useMemo(() => resolveConfig(), [])
+  const pickupTabs = pickupPagesVisible(usePickupModuleConfig())
 
   const [tab, setTab] = useState(1)
-  const [all, setAll] = useState<ResolvedColumn[]>(initial.all)
+  /* with the pickup tabs on, the 19 staging columns are ON unless the user
+     hid one here — exactly what the grid does (hiddenStagingColumns) */
+  const [all, setAll] = useState<ResolvedColumn[]>(() => (pickupTabs
+    ? initial.all.map((c) => (TAB_FIELD_KEYS.has(c.key) && isToggleable(c)
+      ? { ...c, show: loadStoredConfig().columns?.[c.key]?.show ?? true } : c))
+    : initial.all))
   const [filters, setFilters] = useState<ResolvedFilter[]>(initial.filters)
   const [dateField, setDateField] = useState(initial.dateField)
   const [q, setQ] = useState('')
@@ -112,7 +123,12 @@ export default function TableSettings() {
     !needle || label.toLowerCase().includes(needle) || key.toLowerCase().includes(needle)
 
   const shown = all.filter((c) => c.show && !c.carriedBy)
-  const visibleRows = all.filter((c) => matches(c.label, c.key))
+  /* owner, 2026-09-25 ("need them only"): with the pickup tabs on, the
+     consignment grid is EXACTLY staging's 19 columns, so this page offers only
+     those (no Active Leg — it is on the All tab, whose set is fixed). The
+     module-off page keeps the full list. */
+  const offered = (c: ResolvedColumn) => !pickupTabs || TAB_FIELD_KEYS.has(c.key)
+  const visibleRows = all.filter((c) => matches(c.label, c.key) && offered(c))
   const groups = FIELD_GROUPS.filter((g) => visibleRows.some((c) => c.group === g))
   const filterRows = filters.filter((f) => matches(f.label, f.key))
   const allShown = all.filter(isToggleable).every((c) => c.show)
@@ -172,7 +188,7 @@ export default function TableSettings() {
               <HeaderStrip
                 allSelected={allShown}
                 onToggleAll={() => setEvery(!allShown)}
-                left={`${shown.length}/${all.length} Selected`}
+                left={`${all.filter((c) => offered(c) && (c.show || !!c.carriedBy)).length}/${all.filter(offered).length} Selected`}
                 right={`${CONSOLE_DEFAULT_COUNT}/${CONSOLE_FIELDS.length} console defaults`}
               />
 
@@ -195,7 +211,7 @@ export default function TableSettings() {
                 </Group>
               ))}
 
-              <Preview columns={shown} />
+              <Preview columns={shown.filter(offered)} />
             </div>
           )}
 

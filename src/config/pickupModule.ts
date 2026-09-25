@@ -8,6 +8,7 @@
  * No imports from src/auth, nothing that fetches — safe for every app.
  */
 import { useSyncExternalStore } from 'react'
+import { AUTO_PICKUP_TRIGGER_CODES, DEFAULT_AUTO_PICKUP_TRIGGER, EVENT_AFTER_STATE, LEGACY_AFTER_STATE_EVENT } from '../growOrders/fareyeEvents'
 
 export interface PickupModuleConfig {
   enabled: boolean                       // default true
@@ -19,6 +20,8 @@ export interface PickupModuleConfig {
    */
   mode: PickupMode                       // default 'manual'
   autoPickup: AutoPickupConfig
+  /** options of the MANUAL mode (owner, 2026-09-25) — see blindPickupsAllowed() */
+  manualPickup: ManualPickupConfig
   autoCreateOnConsignment: 'off' | 'always'   // derived: mode === 'auto' ? 'always' : 'off'
   scanMode: 'driver' | 'hub' | 'both'    // default 'both'
   maxAttempts: number                    // default 3
@@ -32,6 +35,25 @@ export interface PickupModuleConfig {
   multiPrPolicy: 'ONE_OPEN_PER_LOCATION' | 'ONE_PER_SLOT' | 'UNLIMITED'   // default 'ONE_PER_SLOT'
   /** 'HH:mm' — book before this for same-day pickup; after it the earliest window is the next business day */
   sameDayCutoff: string                  // default '12:00'
+  /**
+   * Owner, 2026-09-25: "Pickups can be booked up to" — the furthest date a
+   * pickup window may be booked for, in days from today (1–30). ONE shared
+   * horizon: manual booking dialogs (violatesCutoff) and the auto mode's
+   * "Ask the shipper for a pickup window" (userWindowError) both read it.
+   */
+  bookingHorizonDays: number             // default 7
+  /**
+   * Owner, 2026-09-25: which calendar decides the bookable pickup DAYS.
+   *  'merchant-then-hub' — the pickup address's Location Master operating days
+   *    when it has them, else the drop hub's holiday policy (weekly offs + hours);
+   *  'hub'    — always the drop hub's holiday policy.
+   * (A "module days only" choice existed for a few hours on 2026-09-25; the owner removed
+   * it — hub holidays ALWAYS block; a stored 'module' value normalizes to the default.)
+   * Hub holidays block in every source (the hub cannot receive); a merchant
+   * preference is intersected with the hub's operating days.
+   * Resolved by growOrders/operatingCalendar.ts `pickupCalendarFor`.
+   */
+  pickupDaysSource: PickupDaysSource     // default 'merchant-then-hub'
   /** 'HH:mm-HH:mm' pickup windows offered to merchants */
   slotDefinitions: string[]              // default ['09:00-12:00','12:00-15:00','15:00-18:00']
   podRequirements: {
@@ -47,6 +69,8 @@ export interface PickupModuleConfig {
 
 export type PodLevel = 'required' | 'optional' | 'off'
 export type PickupMode = 'auto' | 'manual'
+export type PickupDaysSource = 'merchant-then-hub' | 'hub'
+export const PICKUP_DAYS_SOURCES: PickupDaysSource[] = ['merchant-then-hub', 'hub']
 /** How an auto-raised request picks its date and window. */
 export interface AutoPickupConfig {
   /**
@@ -55,7 +79,14 @@ export interface AutoPickupConfig {
    * Label Generated = once it is paid and labelled; Ready To Ship = paid,
    * labelled and free of validation issues. Later states never raise one.
    */
-  afterState: AutoPickupAfterState       // default 'Ready To Ship'
+  /**
+   * The FarEye EVENT that raises the request (owner, 2026-09-24) — one of
+   * `AUTO_PICKUP_TRIGGER_EVENTS` in growOrders/fareyeEvents.ts. Later events
+   * never raise one; a consignment on which the event fires LATER is booked then.
+   */
+  triggerEvent: string                   // default 'shipment::label-generated'
+  /** DERIVED from `triggerEvent` (legacy key, still read by older code paths) */
+  afterState: AutoPickupAfterState
   /**
    * Whether the person creating the consignment may pick its pickup window
    * (owner, 2026-09-24). Off = the rule below decides. On = the form offers a
@@ -64,7 +95,12 @@ export interface AutoPickupConfig {
    * choice, or with one outside the rules, falls back to the rule.
    */
   userSelectsWindow: boolean             // default false
-  /** how far ahead the user may pick, in days (1–30) */
+  /**
+   * Whether an auto-raised request waits for the SHIPPER to confirm its pickup
+   * slot before ops may plan it (owner, 2026-09-24). Off = planned straight away.
+   */
+  slotConfirmation: boolean              // default false
+  /** DERIVED from the top-level `bookingHorizonDays` (legacy key, kept so older readers compile) */
   maxDaysAhead: number                   // default 7
   /** same-day = today when created before the same-day cutoff, else the next pickup day;
    *  next-business-day = always the next pickup day; days-after-order = created date + N, rolled onto a pickup day */
@@ -75,12 +111,19 @@ export interface AutoPickupConfig {
   /** 0 = Sunday … 6 = Saturday — the days a pickup may be raised on */
   pickupDays: number[]                   // default Mon–Sat
 }
+/** Options of the manual mode (owner, 2026-09-25). */
+export interface ManualPickupConfig {
+  /** Reserved (internally `blind`) pickups: a slot booked BEFORE the consignments
+      exist. Off = pickups are booked only for existing consignments. */
+  blindAllowed: boolean                  // default true
+}
+export const DEFAULT_MANUAL_PICKUP: ManualPickupConfig = Object.freeze({ blindAllowed: true }) as ManualPickupConfig
 export const PICKUP_MODES: PickupMode[] = ['auto', 'manual']
 export const AUTO_AFTER_STATES = ['Created', 'Label Generated', 'Ready To Ship'] as const
 export type AutoPickupAfterState = (typeof AUTO_AFTER_STATES)[number]
 export const AUTO_DATE_RULES = ['same-day', 'next-business-day', 'days-after-order'] as const
 export const DEFAULT_AUTO_PICKUP: AutoPickupConfig = Object.freeze({
-  afterState: 'Ready To Ship', userSelectsWindow: false, maxDaysAhead: 7, dateRule: 'next-business-day', daysAfterOrder: 1, slot: '', pickupDays: Object.freeze([1, 2, 3, 4, 5, 6]) as unknown as number[],
+  triggerEvent: DEFAULT_AUTO_PICKUP_TRIGGER, afterState: 'Label Generated', userSelectsWindow: false, slotConfirmation: false, maxDaysAhead: 7, dateRule: 'next-business-day', daysAfterOrder: 1, slot: '', pickupDays: Object.freeze([1, 2, 3, 4, 5, 6]) as unknown as number[],
 }) as AutoPickupConfig
 export type MerchantOverride = Partial<Pick<PickupModuleConfig, 'sameDayCutoff' | 'slotDefinitions' | 'multiPrPolicy' | 'maxAttempts'>>
 
@@ -90,6 +133,7 @@ export const DEFAULT_PICKUP_MODULE_CONFIG: PickupModuleConfig = Object.freeze({
   enabled: true,
   mode: 'manual',
   autoPickup: DEFAULT_AUTO_PICKUP,
+  manualPickup: DEFAULT_MANUAL_PICKUP,
   autoCreateOnConsignment: 'off',
   scanMode: 'both',
   maxAttempts: 3,
@@ -101,6 +145,8 @@ export const DEFAULT_PICKUP_MODULE_CONFIG: PickupModuleConfig = Object.freeze({
   bookingLeadTimeMins: 120,
   multiPrPolicy: 'ONE_PER_SLOT',
   sameDayCutoff: '12:00',
+  bookingHorizonDays: 7,
+  pickupDaysSource: 'merchant-then-hub',
   slotDefinitions: Object.freeze(['09:00-12:00', '12:00-15:00', '15:00-18:00']) as unknown as string[],
   podRequirements: Object.freeze({ signature: 'optional', photo: 'optional', otp: false }) as PickupModuleConfig['podRequirements'],
   merchantCancelUntil: 'Planned',
@@ -170,6 +216,13 @@ function normalize(raw: unknown): PickupModuleConfig {
   /* a blob written before `mode` existed keeps its meaning: 'always' was auto */
   const mode: PickupMode = oneOf(o.mode, PICKUP_MODES, o.autoCreateOnConsignment === 'always' ? 'auto' : d.mode)
   const ap = o.autoPickup && typeof o.autoPickup === 'object' ? (o.autoPickup as Record<string, unknown>) : {}
+  /* the event wins; a blob written with only the older `afterState` maps onto its event */
+  const trigger = typeof ap.triggerEvent === 'string' && AUTO_PICKUP_TRIGGER_CODES.includes(ap.triggerEvent)
+    ? ap.triggerEvent
+    : LEGACY_AFTER_STATE_EVENT[String(ap.afterState)] ?? d.autoPickup.triggerEvent
+  const mp = o.manualPickup && typeof o.manualPickup === 'object' ? (o.manualPickup as Record<string, unknown>) : {}
+  /* the top-level key wins; a blob written before it existed keeps its auto horizon */
+  const horizon = int(o.bookingHorizonDays ?? ap.maxDaysAhead, d.bookingHorizonDays, 1, 30)
   const days = Array.isArray(ap.pickupDays)
     ? [...new Set(ap.pickupDays.filter((x): x is number => Number.isInteger(x) && x >= 0 && x <= 6))].sort()
     : []
@@ -177,13 +230,18 @@ function normalize(raw: unknown): PickupModuleConfig {
     enabled: typeof o.enabled === 'boolean' ? o.enabled : d.enabled,
     mode,
     autoPickup: {
-      afterState: oneOf(ap.afterState, AUTO_AFTER_STATES, d.autoPickup.afterState),
+      triggerEvent: trigger,
+      afterState: EVENT_AFTER_STATE[trigger] ?? 'Ready To Ship',
       userSelectsWindow: typeof ap.userSelectsWindow === 'boolean' ? ap.userSelectsWindow : d.autoPickup.userSelectsWindow,
-      maxDaysAhead: int(ap.maxDaysAhead, d.autoPickup.maxDaysAhead, 1, 30),
+      slotConfirmation: typeof ap.slotConfirmation === 'boolean' ? ap.slotConfirmation : d.autoPickup.slotConfirmation,
+      maxDaysAhead: horizon,
       dateRule: oneOf(ap.dateRule, AUTO_DATE_RULES, d.autoPickup.dateRule),
       daysAfterOrder: int(ap.daysAfterOrder, d.autoPickup.daysAfterOrder, 0, 14),
       slot: typeof ap.slot === 'string' && SLOT.test(ap.slot.trim()) ? ap.slot.trim() : '',
       pickupDays: days.length ? days : d.autoPickup.pickupDays,
+    },
+    manualPickup: {
+      blindAllowed: typeof mp.blindAllowed === 'boolean' ? mp.blindAllowed : d.manualPickup.blindAllowed,
     },
     autoCreateOnConsignment: mode === 'auto' ? 'always' : 'off',
     scanMode: oneOf(o.scanMode, ['driver', 'hub', 'both'] as const, d.scanMode),
@@ -196,6 +254,8 @@ function normalize(raw: unknown): PickupModuleConfig {
     bookingLeadTimeMins: int(o.bookingLeadTimeMins, d.bookingLeadTimeMins, 0, 10_080),
     multiPrPolicy: oneOf(o.multiPrPolicy, MULTI_PR, d.multiPrPolicy),
     sameDayCutoff: time(o.sameDayCutoff, d.sameDayCutoff),
+    bookingHorizonDays: horizon,
+    pickupDaysSource: oneOf(o.pickupDaysSource, PICKUP_DAYS_SOURCES, d.pickupDaysSource),
     slotDefinitions: slots(o.slotDefinitions, d.slotDefinitions),
     podRequirements: {
       signature: oneOf(pod.signature, POD, d.podRequirements.signature),
@@ -241,6 +301,25 @@ function snapshot(): PickupModuleConfig {
   }
   return cachedConfig
 }
+
+/**
+ * Owner, 2026-09-24: the pickup PAGES (console Pickup, Grow Pickup Requests, the
+ * Pending for Planning tabs and pickup rows) exist only while the module is on
+ * AND requests are raised manually. In auto mode the module raises them itself,
+ * so those surfaces are hidden exactly as they are with the module off.
+ */
+export const pickupPagesVisible = (c: Pick<PickupModuleConfig, 'enabled' | 'mode'>): boolean =>
+  c.enabled && c.mode === 'manual'
+
+/**
+ * Owner, 2026-09-25: Reserved (internally `blind`) pickups — a slot booked
+ * before the consignments exist — are offered only while the pickup pages are
+ * visible AND the manual mode's `manualPickup.blindAllowed` is on. Gates the
+ * console "Create Pickup", Grow "Add" and the store's createBlindPickup.
+ * Existing Reserved requests stay readable either way.
+ */
+export const blindPickupsAllowed = (c: Pick<PickupModuleConfig, 'enabled' | 'mode' | 'manualPickup'>): boolean =>
+  pickupPagesVisible(c) && c.manualPickup.blindAllowed
 
 /** Current config: localStorage mirror merged over the defaults. */
 export function readPickupModuleConfig(): PickupModuleConfig {

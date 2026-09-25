@@ -31,7 +31,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronDown, CircleMinus, Copy, Package as PackageIcon, Plus } from 'lucide-react'
-import { Input, MenuSelect } from '../nueva/components'
+import { Input, MenuSelect, StatusPill } from '../nueva/components'
 import { fmt, num, packageIncomplete, volumeOf, type PackageContent, type PackageRow, type SkuPackInfo, type SkuRow, type VasRow } from './consignmentRowsModel'
 import type { MasterRecord, SkuMasterRow } from '../nueva/settingsApi'
 
@@ -107,7 +107,7 @@ function UnitPick({ value, options, onChange }: {
           {options.map((o) => (
             <button key={o} type="button" onClick={() => { onChange(o); setOpen(false) }}
               className={`w-full px-2.5 py-1.5 text-left text-[12px] font-bold uppercase transition-colors hover:bg-warm-50
-                ${o === value ? 'bg-brand-50 text-brand-500' : 'text-ink-2'}`}>
+                ${o === value ? 'bg-warm-50 font-bold text-ink' : 'text-ink-2'}`}>
               {o}
             </button>
           ))}
@@ -265,7 +265,7 @@ export function RepeatableList<T>({
                         size={15}
                         className={`shrink-0 text-warm-400 transition-transform ${rowOpen ? '' : '-rotate-90'}`}
                       />
-                      <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md bg-brand-50 text-[11.5px] font-black text-brand-600">
+                      <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md bg-warm-100 text-[11.5px] font-black text-ink-2">
                         {i + 1}
                       </span>
                       <span className="shrink-0 text-[13px] font-bold uppercase tracking-[0.04em] text-ink-2">
@@ -274,9 +274,7 @@ export function RepeatableList<T>({
                       {!rowOpen && <span className="min-w-0 flex-1">{summary(row)}</span>}
                     </button>
                     {bad && (
-                      <span className="shrink-0 rounded-full bg-warning-bg px-2 py-0.5 text-[11px] font-bold text-warning-fg">
-                        Incomplete
-                      </span>
+                      <span className="shrink-0"><StatusPill label="Incomplete" tone="warning" /></span>
                     )}
                     {onDuplicate && (
                       <button
@@ -300,7 +298,7 @@ export function RepeatableList<T>({
             <button
               type="button" onClick={add}
               className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-warm-300 py-3
-                         text-[13px] font-bold text-brand-500 transition-colors hover:border-brand-500 hover:bg-brand-50/40">
+                         text-[13px] font-bold text-brand-500 transition-colors hover:border-brand-500 hover:bg-warm-50">
               <Plus size={14} /> Add {addNoun}
             </button>
           </div>
@@ -309,7 +307,7 @@ export function RepeatableList<T>({
           <button
             type="button" onClick={add}
             className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-warm-300 py-6
-                       text-[13px] font-bold text-brand-500 transition-colors hover:border-brand-500 hover:bg-brand-50/40">
+                       text-[13px] font-bold text-brand-500 transition-colors hover:border-brand-500 hover:bg-warm-50">
             <Plus size={14} /> Add {addNoun}
             <span className="font-normal text-ink-3">— none added yet</span>
           </button>
@@ -632,7 +630,7 @@ function PackageBody({ row, skuInfo, units, packageTypes, onChange, onContents, 
               const over = info.packed > info.ordered
               return (
                 <div key={info.lineItemNo}
-                  className={`flex items-center gap-3 border-b border-line/50 px-4 py-2 last:border-b-0 transition-colors ${val ? 'bg-brand-50/30' : ''}`}>
+                  className={`flex items-center gap-3 border-b border-line/50 px-4 py-2 last:border-b-0 transition-colors ${val ? 'bg-warm-50' : ''}`}>
                   <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md bg-warm-100 text-[11.5px] font-black text-ink-2">
                     {info.lineItemNo}
                   </span>

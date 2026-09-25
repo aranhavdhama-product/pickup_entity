@@ -32,6 +32,10 @@
 import { useSyncExternalStore } from 'react'
 import type { Party, StoreLocation } from './types'
 import { blankParty, STORES } from './seed'
+import { FTL_SERVICE_TYPES, VEHICLE_SPECS } from './draft'
+import { SAMPLE_SKU_CATALOGUE } from './sampleSkus'
+import { operatingDaysFromHours, SAMPLE_LOCATION_OPERATING_DAYS, type OperatingDays } from './operatingCalendar'
+import { savedPackageTypes } from './merchantSettings'
 /* settingsApi imports nothing of its own (no `src/auth`), so the Grow shell can
    borrow its one fetch helper without dragging a session probe in with it. */
 import { fetchMasterRows, type MasterRecord } from '../nueva/settingsApi'
@@ -60,6 +64,8 @@ export interface MasterLocation {
   merchantCodes: string[]
   enabled: boolean
   party: Party
+  /** the Location Master's `operating_hours` = the merchant's pickup-day preference; undefined = none (→ hub calendar) */
+  operatingDays?: OperatingDays
 }
 
 export interface PackageType {
@@ -87,9 +93,36 @@ export interface SkuItem {
   widthCm: number
   heightCm: number
   weightKg: number
+  /** unit cost when the master carries one (sample rows do) */
+  unitCost?: number
   stackable: boolean
   hubs: string[]
   enabled: boolean
+}
+
+/**
+ * One Vehicle Type the form can book — the hub's vehicle configuration on staging
+ * (Central Vehicle Config, `/v2/central-vehicle-config/...`). ONE list for both the
+ * FTL variant's Vehicle Details and the parcel form's Dedicate Truck card.
+ */
+export interface VehicleTypeOption {
+  code: string
+  name: string
+  /** max payload, kg (0 = unknown) */
+  payloadKg: number
+  /** one human line: payload · volume · dimensions */
+  capacity: string
+  /**
+   * The FTL service types this vehicle is booked under. Only the SAMPLE list knows
+   * (the owner's FTL_SERVICE_TYPES catalogue); a live row has none = every service.
+   */
+  serviceCodes?: string[]
+  /**
+   * The hub this vehicle is configured at — staging's Central Vehicle Config is keyed by
+   * city + hub, so a booking only offers the Ship From hub's vehicles (owner, 2026-09-25).
+   * The same vehicle type may be configured at several hubs (one row each).
+   */
+  hubCode?: string
 }
 
 export type MasterSource = 'live' | 'live-cached' | 'sample'
@@ -99,6 +132,8 @@ export interface Masters {
   locations: MasterLocation[]
   packageTypes: PackageType[]
   skus: SkuItem[]
+  /** Vehicle Types (Central Vehicle Config) — live when the hub config answers, else the sample catalogue */
+  vehicleTypes: VehicleTypeOption[]
   source: MasterSource
   loading: boolean
   /** why the live read failed, when it did — for the source hint, never a toast */
@@ -120,6 +155,7 @@ export const SAMPLE_MERCHANTS: Merchant[] = [
 
 export const SAMPLE_LOCATIONS: MasterLocation[] = STORES.map((s) => ({
   code: s.code, name: s.name, type: 'MERCHANT_LOCATION', merchantCodes: ['2GO_PH'], enabled: true, party: { ...s.party },
+  ...(SAMPLE_LOCATION_OPERATING_DAYS[s.code] ? { operatingDays: SAMPLE_LOCATION_OPERATING_DAYS[s.code] } : {}),
 }))
 
 /** The old SIZE_CLASSES, now with the dimensions a package master would carry. */
@@ -131,20 +167,56 @@ export const SAMPLE_PACKAGE_TYPES: PackageType[] = [
   { code: 'PALLET', name: 'Pallet', lengthCm: 120, widthCm: 100, heightCm: 150, weightKg: 25, merchantCode: null, enabled: true },
 ]
 
-export const SAMPLE_SKUS: SkuItem[] = [
-  { code: 'SKU-PHCASE', name: 'Phone case', category: 'Accessories', hsnCode: '392690', originCountry: 'China', lengthCm: 16, widthCm: 9, heightCm: 2, weightKg: 0.08, stackable: true, hubs: [], enabled: true },
-  { code: 'SKU-SAMPLEKIT', name: 'Sample kit', category: 'Marketing', hsnCode: '491199', originCountry: 'Philippines', lengthCm: 30, widthCm: 20, heightCm: 15, weightKg: 2.4, stackable: true, hubs: [], enabled: true },
-  { code: 'SKU-LAPTOP15', name: '15" laptop', category: 'Electronics', hsnCode: '847130', originCountry: 'Taiwan', lengthCm: 40, widthCm: 28, heightCm: 6, weightKg: 2.1, stackable: false, hubs: [], enabled: true },
-  { code: 'SKU-TSHIRT', name: 'T-shirt (packed)', category: 'Apparel', hsnCode: '610910', originCountry: 'Vietnam', lengthCm: 25, widthCm: 20, heightCm: 3, weightKg: 0.25, stackable: true, hubs: [], enabled: true },
-  { code: 'SKU-COFFEE1K', name: 'Coffee beans 1 kg', category: 'Grocery', hsnCode: '090121', originCountry: 'Philippines', lengthCm: 20, widthCm: 12, heightCm: 8, weightKg: 1.05, stackable: true, hubs: [], enabled: true },
-  { code: 'SKU-MONITOR27', name: '27" monitor', category: 'Electronics', hsnCode: '852852', originCountry: 'South Korea', lengthCm: 70, widthCm: 20, heightCm: 50, weightKg: 6.5, stackable: false, hubs: [], enabled: true },
-]
+/* ONE catalogue with the local SKU master's seed rows (sampleSkus.ts) */
+export const SAMPLE_SKUS: SkuItem[] = SAMPLE_SKU_CATALOGUE.map((x) => ({
+  code: x.code, name: x.name, category: x.category, hsnCode: x.hsnCode, originCountry: x.originCountry,
+  lengthCm: x.lengthCm, widthCm: x.widthCm, heightCm: x.heightCm, weightKg: x.weightKg, unitCost: x.unitCost,
+  stackable: x.stackable, hubs: x.hubs, enabled: true,
+}))
+
+/**
+ * The SAMPLE per-hub vehicle config — a deterministic spread of the owner's FTL catalogue
+ * (draft.ts VEHICLE_SPECS, ESTIMATED specs) over the demo hubs, 3–4 vehicles each, until a
+ * live hub config or the local Vehicle Config page supplies the real fleet.
+ */
+export const SAMPLE_HUB_VEHICLES: Record<string, string[]> = {
+  SANPABLO: ['Courier Van', '1 Ton Bakkie', '4 Ton Truck', '8 Ton Truck'],
+  'MNL-01': ['1 Ton Bakkie', '8 Ton Truck', 'Refrigerated 8 Ton', '14 Ton Truck'],
+  'CEB-01': ['Courier Van', '4 Ton Truck', '20 ft Container', '40 ft Container'],
+  ORD: ['14 Ton Truck', 'Superlink (34 Ton)', 'Prime Mover + Skeletal Trailer'],
+}
+export const SAMPLE_VEHICLE_TYPES: VehicleTypeOption[] = Object.entries(SAMPLE_HUB_VEHICLES).flatMap(([hubCode, types]) =>
+  types.map((type) => {
+    const v = VEHICLE_SPECS.find((x) => x.type === type) ?? VEHICLE_SPECS[0]
+    return {
+      code: v.type, name: v.type, payloadKg: v.payloadKg, capacity: v.capacity, hubCode,
+      serviceCodes: FTL_SERVICE_TYPES.filter((s) => s.vehicles.includes(v.type)).map((s) => s.code),
+    }
+  }))
+
+/**
+ * The vehicle types a booking may pick at `hubCode` (the Ship From hub): that hub's rows only —
+ * no hub = none. With an FTL service type, the hub's vehicles booked under it (a row naming no
+ * services fits every one); when none of the hub's vehicles fit, the hub's whole list.
+ * De-duplicated by code.
+ */
+export function vehicleTypesFor(list: VehicleTypeOption[], hubCode: string | null, serviceCode?: string | null): VehicleTypeOption[] {
+  if (!hubCode) return []
+  const seen = new Set<string>()
+  const atHub = list.filter((v) => v.hubCode === hubCode && (seen.has(v.code) ? false : (seen.add(v.code), true)))
+  if (!serviceCode) return atHub
+  const fit = atHub.filter((v) => !v.serviceCodes?.length || v.serviceCodes.includes(serviceCode))
+  return fit.length ? fit : atHub
+}
+/** A vehicle type by code or name — null for a blank or unknown type. */
+export const vehicleTypeOf = (list: VehicleTypeOption[], type: string): VehicleTypeOption | null =>
+  (type ? list.find((v) => v.code === type || v.name === type) ?? null : null)
 
 /* --------------------------------------------------------------- store ---- */
 
 let state: Masters = {
   merchants: SAMPLE_MERCHANTS, locations: SAMPLE_LOCATIONS, packageTypes: SAMPLE_PACKAGE_TYPES, skus: SAMPLE_SKUS,
-  source: 'sample', loading: false, error: null, loadedAt: null, sampleFallbacks: [],
+  vehicleTypes: SAMPLE_VEHICLE_TYPES, source: 'sample', loading: false, error: null, loadedAt: null, sampleFallbacks: [],
 }
 const subs = new Set<() => void>()
 function set(patch: Partial<Masters>) {
@@ -219,6 +291,8 @@ function normalizeLocation(r: MasterRecord): MasterLocation {
     merchantCodes: arr(r.business_unit_code),
     enabled: true,
     party: partyFromRow(r),
+    /* staging `operating_hours [{day, serviceable, open_time, close_time, is_primary}]` */
+    operatingDays: operatingDaysFromHours(r.operating_hours),
   }
 }
 
@@ -288,8 +362,10 @@ function normalizeMerchant(r: MasterRecord): Merchant {
 
 /* --------------------------------------------------------------- cache ---- */
 
-/* v2: SkuItem gained hsnCode + originCountry — a v1 cache would hand the form rows without them */
-const CACHE_KEY = 'grow-masters-cache-v2'
+/* v2: SkuItem gained hsnCode + originCountry — a v1 cache would hand the form rows without them
+   v3: + vehicleTypes (Central Vehicle Config)
+   v4: vehicleTypes carry hubCode (per-hub fleets) */
+const CACHE_KEY = 'grow-masters-cache-v4'   // growOrders/operatingCalendar.ts reads this key too (location operatingDays) — bump both
 
 interface MastersCache {
   loadedAt: string
@@ -297,6 +373,7 @@ interface MastersCache {
   locations: MasterLocation[]
   packageTypes: PackageType[]
   skus: SkuItem[]
+  vehicleTypes: VehicleTypeOption[]
 }
 
 /** A malformed cache falls through to samples rather than crashing the portal. */
@@ -308,7 +385,7 @@ function readCache(): MastersCache | null {
     const ok = c && typeof c === 'object'
       && Array.isArray(c.merchants) && Array.isArray(c.locations)
       && Array.isArray(c.packageTypes) && Array.isArray(c.skus)
-    return ok ? c : null
+    return ok ? { ...c, vehicleTypes: Array.isArray(c.vehicleTypes) && c.vehicleTypes.length ? c.vehicleTypes : SAMPLE_VEHICLE_TYPES } : null
   } catch { return null }
 }
 
@@ -348,6 +425,9 @@ async function run(force: boolean): Promise<void> {
   }
   inflight = (async () => {
     set({ loading: true })
+    /* the vehicle config is NOT a /master/api/v1 entity — its own call, its own failure: a 404
+       there must not demote the four masters to samples, so it never joins the Promise.all */
+    const vehiclesP = fetchVehicleTypes().catch(() => [] as VehicleTypeOption[])
     try {
       const [merchantRows, locationRows, packageRows, skuRows] = await Promise.all([
         fetchMasterRows('businessUnit', 500),
@@ -393,6 +473,8 @@ async function run(force: boolean): Promise<void> {
         locations: keep(locations, SAMPLE_LOCATIONS.map((l) => ({ ...l, merchantCodes: [] })), 'locations'),
         packageTypes: keep(packageTypes, SAMPLE_PACKAGE_TYPES, 'package types'),
         skus: keep(skus, SAMPLE_SKUS, 'SKUs'),
+        /* live rows are ONE staging hub's fleet; the demo hubs keep their sample fleets beside them */
+        vehicleTypes: [...(await vehiclesP), ...SAMPLE_VEHICLE_TYPES],
       }
       writeCache(next)
       loaded = true
@@ -409,7 +491,7 @@ async function run(force: boolean): Promise<void> {
       if (cache) {
         set({
           merchants: cache.merchants, locations: cache.locations,
-          packageTypes: cache.packageTypes, skus: cache.skus,
+          packageTypes: cache.packageTypes, skus: cache.skus, vehicleTypes: cache.vehicleTypes,
           source: 'live-cached', loading: false, loadedAt: cache.loadedAt,
           error: `${why} — showing the last loaded masters`, sampleFallbacks: [],
         })
@@ -417,7 +499,7 @@ async function run(force: boolean): Promise<void> {
       } else {
         set({
           merchants: SAMPLE_MERCHANTS, locations: SAMPLE_LOCATIONS,
-          packageTypes: SAMPLE_PACKAGE_TYPES, skus: SAMPLE_SKUS,
+          packageTypes: SAMPLE_PACKAGE_TYPES, skus: SAMPLE_SKUS, vehicleTypes: SAMPLE_VEHICLE_TYPES,
           source: 'sample', loading: false, loadedAt: null,
           error: `${why} — showing sample data`, sampleFallbacks: [],
         })
@@ -427,6 +509,52 @@ async function run(force: boolean): Promise<void> {
     }
   })()
   return inflight
+}
+
+/**
+ * staging's Central Vehicle Config (`/v2/central-vehicle-config/99999/529?cityId=58097&hubId=513521`,
+ * reached from Same/Next Day Routing → Vehicle Config → City EU · Hub EU) reads the hub's ROUTING
+ * vehicle store — the VRP fleet, not the asset master (`/master/api/v1/vehicle`):
+ *
+ *   GET /app/rest/order/auto_assign_configurationV2?cityId=&hubIdList=&oneRoutePerRoster=false
+ *   → a BARE ARRAY, one row per configured vehicle: vehicleType (the "Name" column — free text,
+ *     e.g. HFDN_ANT-140), hubId, cityId, travelingMode, weightCapacity, volumetricCapacity,
+ *     length/width/height, cutOffPallet, noOfVehicles, carrierCode, startTime/endTime, tag, …
+ *
+ * Cookie auth through the `/staging` proxy (already proxied; it injects cookie + XSRF). The ids
+ * are the EU city/hub the owner pointed at; another hub = change these two.
+ * docs/superpowers/research/2026-09-24-staging-central-vehicle-config.md
+ */
+const VEHICLE_CONFIG_CITY_ID = '58097'
+const VEHICLE_CONFIG_HUB_ID = '513521'
+/** the hub those rows belong to, in the portal's hub-code terms (staging's hub name) */
+const VEHICLE_CONFIG_HUB_CODE = 'EU'
+
+/** Resolves [] when the hub has no vehicles (the caller samples that one list); throws on a failed read. */
+async function fetchVehicleTypes(): Promise<VehicleTypeOption[]> {
+  const q = new URLSearchParams({ cityId: VEHICLE_CONFIG_CITY_ID, hubIdList: VEHICLE_CONFIG_HUB_ID, oneRoutePerRoster: 'false' })
+  const res = await fetch(`/staging/app/rest/order/auto_assign_configurationV2?${q}`, { headers: { accept: 'application/json' } })
+  if (!res.ok) throw new Error(`vehicle config ${res.status}`)
+  const rows = (await res.json()) as unknown
+  if (!Array.isArray(rows)) throw new Error('vehicle config: not an array')
+  const seen = new Set<string>()
+  const out: VehicleTypeOption[] = []
+  for (const r of rows as MasterRecord[]) {
+    const code = str(r.vehicleType).trim()
+    if (!code || seen.has(code)) continue
+    seen.add(code)
+    const kg = num(r.weightCapacity)
+    const vol = num(r.volumetricCapacity)
+    const dims = [r.length, r.width, r.height].map(num)
+    const parts = [
+      kg ? `Payload ${kg.toLocaleString()} kg` : '',
+      vol ? `${vol} volume` : '',
+      dims.some(Boolean) ? `${dims.join(' × ')}` : '',
+      str(r.travelingMode),
+    ].filter(Boolean)
+    out.push({ code, name: code, payloadKg: kg, capacity: parts.join(' · '), hubCode: VEHICLE_CONFIG_HUB_CODE })
+  }
+  return out
 }
 
 /**
@@ -460,7 +588,9 @@ export function locationsForMerchant(locations: MasterLocation[], merchantCode: 
  */
 export function packageTypesForMerchant(types: PackageType[], merchantCode: string | null): PackageType[] {
   const own = types.filter((t) => t.enabled && (t.merchantCode == null || t.merchantCode === merchantCode))
-  return own.length ? own : types.filter((t) => t.enabled)
+  /* the merchant's Settings → Saved Packages come first (merged AFTER the fallback,
+     so a merchant with no master presets still gets the company-wide list) */
+  return [...savedPackageTypes(merchantCode), ...(own.length ? own : types.filter((t) => t.enabled))]
 }
 
 /** True when the merchant has presets of its own (or company-wide ones) — false means the list above is the company fallback. */

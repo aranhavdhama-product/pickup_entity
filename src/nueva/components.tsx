@@ -5,7 +5,7 @@ import {
   Plus, SlidersHorizontal, X, ChevronDown, Search,
   Pencil, ChevronRight, ChevronLeft, Info, Check,
   MoreVertical, AlertCircle, Upload, FileSpreadsheet, Download,
-  AlertTriangle, CheckCircle2, CalendarDays,
+  AlertTriangle, CheckCircle2, CalendarDays, ChevronUp,
 } from 'lucide-react'
 import {
   DATASTORES, datastoreById, download, isBinaryXlsx, parseCsv, parseSpreadsheetML,
@@ -47,14 +47,19 @@ export function IconButton({ icon, onClick, title }: { icon: ReactNode; onClick?
 
 /* ---------------- Inputs ---------------- */
 export function Input({
-  value, onChange, placeholder, type = 'text', size = 'sm', disabled, onKeyDown,
-}: { value?: string; onChange?: (v: string) => void; placeholder?: string; type?: string; size?: 'sm' | 'lg'; disabled?: boolean; onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void }) {
+  value, onChange, placeholder, type = 'text', size = 'sm', disabled, onKeyDown, variant = 'default',
+}: {
+  value?: string; onChange?: (v: string) => void; placeholder?: string; type?: string; size?: 'sm' | 'lg'; disabled?: boolean; onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void
+  /** 'ghost' = borderless until hover / focus — a table cell that is a field */
+  variant?: 'default' | 'ghost'
+}) {
   const lg = size === 'lg'
+  const shell = variant === 'ghost' ? 'border-transparent bg-transparent hover:border-warm-300' : 'border-warm-300 bg-surface'
   return (
     <input
       type={type} value={value ?? ''} placeholder={placeholder} disabled={disabled} onKeyDown={onKeyDown}
       onChange={(e) => onChange?.(e.target.value)}
-      className={`w-full border border-warm-300 bg-surface px-3 text-ink placeholder:text-warm-400
+      className={`w-full border ${shell} px-3 text-ink placeholder:text-warm-400
                  focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/20 transition-shadow
                  disabled:bg-warm-50 disabled:text-ink-3 disabled:cursor-not-allowed
                  ${lg ? 'h-11 rounded-lg text-[14px]' : 'h-8 rounded-md text-[13px]'}`}
@@ -108,8 +113,14 @@ export function Select({
  * Select untouched.
  */
 export function MenuSelect({
-  value, placeholder = 'Select', options = [], onChange, size = 'sm', labels, searchable, creatable,
-}: { value?: string; placeholder?: string; options?: string[]; onChange?: (v: string) => void; size?: 'sm' | 'lg'; labels?: (v: string) => string; searchable?: boolean; creatable?: boolean }) {
+  value, placeholder = 'Select', options = [], onChange, size = 'sm', labels, searchable, creatable, renderOption, renderValue,
+}: {
+  value?: string; placeholder?: string; options?: string[]; onChange?: (v: string) => void; size?: 'sm' | 'lg'; labels?: (v: string) => string; searchable?: boolean; creatable?: boolean
+  /** optional rich (multi-line) rendering of a menu option; `labels` still drives search and the fallback text */
+  renderOption?: (v: string, active: boolean) => ReactNode
+  /** optional rich rendering of the selected value inside the closed trigger */
+  renderValue?: (v: string) => ReactNode
+}) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
   // menu geometry, measured from the trigger when opening; flips up when the
@@ -161,8 +172,8 @@ export function MenuSelect({
         className={`flex w-full items-center justify-between gap-2 border border-warm-300 bg-surface text-left
                    focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/20 focus:outline-none transition-shadow
                    ${lg ? 'h-11 rounded-lg text-[14px] pl-3 pr-3' : 'h-8 rounded-md text-[13px] pl-3 pr-2.5'}`}>
-        <span className={`truncate ${shown ? 'text-ink' : 'text-warm-400'}`}>
-          {shown || (placeholder.trim() ? placeholder : 'Select')}
+        <span className={`min-w-0 truncate ${shown ? 'text-ink' : 'text-warm-400'}`}>
+          {shown ? (renderValue && value ? renderValue(value) : shown) : (placeholder.trim() ? placeholder : 'Select')}
         </span>
         <ChevronDown size={lg ? 16 : 14}
           className={`shrink-0 text-warm-400 transition-transform ${open ? 'rotate-180' : ''}`} />
@@ -189,7 +200,7 @@ export function MenuSelect({
             <button
               type="button"
               onClick={() => { onChange?.(q.trim()); setOpen(false) }}
-              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] font-bold text-brand-500 hover:bg-brand-50">
+              className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[13px] font-bold text-brand-500 hover:bg-warm-50">
               <Plus size={13} /> Add “{q.trim()}”
             </button>
           )}
@@ -200,8 +211,10 @@ export function MenuSelect({
                 key={o} type="button" role="option" aria-selected={active}
                 onClick={() => { onChange?.(o); setOpen(false) }}
                 className={`flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-[13px] transition-colors
-                  ${active ? 'bg-brand-50 font-bold text-brand-500' : 'text-ink hover:bg-warm-50'}`}>
-                <span className="truncate">{labels ? labels(o) : o}</span>
+                  ${active ? 'bg-warm-50 font-bold text-ink' : 'text-ink hover:bg-warm-50'}`}>
+                {renderOption
+                  ? <span className="min-w-0 flex-1">{renderOption(o, active)}</span>
+                  : <span className="truncate">{labels ? labels(o) : o}</span>}
                 {active && <Check size={13} className="shrink-0" />}
               </button>
             )
@@ -395,7 +408,7 @@ export function ErrorBox({ error, onRetry, hint }: { error: string; onRetry: () 
       <p className="text-[14px] font-bold text-ink">{h.title}</p>
       <div className="text-[13px] text-ink-3 max-w-md">{h.message}{hint && <div className="mt-1">{hint}</div>}</div>
       <button onClick={onRetry}
-        className="mt-1 inline-flex items-center gap-1.5 h-8 px-3.5 rounded-md border border-brand-500 bg-surface text-[13px] font-bold text-brand-500 hover:bg-brand-50 transition-colors">
+        className="mt-1 inline-flex items-center gap-1.5 h-8 px-3.5 rounded-md border border-brand-500 bg-surface text-[13px] font-bold text-brand-500 hover:bg-warm-50 transition-colors">
         Retry
       </button>
       <p className="mt-1 font-mono text-[11px] text-warm-400">{error}</p>
@@ -414,7 +427,7 @@ export function SimpleTable<T>({ columns, rows, rowKey, onRowClick }: {
   return (
     <table className="w-full text-[13px]">
       <thead>
-        <tr className="text-left text-[12px] text-ink-3 border-b border-line">
+        <tr className="text-left text-ink border-b border-line">
           {columns.map((c, i) => (
             <th key={c.label} className={`py-2.5 font-bold ${i === 0 ? 'px-5' : 'px-3'} ${c.align === 'right' ? 'text-right' : ''}`}>{c.label}</th>
           ))}
@@ -467,7 +480,7 @@ export function AdvancedFilters({ defs, values, onChange }: {
     <div className="relative shrink-0" ref={ref}>
       <button onClick={() => setOpen((v) => !v)} aria-label="More Filters"
         className={`relative h-8 w-9 inline-flex items-center justify-center rounded-md border transition-colors
-          ${open || activeCount ? 'border-brand-500 text-brand-500 bg-brand-50' : 'border-warm-300 text-ink-2 bg-surface hover:bg-warm-50'}`}>
+          ${open || activeCount ? 'border-ink text-ink font-bold bg-warm-50' : 'border-warm-300 text-ink-2 bg-surface hover:bg-warm-50'}`}>
         <SlidersHorizontal size={15} />
         {activeCount > 0 && <span className="absolute -top-1.5 -right-1.5 inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full bg-brand-500 text-white text-[10px] font-bold">{activeCount}</span>}
       </button>
@@ -482,7 +495,7 @@ export function AdvancedFilters({ defs, values, onChange }: {
                 return (
                   <button key={d.key} onClick={() => { setActiveKey(d.key); setQ('') }}
                     className={`w-full flex items-center justify-between gap-2 px-3.5 py-2 text-left text-[13px] transition-colors
-                      ${on ? 'bg-brand-50 text-brand-600 font-bold' : 'text-ink-2 hover:bg-warm-50'}`}>
+                      ${on ? 'bg-warm-100 text-ink font-bold' : 'text-ink-2 hover:bg-warm-50'}`}>
                     <span className="truncate">{d.label}</span>
                     {n > 0 && <span className="shrink-0 inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full bg-brand-500 text-white text-[10px] font-bold">{n}</span>}
                   </button>
@@ -670,7 +683,7 @@ export function MultiSelect({ value, options, labels, onChange, placeholder = 'S
           )}
           {canCreate && (
             <button onClick={create}
-              className="w-full flex items-center gap-2.5 text-left px-3 py-2 text-[13px] font-bold text-brand-500 hover:bg-brand-50">
+              className="w-full flex items-center gap-2.5 text-left px-3 py-2 text-[13px] font-bold text-brand-500 hover:bg-warm-50">
               + Create “{q}”
             </button>
           )}
@@ -732,7 +745,11 @@ export type Column = {
   width?: number
   render?: (row: any) => ReactNode
 }
-export type SelectionAction = { label: string; icon?: ReactNode; onClick?: () => void; disabled?: boolean }
+export type SelectionAction = {
+  label: string; icon?: ReactNode; onClick?: () => void; disabled?: boolean
+  /** why it is disabled — the item's tooltip and a muted line under the label */
+  reason?: string
+}
 
 export function DataTable({
   columns, rows, selectable, rowKey = 'id', onEdit, onRowClick, extraActions, selectionActions,
@@ -759,20 +776,24 @@ export function DataTable({
             <span className="text-[13px] font-bold text-ink">{selected.size} Selected</span>
             <button onClick={clear} className="text-ink-3 hover:text-ink"><X size={14} /></button>
           </div>
-          <div className="flex flex-col py-1.5">
+          <div className="flex max-h-[70vh] flex-col overflow-y-auto py-1.5">
             {selectionActions(rows.filter((r) => selected.has(r[rowKey])), clear).map((a) => (
               <button
-                key={a.label} onClick={a.onClick} disabled={a.disabled}
+                key={a.label} onClick={a.disabled ? undefined : a.onClick} disabled={a.disabled}
+                title={a.disabled ? a.reason : undefined}
                 className={`flex items-center gap-2.5 px-4 py-2 text-left text-[13px]
                   ${a.disabled ? 'text-warm-400 cursor-not-allowed' : 'text-ink hover:bg-warm-50'}`}>
-                <span className="text-ink-3">{a.icon}</span>{a.label}
+                <span className="text-ink-3 self-start pt-px">{a.icon}</span>
+                <span className="min-w-0">
+                  {a.label}
+                </span>
               </button>
             ))}
           </div>
         </div>
       )}
       {selectable && selected.size > 0 && !selectionActions && (
-        <div className="flex items-center gap-3 px-4 py-2 bg-brand-50 border-b border-brand-200 text-[13px] text-ink">
+        <div className="flex items-center gap-3 px-4 py-2 bg-warm-50 border-b border-line text-[13px] text-ink">
           <span className="font-bold">{selected.size} selected</span>
           <Button size="sm" variant="outline">Bulk Edit</Button>
           <Button size="sm" variant="ghost">Export</Button>
@@ -810,7 +831,7 @@ export function DataTable({
               const isSel = selected.has(k)
               return (
                 <tr key={k} onClick={onRowClick ? () => onRowClick(row) : undefined}
-                  className={`border-b border-line last:border-0 transition-colors ${onRowClick ? 'cursor-pointer' : ''} ${isSel ? 'bg-brand-50' : 'hover:bg-warm-50'}`}>
+                  className={`border-b border-line last:border-0 transition-colors ${onRowClick ? 'cursor-pointer' : ''} ${isSel ? 'bg-warm-50 hover:bg-warm-100' : 'hover:bg-warm-50'}`}>
                   {selectable && <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}><Checkbox checked={isSel} onChange={() => toggle(k)} /></td>}
                   {columns.map((c) => (
                     <td key={c.key} className={`px-4 py-3 text-ink-2 ${sized ? 'overflow-hidden' : ''} ${c.align === 'right' ? 'text-right tabular-nums' : 'text-left'}`}>
@@ -852,7 +873,7 @@ export function Pagination({ page = 1, total = 1, range = '1-20 of 1,446', onCha
         {pages.map((p) => (
           <button key={p} onClick={() => onChange?.(p)}
             className={`h-7 min-w-7 px-2 inline-flex items-center justify-center rounded-full text-[12px] font-bold
-              ${p === page ? 'bg-brand-500 text-white' : 'text-ink-2 hover:bg-warm-100'}`}>{p}</button>
+              ${p === page ? 'border border-warm-400 bg-warm-50 font-bold text-ink' : 'text-ink-2 hover:bg-warm-100'}`}>{p}</button>
         ))}
         {total > 3 && <><span className="px-1 text-warm-400">…</span><button onClick={() => onChange?.(total)} className="h-7 min-w-7 px-2 rounded-full text-[12px] font-bold text-ink-2 hover:bg-warm-100">{total}</button></>}
         <button onClick={() => onChange?.(Math.min(total, page + 1))} className="h-7 w-7 inline-flex items-center justify-center rounded-md hover:bg-warm-100"><ChevronRight size={15} /></button>
@@ -893,8 +914,10 @@ export function FilterBar({ searchPlaceholder, filters = [], onAdd, addLabel = '
 }
 
 /* ---------------- Modal ---------------- */
-export function Modal({ title, open, onClose, children, footer, wide }: {
+export function Modal({ title, open, onClose, children, footer, wide, subtitle }: {
   title: string; open: boolean; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean
+  /** Optional line under the title, inside the fixed header (the body scrolls below it). Additive. */
+  subtitle?: ReactNode
 }) {
   useEffect(() => {
     if (!open) return
@@ -906,8 +929,11 @@ export function Modal({ title, open, onClose, children, footer, wide }: {
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-warm-900/40 py-10 fe-nueva">
       <div className={`relative bg-surface rounded-xl shadow-ds-overlay w-full ${wide ? 'max-w-4xl' : 'max-w-3xl'} mx-4`}>
-        <div className="flex items-center justify-between px-6 pt-5 pb-3">
-          <h3 className="text-[18px] font-bold text-ink">{title}</h3>
+        <div className={`flex justify-between px-6 pt-5 pb-3 ${subtitle ? 'items-start' : 'items-center'}`}>
+          <div className="min-w-0">
+            <h3 className="text-[18px] font-bold text-ink">{title}</h3>
+            {subtitle && <p className="mt-0.5 text-[12px] text-ink-3">{subtitle}</p>}
+          </div>
           <button onClick={onClose} className="text-ink-3 hover:text-ink"><X size={18} /></button>
         </div>
         <div className="px-6 pb-2 max-h-[64vh] overflow-y-auto">{children}</div>
@@ -998,7 +1024,11 @@ export function Tabs({ tabs, active, onChange, size = 'md', icons }: {
 }
 
 /* ---------------- Kebab (⋮) action menu ---------------- */
-export type MenuItem = { label: string; tone?: 'default' | 'danger'; onClick?: () => void }
+export type MenuItem = {
+  label: string; tone?: 'default' | 'danger'; onClick?: () => void
+  /** greyed out; `reason` = its tooltip only (owner, 2026-09-25: no description lines in menus) */
+  disabled?: boolean; reason?: string
+}
 export function KebabMenu({ items }: { items: MenuItem[] }) {
   const [open, setOpen] = useState(false)
   useEffect(() => {
@@ -1016,9 +1046,12 @@ export function KebabMenu({ items }: { items: MenuItem[] }) {
       {open && (
         <div className="absolute right-0 top-8 z-30 min-w-[176px] bg-surface border border-line rounded-lg shadow-ds-overlay py-1.5">
           {items.map((m) => (
-            <button key={m.label} onClick={(e) => { e.stopPropagation(); setOpen(false); m.onClick?.() }}
-              className={`w-full text-left px-4 py-2 text-[14px] hover:bg-warm-50
-                ${m.tone === 'danger' ? 'text-brand-500' : 'text-ink'}`}>{m.label}</button>
+            <button key={m.label} disabled={m.disabled} title={m.disabled ? m.reason : undefined}
+              onClick={(e) => { e.stopPropagation(); if (m.disabled) return; setOpen(false); m.onClick?.() }}
+              className={`w-full text-left px-4 py-2 text-[14px]
+                ${m.disabled ? 'text-warm-400 cursor-not-allowed' : `hover:bg-warm-50 ${m.tone === 'danger' ? 'text-brand-500' : 'text-ink'}`}`}>
+              {m.label}
+            </button>
           ))}
         </div>
       )}
@@ -1579,6 +1612,28 @@ export function AddUpload({ label = 'Add', icon, onAdd, onUpload }: {
   )
 }
 
+/** A stat tile for dashboards: 12px label, 17px bold value, optional hint line and icon.
+ *  Shared by the Grow Dashboard / Billing pages (2026-09-25); tones come from the status pairs. */
+export function KpiTile({ label, value, hint, icon, tone = 'neutral', onClick }: {
+  label: string; value: ReactNode; hint?: ReactNode; icon?: ReactNode
+  tone?: 'neutral' | 'success' | 'info' | 'warning' | 'danger'
+  onClick?: () => void
+}) {
+  const iconTone = { neutral: 'bg-warm-100 text-ink-2', success: 'bg-success-bg text-success-fg', info: 'bg-info-bg text-info-fg', warning: 'bg-warning-bg text-warning-fg', danger: 'bg-danger-bg text-danger-fg' }[tone]
+  const Tag = onClick ? 'button' : 'div'
+  return (
+    <Tag type={onClick ? 'button' : undefined} onClick={onClick}
+      className={`flex items-center gap-3 rounded-md border border-line bg-surface px-5 py-4 text-left ${onClick ? 'transition-colors hover:border-warm-300 hover:shadow-ds-1' : ''}`}>
+      {icon && <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md ${iconTone}`}>{icon}</span>}
+      <span className="min-w-0">
+        <span className="block text-[12px] text-ink-3">{label}</span>
+        <span className="block truncate text-[17px] font-bold leading-tight text-ink">{value}</span>
+        {hint && <span className="block truncate text-[12px] text-ink-3">{hint}</span>}
+      </span>
+    </Tag>
+  )
+}
+
 export function EmptyState({ title, hint, icon }: { title: string; hint?: string; icon?: ReactNode }) {
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
@@ -1597,10 +1652,20 @@ const DI_MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
 const diPad = (n: number) => String(n).padStart(2, '0')
 const diIso = (d: Date) => `${d.getFullYear()}-${diPad(d.getMonth() + 1)}-${diPad(d.getDate())}`
 
-export function DateInput({ value, onChange, placeholder = 'Select date' }: {
+export function DateInput({ value, onChange, placeholder = 'Select date', min, max, isDisabled, dayTitle, clearable = true }: {
   value?: string
   onChange?: (v: string) => void
   placeholder?: string
+  /** Earliest pickable day, ISO YYYY-MM-DD (inclusive). Optional — additive. */
+  min?: string
+  /** Latest pickable day, ISO YYYY-MM-DD (inclusive). Optional — additive. */
+  max?: string
+  /** Extra per-day rule: true greys the day out. Optional — additive. */
+  isDisabled?: (ymd: string) => boolean
+  /** Per-day tooltip (e.g. 'Holiday · Christmas Day'); a titled greyed day stays hoverable. Optional — additive. */
+  dayTitle?: (ymd: string) => string | undefined
+  /** false hides the footer Clear (a field that must always hold a date). */
+  clearable?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState<{ top?: number; bottom?: number; left: number } | null>(null)
@@ -1619,7 +1684,7 @@ export function DateInput({ value, onChange, placeholder = 'Select date' }: {
     setPos(up
       ? { bottom: window.innerHeight - r.top + 4, left: r.left }
       : { top: r.bottom + 4, left: r.left })
-    setView(valid ?? new Date())
+    setView(valid ?? (min ? new Date(`${min}T00:00:00`) : new Date()))
     setOpen(true)
   }
   useEffect(() => {
@@ -1650,7 +1715,8 @@ export function DateInput({ value, onChange, placeholder = 'Select date' }: {
   const display = valid
     ? valid.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
     : ''
-  const pick = (d: Date) => { onChange?.(diIso(d)); setOpen(false) }
+  const off = (iso: string) => (!!min && iso < min) || (!!max && iso > max) || !!isDisabled?.(iso)
+  const pick = (d: Date) => { if (off(diIso(d))) return; onChange?.(diIso(d)); setOpen(false) }
 
   return (
     <div className="relative" ref={ref}>
@@ -1688,11 +1754,14 @@ export function DateInput({ value, onChange, placeholder = 'Select date' }: {
               const dIso = diIso(d)
               const selected = value === dIso
               const isToday = dIso === todayIso
+              const dOff = off(dIso)
+              const dTitle = dayTitle?.(dIso)
               return (
-                <button key={dIso} type="button" onClick={() => pick(d)}
+                <button key={dIso} type="button" onClick={() => { if (!dOff) pick(d) }} disabled={dOff && !dTitle} aria-disabled={dOff} title={dTitle}
                   className={`mx-auto flex h-8 w-8 items-center justify-center rounded-md text-[12.5px] transition-colors
-                    ${selected ? 'bg-brand-500 font-bold text-white'
-                      : isToday ? 'font-bold text-brand-500 hover:bg-brand-50'
+                    ${dOff ? `cursor-not-allowed text-warm-300 ${isToday ? 'font-bold' : ''}`
+                      : selected ? 'bg-brand-500 font-bold text-white'
+                      : isToday ? 'font-bold text-brand-500 hover:bg-warm-50'
                       : 'text-ink hover:bg-warm-50'}`}>
                   {d.getDate()}
                 </button>
@@ -1700,14 +1769,98 @@ export function DateInput({ value, onChange, placeholder = 'Select date' }: {
             })}
           </div>
           <div className="mt-2 flex items-center justify-between border-t border-line pt-2">
-            <button type="button" onClick={() => pick(new Date())}
-              className="text-[12.5px] font-bold text-brand-500 hover:text-brand-600">Today</button>
-            <button type="button" onClick={() => { onChange?.(''); setOpen(false) }}
-              className="text-[12.5px] text-ink-3 hover:text-ink">Clear</button>
+            <button type="button" onClick={() => pick(new Date())} disabled={off(todayIso)}
+              className="text-[12.5px] font-bold text-brand-500 hover:text-brand-600 disabled:cursor-not-allowed disabled:text-warm-300">Today</button>
+            {clearable && (
+              <button type="button" onClick={() => { onChange?.(''); setOpen(false) }}
+                className="text-[12.5px] text-ink-3 hover:text-ink">Clear</button>
+            )}
           </div>
         </div>,
         document.body,
       )}
+    </div>
+  )
+}
+
+/* ---------------------------------------------------------------------------
+ * SequenceList — checkbox + sequence rows (Table Configuration / On Page
+ * Filters pattern of the Base Modules pages). Shared by the console replica
+ * (nueva/ModuleDetail) and the LOCAL app's Consignment Order settings.
+ * Ticking renumbers the selected rows 1..n in list order.
+ * ------------------------------------------------------------------------- */
+export interface SeqItem { key: string; selected: boolean; sequence: number }
+
+export function SequenceList({ items, onChange, labelOf = (k) => k, reorderable = false }: {
+  items: SeqItem[]
+  onChange: (items: SeqItem[]) => void
+  labelOf?: (key: string) => string
+  /** show ▲▼ on selected rows to move them within the selected block (sequence follows) */
+  reorderable?: boolean
+}) {
+  const selCount = items.filter((i) => i.selected).length
+  const allSelected = selCount === items.length
+  const toggleAll = () => {
+    let seq = 0
+    onChange(items.map((i) => ({ ...i, selected: !allSelected, sequence: !allSelected ? ++seq : 0 })))
+  }
+  const toggleOne = (key: string) => {
+    const next = items.map((i) => (i.key === key ? { ...i, selected: !i.selected } : i))
+    let seq = 0
+    onChange(next.map((i) => ({ ...i, sequence: i.selected ? ++seq : 0 })))
+  }
+  /* selected rows in sequence order; swapping two renumbers the block */
+  const ordered = [...items].sort((a, b) => (a.selected === b.selected ? a.sequence - b.sequence : a.selected ? -1 : 1))
+  const move = (key: string, dir: -1 | 1) => {
+    const sel = ordered.filter((i) => i.selected)
+    const at = sel.findIndex((i) => i.key === key)
+    const to = at + dir
+    if (at < 0 || to < 0 || to >= sel.length) return
+    ;[sel[at], sel[to]] = [sel[to], sel[at]]
+    const seqOf = new Map(sel.map((i, n) => [i.key, n + 1]))
+    onChange(ordered.map((i) => ({ ...i, sequence: seqOf.get(i.key) ?? 0 }))
+      .sort((a, b) => (a.selected === b.selected ? a.sequence - b.sequence : a.selected ? -1 : 1)))
+  }
+  const rows = reorderable ? ordered : items
+  return (
+    <div>
+      <div className="flex items-center justify-between px-1 pb-2.5">
+        <div className="flex items-center gap-3 text-[13px]">
+          <button onClick={toggleAll} className="font-bold text-brand-500 hover:text-brand-600">
+            {allSelected ? 'Clear All' : 'Select All'}
+          </button>
+          <span className="text-ink-3 border-l border-line pl-3">{selCount}/{items.length} Selected</span>
+        </div>
+        <span className="text-[13px] font-bold text-ink pr-4">Sequence</span>
+      </div>
+      <div className="space-y-2">
+        {rows.map((it) => (
+          <div key={it.key}
+            className={`flex items-center gap-3 rounded-md border px-3.5 py-2.5 transition-colors
+              ${it.selected ? 'bg-warm-50 border-warm-300' : 'bg-surface border-line'}`}>
+            <Checkbox checked={it.selected} onChange={() => toggleOne(it.key)} />
+            <span className="text-[13px] text-ink flex-1">{labelOf(it.key)}</span>
+            {reorderable && it.selected && (
+              <span className="inline-flex items-center gap-0.5">
+                <button type="button" title="Move up" aria-label={`Move ${labelOf(it.key)} up`} onClick={() => move(it.key, -1)}
+                  disabled={it.sequence <= 1}
+                  className="h-7 w-7 inline-flex items-center justify-center rounded-md text-ink-3 hover:bg-warm-100 hover:text-ink disabled:opacity-30 disabled:hover:bg-transparent">
+                  <ChevronUp size={14} />
+                </button>
+                <button type="button" title="Move down" aria-label={`Move ${labelOf(it.key)} down`} onClick={() => move(it.key, 1)}
+                  disabled={it.sequence >= selCount}
+                  className="h-7 w-7 inline-flex items-center justify-center rounded-md text-ink-3 hover:bg-warm-100 hover:text-ink disabled:opacity-30 disabled:hover:bg-transparent">
+                  <ChevronDown size={14} />
+                </button>
+              </span>
+            )}
+            <span className={`w-14 h-7 inline-flex items-center justify-center rounded-md border text-[12.5px]
+              ${it.selected ? 'bg-warm-100 border-warm-200 text-ink-2' : 'bg-warm-50 border-line text-warm-400'}`}>
+              {it.selected ? it.sequence : '—'}
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

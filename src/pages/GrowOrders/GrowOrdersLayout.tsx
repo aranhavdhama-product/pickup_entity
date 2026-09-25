@@ -17,9 +17,10 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { Outlet, useLocation } from 'react-router-dom'
+import { pickupPagesVisible, usePickupModuleConfig } from '../../config/pickupModule'
 import {
-  ArrowLeftRight, BookUser, Check, CircleHelp, ClipboardList, FileBarChart2, LayoutDashboard, MapPinned,
-  PackageCheck, Receipt, Settings, ShoppingCart, Truck, Wallet,
+  ArrowLeftRight, BookUser, Check, CircleHelp, ClipboardList, FileBarChart2, LayoutDashboard, MapPinned, Package, PackageCheck,
+  Receipt, Settings, Truck, Wallet,
 } from 'lucide-react'
 import { currentMerchant, loadMasters, setMerchantCode, useMasters, useMerchantCode } from '../../growOrders/masters'
 import { useOutside } from './utils'
@@ -28,20 +29,21 @@ import { ShellHeader, ShellSidebar, type ShellNavItem } from '../../local/shell'
 import '../../local/chrome.css'
 import { cssVars } from '../LocalPFP/stagingTokens'
 
-const OFF = 'Not part of this prototype'
+/* the portal's own menu (owner, 2026-09-24: keep every item; ONLY Pickup Requests
+   follows the pickup module switch) */
 const NAV: ShellNavItem[] = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, title: OFF },
-  { id: 'shipments', label: 'Shipments', icon: ShoppingCart, path: '/grow/orders' },
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, path: '/grow/orders/dashboard' },
+  { id: 'shipments', label: 'Consignment Order', icon: Package, path: '/grow/orders' },
   { id: 'pickups', label: 'Pickup Requests', icon: PackageCheck, path: '/grow/orders/pickups' },
-  { id: 'tracking', label: 'Tracking', icon: MapPinned, title: OFF },
-  { id: 'quote', label: 'Get Quote', icon: Truck, title: OFF },
-  { id: 'wallet', label: 'Wallet', icon: Wallet, title: OFF },
-  { id: 'address-book', label: 'Address Book', icon: BookUser, title: OFF },
-  { id: 'reports', label: 'Reports', icon: FileBarChart2, title: OFF },
-  { id: 'billing', label: 'Billing', icon: Receipt, title: OFF },
-  { id: 'disputes', label: 'Disputes', icon: ClipboardList, title: OFF },
-  { id: 'settings', label: 'Settings', icon: Settings, title: OFF },
-  { id: 'help', label: 'Help Center', icon: CircleHelp, title: OFF },
+  { id: 'tracking', label: 'Tracking', icon: MapPinned, path: '/grow/orders/tracking' },
+  { id: 'quote', label: 'Get Quote', icon: Truck, path: '/grow/orders/quote' },
+  { id: 'wallet', label: 'Wallet', icon: Wallet, path: '/grow/orders/wallet' },
+  { id: 'address-book', label: 'Address Book', icon: BookUser, path: '/grow/orders/address-book' },
+  { id: 'reports', label: 'Reports', icon: FileBarChart2, path: '/grow/orders/reports' },
+  { id: 'billing', label: 'Billing', icon: Receipt, path: '/grow/orders/billing' },
+  { id: 'disputes', label: 'Disputes', icon: ClipboardList, path: '/grow/orders/disputes' },
+  { id: 'settings', label: 'Settings', icon: Settings, path: '/grow/orders/settings' },
+  { id: 'help', label: 'Help Center', icon: CircleHelp, path: '/grow/orders/help' },
 ]
 
 /* longest prefix wins — '/grow/orders/pickups' lights Pickup Requests only.
@@ -49,6 +51,18 @@ const NAV: ShellNavItem[] = [
  * draws its own PageHeader (with the back button) underneath. */
 const TITLES: [string, string, string][] = [
   ['/grow/orders/pickups', 'Pickup Requests', 'pickups'],
+  /* Batch A pages */
+  ['/grow/orders/dashboard', 'Dashboard', 'dashboard'],
+  ['/grow/orders/tracking', 'Tracking', 'tracking'],
+  ['/grow/orders/quote', 'Get Quote', 'quote'],
+  ['/grow/orders/reports', 'Reports', 'reports'],
+  ['/grow/orders/help', 'Help Center', 'help'],
+  /* Batch B pages */
+  ['/grow/orders/wallet', 'Payments', 'wallet'],
+  ['/grow/orders/billing', 'Billing', 'billing'],
+  ['/grow/orders/disputes', 'Disputes', 'disputes'],
+  ['/grow/orders/address-book', 'Address Book', 'address-book'],
+  ['/grow/orders/settings', 'Settings', 'settings'],
   ['/grow/orders', 'Consignment Order', 'shipments'],
 ]
 
@@ -61,8 +75,23 @@ function routeOf(pathname: string): { title: string; nav: string } {
   return { title: 'Consignment Order', nav: 'shipments' }
 }
 
+/** Every literal page slug under `/grow/orders/` — anything else in that single
+ *  segment is an order id (`/grow/orders/:id` = the list with the order overlay). */
+const PAGE_SLUGS = new Set([
+  'add', 'checkout', 'pickups',
+  'dashboard', 'tracking', 'quote', 'reports', 'help',
+  'wallet', 'billing', 'disputes', 'address-book', 'settings',
+])
+
+function isOrderViewPath(path: string): boolean {
+  const m = /^\/grow\/orders\/([^/]+)$/.exec(path)
+  return !!m && !PAGE_SLUGS.has(m[1])
+}
+
 /** The list pages draw the console's own canvas + padding (`LocalPage`); the rest keep a gutter. */
-const LIST_PAGES = ['/grow/orders', '/grow/orders/pickups']
+const LIST_PAGES = ['/grow/orders', '/grow/orders/pickups', '/grow/orders/tracking', '/grow/orders/reports', '/grow/orders/reports/subscriptions',
+  /* Batch B list pages (LocalPage) */
+  '/grow/orders/wallet', '/grow/orders/billing', '/grow/orders/disputes', '/grow/orders/address-book', '/grow/orders/settings']
 
 function MerchantSwitcher() {
   const masters = useMasters()
@@ -90,7 +119,7 @@ function MerchantSwitcher() {
       {merchant && <span className="max-w-[220px] truncate text-[13px] font-bold text-ink-2" title={merchant.code}>{merchant.name}</span>}
       <button type="button" title={`Switch merchant${merchant ? ` (${merchant.name})` : ''}`} aria-label="Switch merchant"
         onClick={() => setOpen((v) => !v)} aria-haspopup="menu" aria-expanded={open}
-        className="rounded p-1.5 text-gray-400 hover:bg-gray-50 hover:text-gray-600">
+        className="rounded p-1.5 text-ink-3 hover:bg-warm-50 hover:text-ink-2">
         <ArrowLeftRight size={18} />
       </button>
       {open && (
@@ -101,10 +130,10 @@ function MerchantSwitcher() {
               const on = m.code === merchant?.code
               return (
                 <button key={m.code} type="button" role="menuitemradio" aria-checked={on} onClick={() => pick(m)}
-                  className={`flex w-full items-center gap-2 px-4 py-2 text-left hover:bg-warm-50 ${on ? 'bg-brand-50' : ''}`}>
+                  className={`flex w-full items-center gap-2 px-4 py-2 text-left hover:bg-warm-50 ${on ? 'bg-warm-50' : ''}`}>
                   <Check size={15} className={`shrink-0 text-brand-500 ${on ? '' : 'invisible'}`} />
                   <span className="min-w-0 flex-1">
-                    <span className={`block truncate text-[13px] ${on ? 'font-bold text-brand-500' : 'text-ink'}`}>{m.name}</span>
+                    <span className={`block truncate text-[13px] ${on ? 'font-bold text-ink' : 'text-ink'}`}>{m.name}</span>
                     <span className="block truncate text-[12px] text-ink-3">{m.code}</span>
                   </span>
                 </button>
@@ -125,7 +154,13 @@ function MerchantSwitcher() {
 export default function GrowOrdersLayout() {
   const { pathname } = useLocation()
   const route = routeOf(pathname)
-  const listPage = LIST_PAGES.includes(pathname.replace(/\/$/, ''))
+  /* owner, 2026-09-24: with the pickup module OFF the merchant has no Pickup Requests page */
+  const pickupOn = pickupPagesVisible(usePickupModuleConfig())
+  const nav = pickupOn ? NAV : NAV.filter((i) => i.id !== 'pickups')
+  const path = pathname.replace(/\/$/, '')
+  /* `/grow/orders/:id` is the Shipments list with the View Consignment overlay open on it — same full-bleed chrome */
+  const orderView = isOrderViewPath(path)
+  const listPage = LIST_PAGES.includes(path) || orderView
 
   /* the masters load once per app load, from this one mount — the Create
      Consignment form reads the same store and never fetches for itself */
@@ -133,7 +168,7 @@ export default function GrowOrdersLayout() {
 
   return (
     <div className="fe-nueva flex h-screen overflow-hidden bg-canvas" style={cssVars}>
-      <ShellSidebar items={NAV} activeId={route.nav} homeTo="/grow/orders" />
+      <ShellSidebar items={nav} activeId={route.nav} homeTo="/grow/orders" />
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <ShellHeader title={route.title} right={<MerchantSwitcher />} />
         <main className="flex-1 overflow-auto">

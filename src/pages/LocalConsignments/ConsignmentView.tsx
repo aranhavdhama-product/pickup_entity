@@ -4,14 +4,18 @@
  *
  * Built to the staging view captured on 2026-09-24 (/v2/ses/consignment →
  * row): a right-hand overlay (62% wide) with a section rail on its left —
- * Summary · Order · Piece · Tracking · SKU · VAS · Load · Attempt · Customer
+ * Summary · Order · Package · Tracking · SKU · VAS · Load · Attempt · Customer
  * Feedback · Notes — and a "View Events" toggle that widens the overlay and
  * docks an Event Logs timeline on the right (the rail collapses to icons).
  * Field inventory and section order are staging's; every value comes from
  * the local record through `viewModel.ts`, and a value the record cannot
  * answer reads "—" rather than being dropped. Nueva primitives only.
+ *
+ * The Grow portal reuses this overlay (`GrowOrders/GrowConsignmentView`) with
+ * `audience="merchant"` + its own `readSections` shaped like the merchant order
+ * form; the ten staging sections then do not render at all.
  */
-import { useMemo, useState, type ReactNode } from 'react'
+import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowLeft, ArrowRight, Box, Calendar, ChevronDown, ChevronRight, ClipboardList, CornerUpLeft, Eye, EyeOff,
@@ -28,32 +32,45 @@ import { stateTone, type LocalConsignmentRow } from '../LocalPFP/adapter'
 import { planningActions, usePlanning } from '../LocalPFP/planningStore'
 import { dash, stamp } from '../LocalPFP/overlayFormat'
 import {
-  attemptsOf, eventsOf, loadsOf, piecesOf, skuLinesOf, vasLinesOf,
+  attemptsOf, eventsOf, loadsOf, merchantEventsOf, piecesOf, skuLinesOf, vasLinesOf,
   type AttemptOutcome, type AttemptView, type EventGroup, type PieceView,
 } from './viewModel'
 
 /* ------------------------------------------------------------ sections --- */
 
-const SECTIONS = ['Summary', 'Order', 'Piece', 'Tracking', 'SKU', 'VAS', 'Load', 'Attempt', 'Customer Feedback', 'Notes'] as const
+const SECTIONS = ['Summary', 'Order', 'Package', 'Tracking', 'SKU', 'VAS', 'Load', 'Attempt', 'Customer Feedback', 'Notes'] as const
 type SectionId = (typeof SECTIONS)[number]
 const SECTION_ICON: Record<SectionId, typeof Package> = {
-  Summary: FileText, Order: Package, Piece: LayoutGrid, Tracking: MapPin, SKU: List, VAS: Wrench,
+  Summary: FileText, Order: Package, Package: LayoutGrid, Tracking: MapPin, SKU: List, VAS: Wrench,
   Load: Boxes, Attempt: ClipboardList, 'Customer Feedback': MessageSquare, Notes: FileText,
 }
+
+/**
+ * Who is looking. `ops` = the console (staging's ten sections, every field);
+ * `merchant` = the Grow portal: the host passes its OWN read-only sections
+ * (`readSections`, shaped like the merchant order form) and the event log is
+ * the milestone reading (`merchantEventsOf`, no Ops / Customer toggle).
+ */
+export type ViewAudience = 'ops' | 'merchant'
+const AudienceCtx = createContext<ViewAudience>('ops')
+const useMerchant = () => useContext(AudienceCtx) === 'merchant'
+
+/** One host-supplied section: a rail entry + its card(s), rendered stacked on one scroll. */
+export interface ReadSection { id: string; label: string; icon: typeof Package; node: ReactNode }
 
 const TZ = 'Asia/Manila'
 type Pair = [string, ReactNode]
 
 /* ------------------------------------------------------- small pieces ---- */
 
-/** Staging's two-column label/value grid — label 12px muted, value 14px bold. */
+/** Staging's two-column label/value grid — label 12px muted, value 13px bold. */
 function Pairs({ pairs }: { pairs: Pair[] }) {
   return (
     <div className="grid grid-cols-1 gap-x-8 gap-y-3.5 px-5 py-4 sm:grid-cols-2">
       {pairs.map(([k, v], i) => (
         <div key={`${k}-${i}`} className="min-w-0">
           <p className="text-[12px] text-ink-3">{k}</p>
-          <p className="mt-0.5 break-words text-[14px] font-bold text-ink">{v}</p>
+          <p className="mt-0.5 break-words text-[13px] font-bold text-ink">{v}</p>
         </div>
       ))}
     </div>
@@ -77,7 +94,7 @@ function FoldCard({ title, children, open: initial = true, right }: { title: Rea
 }
 
 function Eyebrow({ children }: { children: ReactNode }) {
-  return <p className="text-[11px] font-bold uppercase tracking-wide text-ink-3">{children}</p>
+  return <p className="text-[12px] text-ink-3">{children}</p>
 }
 
 const Chip = ({ icon, children, tone = 'neutral' }: { icon?: ReactNode; children: ReactNode; tone?: 'neutral' | 'info' | 'flag' }) => (
@@ -109,15 +126,41 @@ function partyPairs(p: Party, nameLabel: string, whenLabel: string, when: string
 
 /* ---------------------------------------------------------------- page --- */
 
-export default function ConsignmentView({ row, onClose }: { row: LocalConsignmentRow | null; onClose: () => void }) {
+export default function ConsignmentView({ row, onClose, audience = 'ops', actions, readSections }: {
+  row: LocalConsignmentRow | null
+  onClose: () => void
+  /** `merchant` = the Grow portal's reading (see `ViewAudience`). */
+  audience?: ViewAudience
+  /** Host actions, placed in the header left of View Events (the merchant's Book Pickup · Resume · Cancel · Print label). */
+  actions?: ReactNode
+  /** Replace staging's ten sections with the host's own (Grow). Stacked on one page; the rail scrolls to each. */
+  readSections?: ReadSection[]
+}) {
   const db = useGrowOrders()
   const plan = usePlanning()
+  const merchant = audience === 'merchant'
   const [section, setSection] = useState<SectionId>('Summary')
   const [events, setEvents] = useState(false)
 
   const o = row?.order
   const pieces = useMemo(() => (row && o ? piecesOf(row, o) : []), [row, o])
-  const groups = useMemo(() => (o ? eventsOf(o, plan, db) : []), [o, plan, db])
+  const groups = useMemo(() => {
+    const all = o ? eventsOf(o, plan, db) : []
+    return merchant ? merchantEventsOf(all) : all
+  }, [o, plan, db, merchant])
+  const [readOn, setReadOn] = useState<string | null>(null)
+  const goTo = (id: string) => {
+    setReadOn(id)
+    document.getElementById(`cv-read-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+  const railItem = (key: string, label: string, Icon: typeof Package, on: boolean, onClick: () => void) => (
+    <button key={key} type="button" onClick={onClick} title={label} aria-current={on ? 'page' : undefined}
+      className={`flex w-full items-center gap-2.5 border-l-[3px] px-4 py-2.5 text-left text-[13px] transition-colors ${
+        on ? 'border-brand-500 bg-warm-50 font-bold text-ink' : 'border-transparent text-ink-2 hover:bg-warm-50 hover:text-ink'}`}>
+      <Icon size={16} className={on ? 'text-brand-500' : 'text-ink-3'} />
+      {!events && <span className="truncate">{label}</span>}
+    </button>
+  )
 
   const shell = (title: ReactNode, body: ReactNode, wide = false) => (
     <>
@@ -126,9 +169,10 @@ export default function ConsignmentView({ row, onClose }: { row: LocalConsignmen
         className={`fixed inset-y-0 right-0 z-[61] flex flex-col bg-canvas shadow-ds-overlay transition-[width] duration-200 ${wide ? 'w-[92%]' : 'w-[62%] min-w-[760px]'}`}>
         <header className="flex h-14 shrink-0 items-center gap-3 border-b border-line bg-surface px-4">
           <button type="button" onClick={onClose} aria-label="Back" className="rounded p-1 text-ink-2 hover:bg-warm-100 hover:text-ink"><ArrowLeft size={18} /></button>
-          <span className="text-[17px] font-bold text-ink">{title}</span>
+          <span className="text-[18px] font-bold text-ink">{title}</span>
           {o && (
-            <span className="ml-auto">
+            <span className="ml-auto flex items-center gap-2">
+              {actions}
               <Button variant="outline" icon={events ? <EyeOff size={15} /> : <Eye size={15} />} onClick={() => setEvents((v) => !v)}>
                 {events ? 'Hide Events' : 'View Events'}
               </Button>
@@ -148,30 +192,32 @@ export default function ConsignmentView({ row, onClose }: { row: LocalConsignmen
   }
 
   return shell(row.consignmentNumber, (
+    <AudienceCtx.Provider value={audience}>
     <div className="flex min-h-0 flex-1">
       {/* the section rail — icons only while the event log is docked */}
       <nav aria-label="Consignment sections"
         className={`shrink-0 overflow-y-auto border-r border-line bg-surface py-2 ${events ? 'w-[52px]' : 'w-[196px]'}`}>
-        {SECTIONS.map((s) => {
-          const Icon = SECTION_ICON[s]
-          const on = s === section
-          return (
-            <button key={s} type="button" onClick={() => setSection(s)} title={s} aria-current={on ? 'page' : undefined}
-              className={`flex w-full items-center gap-2.5 border-l-[3px] px-4 py-2.5 text-left text-[14px] transition-colors ${
-                on ? 'border-brand-500 bg-brand-50 font-bold text-ink' : 'border-transparent text-ink-2 hover:bg-warm-50 hover:text-ink'}`}>
-              <Icon size={16} className={on ? 'text-brand-500' : 'text-ink-3'} />
-              {!events && <span className="truncate">{s}</span>}
-            </button>
-          )
-        })}
+        {readSections
+          ? readSections.map((r) => railItem(r.id, r.label, r.icon, (readOn ?? readSections[0]?.id) === r.id, () => goTo(r.id)))
+          : SECTIONS.map((s) => railItem(s, s, SECTION_ICON[s], s === section, () => setSection(s)))}
       </nav>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="min-h-0 flex-1 overflow-auto p-4">
+        <div className="min-h-0 flex-1 overflow-auto p-4" onScroll={readSections ? (e) => {
+          /* scroll-spy: the rail follows the section at the top of the page */
+          const top = e.currentTarget.getBoundingClientRect().top + 48
+          const cur = readSections.filter((r) => (document.getElementById(`cv-read-${r.id}`)?.getBoundingClientRect().top ?? 1e9) <= top).pop()
+          if (cur && cur.id !== readOn) setReadOn(cur.id)
+        } : undefined}>
+          {readSections ? (
+            <div className="flex flex-col gap-3">
+              {readSections.map((r) => <div key={r.id} id={`cv-read-${r.id}`} className="scroll-mt-4">{r.node}</div>)}
+            </div>
+          ) : (
           <div className="flex flex-col gap-3">
             {section === 'Summary' && <SummarySection row={row} o={o} pieces={pieces} />}
             {section === 'Order' && <OrderSection row={row} o={o} scheduled={!!plan.scheduleOverrides[o.id]} />}
-            {section === 'Piece' && <PieceSection row={row} o={o} pieces={pieces} />}
+            {section === 'Package' && <PieceSection row={row} o={o} pieces={pieces} />}
             {section === 'Tracking' && <TrackingSection row={row} o={o} />}
             {section === 'SKU' && <SkuSection row={row} o={o} pieces={pieces} />}
             {section === 'VAS' && <VasSection o={o} pieces={pieces} />}
@@ -183,11 +229,13 @@ export default function ConsignmentView({ row, onClose }: { row: LocalConsignmen
             )}
             {section === 'Notes' && <NotesSection o={o} />}
           </div>
+          )}
         </div>
       </div>
 
       {events && <EventLog groups={groups} />}
     </div>
+    </AudienceCtx.Provider>
   ), events)
 }
 
@@ -209,7 +257,7 @@ function SummarySection({ row, o, pieces }: { row: LocalConsignmentRow; o: GrowO
   const party = (head: string, code: string, p: Party, w: { start: string; end: string } | null, right = false) => (
     <div className={`min-w-0 flex-1 ${right ? 'text-right' : ''}`}>
       <Eyebrow>{head}</Eyebrow>
-      <p className="mt-0.5 text-[16px] font-bold text-ink">{dash(code)}</p>
+      <p className="mt-0.5 text-[15px] font-bold text-ink">{dash(code)}</p>
       <p className="truncate text-[13px] text-ink-2" title={addressOf(p)}>{addressOf(p) || '—'}</p>
       <p className={`mt-2 flex items-center gap-1.5 text-[13px] text-ink-2 ${right ? 'justify-end' : ''}`}>
         <Calendar size={13} className="text-ink-3" />{w ? `${stamp(w.start)} - ${stamp(w.end)}` : '—'}
@@ -232,7 +280,7 @@ function SummarySection({ row, o, pieces }: { row: LocalConsignmentRow; o: GrowO
       <Panel>
         <div className="grid grid-cols-3 gap-6 px-5 py-4">
           {([['Driver', row.assignedDriver], ['Helper(s)', ''], ['Asset', '']] as const).map(([k, v]) => (
-            <div key={k}><Eyebrow>{k}</Eyebrow><p className="mt-1 text-[15px] font-bold text-ink">{v || '-'}</p></div>
+            <div key={k}><Eyebrow>{k}</Eyebrow><p className="mt-1 text-[13px] font-bold text-ink">{v || '-'}</p></div>
           ))}
         </div>
       </Panel>
@@ -243,7 +291,7 @@ function SummarySection({ row, o, pieces }: { row: LocalConsignmentRow; o: GrowO
             ['Active Leg', row.activeLeg || '—'], ['State', <StatusPill key="s" label={String(row.state)} tone={stateTone(String(row.state))} />],
             ['Carrier', row.carrier.toUpperCase()], ['Service', row.serviceType], ['Delivery Attempt', String(row.deliveryAttempts)],
           ] as [string, ReactNode][]).map(([k, v]) => (
-            <div key={k} className="min-w-0"><Eyebrow>{k}</Eyebrow><p className="mt-1 text-[15px] font-bold text-ink">{v}</p></div>
+            <div key={k} className="min-w-0"><Eyebrow>{k}</Eyebrow><p className="mt-1 text-[13px] font-bold text-ink">{v}</p></div>
           ))}
         </div>
         <div className="flex flex-wrap gap-2 px-5 py-4">
@@ -282,10 +330,10 @@ function OrderSection({ row, o, scheduled }: { row: LocalConsignmentRow; o: Grow
           ['Consignment State', String(row.state)], ['Exception State', dash(row.exception)],
           ['Carrier Code', dash(row.carrier).toUpperCase()], ['Merchant', row.merchant],
           ['Total Weight', kg(row.weightKg)], ['Total Volume', mm3(row.volumeMm3)],
-          ['SKU Quantity', row.skuCount], ['Piece Quantity', row.pieces],
+          ['SKU Quantity', row.skuCount], ['Package Quantity', row.pieces],
           ['Service Type', row.serviceType], ['Payment Amount', `${o.currency} ${(c?.orderAmount ?? o.codAmount ?? 0).toLocaleString()}`],
           ['Cost Code', '—'], ['Current Facility', dash(row.shipFromCode)],
-          ['Splittable', c?.splittable ? 'Yes' : 'No'], ['Tags', dash([...(o.tags ?? []), row.tag].filter(Boolean).join(', '))],
+          ['Can be delivered in parts', c?.splittable ? 'Yes' : 'No'], ['Tags', dash([...(o.tags ?? []), row.tag].filter(Boolean).join(', '))],
           ['Scheduling Confirmation Required', c?.schedulingConfirmation ? 'Yes' : 'No'], ['Scheduling Confirmed', scheduled ? 'Yes' : '—'],
           ['Total Loading Time', c?.totalLoadingTime ? `${c.totalLoadingTime} min` : '—'],
         ]} />
@@ -359,7 +407,7 @@ function TrackingSection({ row, o }: { row: LocalConsignmentRow; o: GrowOrder })
             ...(o.codAmount > 0 ? [['COD Amount', `${o.currency} ${o.codAmount.toLocaleString()}`] as Pair] : []),
             ...(o.charges ? [['Shipping', `${o.currency} ${o.charges.shipping.toLocaleString()}`] as Pair, ['Tax', `${o.currency} ${o.charges.tax.toLocaleString()}`] as Pair, ['Total', `${o.currency} ${o.charges.total.toLocaleString()}`] as Pair] : []),
           ]} />
-          : <p className="px-5 py-10 text-center text-[14px] text-ink-2">No pricing information available</p>}
+          : <p className="px-5 py-10 text-center text-[13px] text-ink-3">No pricing information available</p>}
       </FoldCard>
       <FoldCard title="Carrier & Tracking Information">
         <Pairs pairs={[
@@ -388,7 +436,7 @@ function SkuSection({ row, o, pieces }: { row: LocalConsignmentRow; o: GrowOrder
           <Pairs pairs={[
             ['SKU Code', dash(it.skuCode)], ['HSN Name', dash(it.category || it.hsnCode)],
             ['Product Name', dash(it.name)], ['Description', dash(it.description)],
-            ['Line Item Number', `Line ${i + 1}`], ['Piece', pieces[Math.min(i, pieces.length - 1)]?.id ?? '—'],
+            ['Line Item Number', `Line ${i + 1}`], ['Package', pieces[Math.min(i, pieces.length - 1)]?.id ?? '—'],
             ['Total Value', it.unitCost ? `${(it.unitCost * it.quantity).toLocaleString()}` : '—'], ['Unit Price', it.unitCost ? `${o.currency} ${it.unitCost.toLocaleString()}` : '—'],
             ['Weight per Unit', kg(it.weightKg)], ['Volume', it.lengthCm && it.widthCm && it.heightCm ? mm3(it.lengthCm * it.widthCm * it.heightCm * 1000) : '—'],
             ['Quantity', it.quantity], ['UOM', o.pkg.kind === 'Document' ? 'doc' : 'box'],
@@ -453,7 +501,7 @@ function LoadSection({ o }: { o: GrowOrder }) {
             ]} />
           </FoldCard>
         ) : (
-          <div className="rounded-xl border border-line bg-surface px-5 py-6 text-center text-[14px] text-ink-2 shadow-ds-1">
+          <div className="rounded-xl border border-line bg-surface px-5 py-6 text-center text-[13px] text-ink-3 shadow-ds-1">
             {cur?.pr ? <>No load created · booked under <Link to={`/local/pickup/${cur.pr.id}`} className="font-mono font-bold text-brand-500 hover:underline">{cur.pr.number}</Link></> : 'No load created'}
           </div>
         )}
@@ -483,7 +531,7 @@ function AttemptSection({ row, o }: { row: LocalConsignmentRow; o: GrowOrder }) 
         {OUTCOMES.map((x) => (
           <button key={x} type="button" onClick={() => setOutcome(x)}
             className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[13px] ${
-              outcome === x ? 'border-brand-500 text-brand-500' : 'border-line bg-surface text-ink-2 hover:border-warm-300'}`}>
+              outcome === x ? 'border-ink bg-warm-50 font-bold text-ink' : 'border-line bg-surface text-ink-2 hover:border-warm-300'}`}>
             {x}<span className="font-bold">{count(x)}</span>
           </button>
         ))}
@@ -566,7 +614,7 @@ function NotesSection({ o }: { o: GrowOrder }) {
     <div className="flex min-h-[520px] flex-col">
       <div className="flex-1 rounded-xl border border-line bg-surface shadow-ds-1">
         {notes.length === 0
-          ? <div className="flex h-full min-h-[420px] items-center justify-center rounded-xl bg-warm-25 text-[18px] font-bold text-ink-2">No Notes Available</div>
+          ? <div className="flex h-full min-h-[420px] items-center justify-center rounded-xl bg-warm-25 text-[16px] font-bold text-ink-2">No Notes Available</div>
           : (
             <ul className="flex flex-col gap-2 p-4">
               {notes.map((n) => (
@@ -578,7 +626,7 @@ function NotesSection({ o }: { o: GrowOrder }) {
             </ul>
           )}
       </div>
-      <div className="mt-3 flex items-center gap-3 rounded-xl border border-line bg-surface px-4 py-3 shadow-ds-1">
+      <div className="mt-3 flex items-center gap-3 rounded-xl border border-line bg-surface px-5 py-3 shadow-ds-1">
         <div className="flex-1"><Input value={note} onChange={setNote} placeholder="Add Notes..." /></div>
         <IconButton icon={<ImageIcon size={16} />} title="Attach image (demo)" onClick={() => toast.info('Demo only — attachments are not stored locally.')} />
         <Button icon={<Send size={15} />} disabled={!note.trim()} onClick={add}>Send</Button>
@@ -590,26 +638,28 @@ function NotesSection({ o }: { o: GrowOrder }) {
 /* ------------------------------------------------------------ Event log -- */
 
 function EventLog({ groups }: { groups: EventGroup[] }) {
+  const merchant = useMerchant()
   const [open, setOpen] = useState<Set<string>>(new Set())
   const [audience, setAudience] = useState<'Ops' | 'Customer'>('Ops')
   const allOpen = open.size === groups.length && groups.length > 0
   const toggle = (k: string) => setOpen((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n })
   /* the customer view is the milestone subset — one event per state */
-  const shown = audience === 'Ops' ? groups : groups.filter((g) => g.state !== 'Notes').map((g) => ({ ...g, events: g.events.slice(0, 1) }))
+  const shown = audience === 'Ops' || merchant ? groups : groups.filter((g) => g.state !== 'Notes').map((g) => ({ ...g, events: g.events.slice(0, 1) }))
   return (
     <aside className="flex w-[380px] shrink-0 flex-col border-l border-line bg-surface" aria-label="Event logs">
-      <div className="px-5 pt-4 text-[16px] font-bold text-ink">Event Logs</div>
+      <div className="px-5 pt-4 text-[15px] font-bold text-ink">Event Logs</div>
       <div className="flex items-center px-5 py-3">
-        <button type="button" className="text-[14px] text-ink hover:text-brand-500"
+        <button type="button" className="text-[13px] text-ink hover:text-brand-500"
           onClick={() => setOpen(allOpen ? new Set() : new Set(shown.map((g) => g.state)))}>{allOpen ? 'Collapse All' : 'Expand All'}</button>
-        <span className="ml-auto inline-flex overflow-hidden rounded-md border border-line">
+        {/* the merchant's log is already the milestone reading — no Ops view to switch to */}
+        {!merchant && <span className="ml-auto inline-flex overflow-hidden rounded-md border border-line">
           {(['Ops', 'Customer'] as const).map((a) => (
             <button key={a} type="button" onClick={() => setAudience(a)}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-[13px] ${audience === a ? 'border-brand-500 text-brand-500 ring-1 ring-inset ring-brand-500' : 'text-ink-2'}`}>
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-[13px] ${audience === a ? 'bg-warm-50 font-bold text-ink ring-1 ring-inset ring-ink' : 'text-ink-2'}`}>
               {a}{a === 'Ops' ? <Lock size={12} /> : <Globe size={12} />}
             </button>
           ))}
-        </span>
+        </span>}
       </div>
       <ol className="relative flex-1 overflow-y-auto px-5 pb-6">
         <span className="absolute bottom-6 left-[27px] top-2 w-px border-l border-dashed border-warm-300" aria-hidden />
@@ -621,7 +671,7 @@ function EventLog({ groups }: { groups: EventGroup[] }) {
               <div className="rounded-lg bg-warm-50 px-3 py-2.5">
                 <button type="button" onClick={() => toggle(g.state)} className="flex w-full items-center gap-1 text-left">
                   {on ? <ChevronDown size={14} className="text-ink-2" /> : <ChevronRight size={14} className="text-ink-2" />}
-                  <span className="text-[14px] font-bold text-ink">{g.state}</span>
+                  <span className="text-[13px] font-bold text-ink">{g.state}</span>
                   <span className="ml-auto flex items-center gap-1 text-[12px] text-ink-2"><List size={12} />Events: {g.events.length}</span>
                 </button>
                 <p className="mt-1 flex items-center gap-1 pl-5 text-[12px] text-ink-2">
@@ -633,10 +683,10 @@ function EventLog({ groups }: { groups: EventGroup[] }) {
                       <li key={`${e.name}-${i}`} className="rounded-md bg-surface px-3 py-2 text-[12px] text-ink-2">
                         <p className="flex items-center gap-1.5 text-[13px] font-bold text-ink"><span className="h-1.5 w-1.5 rounded-full bg-success-fg" />{e.name}</p>
                         <p className="mt-0.5">Logged At: {stamp(e.at)}</p>
-                        <p>User: {e.user}</p>
+                        {e.user && <p>User: {e.user}</p>}
                         {e.detail && <p className="truncate" title={e.detail}>{e.detail}</p>}
                         <button type="button" className="mt-1 text-brand-500 hover:underline"
-                          onClick={() => toast.info(`${e.name} · ${stamp(e.at)} · ${e.user}${e.detail ? ` · ${e.detail}` : ''}`)}>View Event Details</button>
+                          onClick={() => toast.info([e.name, stamp(e.at), e.user, e.detail].filter(Boolean).join(' · '))}>View Event Details</button>
                       </li>
                     ))}
                   </ul>
