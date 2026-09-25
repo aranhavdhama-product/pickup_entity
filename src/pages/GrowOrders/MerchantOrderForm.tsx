@@ -29,7 +29,7 @@ import {
 } from '../../growOrders/masters'
 import { hubVehicleTypes } from '../../config/vehicleConfig'
 import { usePickupModuleConfig } from '../../config/pickupModule'
-import { pickupPolicy, policyCheck, userWindowError } from '../../growOrders/pickupSlots'
+import { autoPickupWindowFor, pickupPolicy, policyCheck, userWindowError } from '../../growOrders/pickupSlots'
 import { SlotWindowFields } from '../LocalPickup/slotFields'
 import {
   ADDITIONAL_SERVICES, DRAFT_KEY, FTL_SERVICE_TYPES, VEHICLE_SPECS, clearDraftKeys, setDraftSidecar, vehiclesFor, vehiclesOf,
@@ -299,7 +299,12 @@ export default function MerchantOrderForm() {
   const ftlOk = mode !== 'ftl' || vehicles.length > 0
 
   /* ---- pickup window rules (pickup module: auto + "ask the shipper") ---- */
-  const askWindow = pickupCfg.enabled && pickupCfg.mode === 'auto' && pickupCfg.autoPickup.userSelectsWindow
+  /* the pickup module decides the window (owner, 2026-09-25):
+     off → no window · manual → optional ("schedule later") · auto + ask the shipper → required ·
+     auto without asking → no inputs, the computed booking is shown */
+  const pickupState: 'off' | 'manual' | 'auto-ask' | 'auto-rule' = !pickupCfg.enabled ? 'off'
+    : pickupCfg.mode !== 'auto' ? 'manual' : pickupCfg.autoPickup.userSelectsWindow ? 'auto-ask' : 'auto-rule'
+  const askWindow = pickupState === 'auto-ask'
   /* the pickup calendar of (pickup location → drop hub), as every pickup dialog reads it */
   const pickupPol = useMemo(() => pickupPolicy(merchantCode, {
     pickupLocationCode: fromList ? senderStore : null, hubCode: laneReady(receiver) ? inboundHubFor(receiver) : null,
@@ -313,6 +318,14 @@ export default function MerchantOrderForm() {
   }, [pickupPol, askWindow, pickupCfg.autoPickup])
   const windowErr = askWindow && sender.windowStart
     ? userWindowError(sender.windowStart, new Date(), pickupPol, pickupCfg.autoPickup) : null
+  const hasWindow = filled(sender.windowStart) && filled(sender.windowEnd)
+  /* auto without asking: the window the module WILL book, for this pickup address → hub calendar */
+  const autoWin = useMemo(() => (pickupState === 'auto-rule'
+    ? autoPickupWindowFor(new Date(), pickupPol, pickupCfg.autoPickup, null) : null), [pickupState, pickupPol, pickupCfg.autoPickup])
+  const autoRuleText = pickupCfg.autoPickup.dateRule === 'same-day' ? `same day, before ${pickupCfg.sameDayCutoff}`
+    : pickupCfg.autoPickup.dateRule === 'days-after-order'
+      ? `${pickupCfg.autoPickup.daysAfterOrder} day${pickupCfg.autoPickup.daysAfterOrder === 1 ? '' : 's'} after the order is created`
+      : 'next business day'
 
   /* ---- masters settle after mount / the merchant switches: re-default the pickup address ---- */
   const listKey = useMemo(() => pickup.options.map((o) => o.value).join('|'), [pickup.options])
@@ -346,7 +359,8 @@ export default function MerchantOrderForm() {
   ].map(filled)
   const windowReq = (p: Party) => (need('addrWindow') ? [filled(p.windowStart), filled(p.windowEnd)] : [])
   const doneOf: Record<string, boolean[]> = {
-    'sec-from': [...partyReq(sender, 'from'), ...windowReq(sender), !windowErr],
+    'sec-from': [...partyReq(sender, 'from'), !windowErr,
+      ...(pickupState === 'auto-ask' ? [hasWindow] : pickupState === 'manual' ? windowReq(sender) : [])],
     'sec-to': [...allDrops.flatMap((d) => [...partyReq(d, 'to'), ...windowReq(d)]),
       ...(c.rtoMode === RTO_OTHER ? partyReq(rto, 'rto') : [])],
     'sec-order': [filled(effectiveOrder), filled(effectiveRef), !!c.consignmentType, filled(c.shipByDate),
@@ -405,7 +419,12 @@ export default function MerchantOrderForm() {
     return {
       orderId: resumeId ?? undefined,
       storeCode: draftStoreCode,
-      sender: fromList ? { ...sender, locationCode: senderStore } : sender,
+      /* the window travels only when it was entered AND the module lets the shipper choose one */
+      sender: (() => {
+        const base = fromList ? { ...sender, locationCode: senderStore } : sender
+        const keep = (pickupState === 'manual' || pickupState === 'auto-ask') && hasWindow
+        return keep ? base : { ...base, windowStart: '', windowEnd: '' }
+      })(),
       receiver, drops, shipmentType: ftl ? 'FTL' : 'Parcel',
       ...(ftl
         ? { vehicleType: vehicles[0]?.vehicleType ?? '', vehicleUnit: units, actualLoad, ftlServiceType: svcCode, vehicles, sourceParcels: cleanParcels }
@@ -468,7 +487,10 @@ export default function MerchantOrderForm() {
 
   /* ------------------------------------------------------------ sections */
   const senderSummary = fromList && !editSender
-  const windowLabel = askWindow ? 'Preferred pickup' : 'Pickup'
+  const fmtWin = (w: { startAt: string; endAt: string }) => {
+    const d = new Date(`${w.startAt.slice(0, 10)}T00:00`)
+    return `${d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} · ${w.startAt.slice(11, 16)}–${w.endAt.slice(11, 16)}`
+  }
   const fromSection = (
     <MSection id="sec-from" title="Pickup from" done={done('sec-from')}
       caption="Where the carrier collects the order. Your registered address and saved locations are listed first.">
@@ -500,16 +522,32 @@ export default function MerchantOrderForm() {
           )}
         </div>
       )}
-      {!hid('addrWindow') && (
+      {pickupState === 'auto-rule' && autoWin && (
+        <p className="mt-4 flex flex-wrap items-center gap-x-1.5 rounded-md border border-line bg-warm-50 px-4 py-3 text-[13px] text-ink-2">
+          <b className="text-ink">Pickup will be booked automatically</b>
+          <span>· {fmtWin(autoWin)} ({autoRuleText})</span>
+          {pickupCfg.autoPickup.slotConfirmation && <span>· you will be asked to confirm the slot</span>}
+        </p>
+      )}
+      {(pickupState === 'auto-ask' || (pickupState === 'manual' && !hid('addrWindow'))) && (
         <div className="mt-4 max-w-[640px]">
-          <p className="mb-2 text-[13px] font-bold text-ink">{windowLabel} window</p>
+          <div className="mb-2 flex items-center gap-3">
+            <p className="text-[13px] font-bold text-ink">
+              {pickupState === 'auto-ask' ? <>Pickup window<span className="text-danger-fg">*</span></>
+                : need('addrWindow') ? <>Pickup window<span className="text-danger-fg">*</span></> : 'Pickup window (optional)'}
+            </p>
+            {pickupState === 'manual' && hasWindow && !need('addrWindow') && (
+              <button type="button" onClick={() => setSender((x) => ({ ...x, windowStart: '', windowEnd: '' }))}
+                className="text-[12px] font-bold text-brand-500 hover:text-brand-600">Clear</button>
+            )}
+          </div>
           {/* the same Pickup date · Start time · End time the pickup dialogs use (owner, 2026-09-25) */}
           <SlotWindowFields startAt={sender.windowStart ?? ''} endAt={sender.windowEnd ?? ''} policy={pickupPol} ok={slotOk}
             onChange={(w) => setSender((x) => ({ ...x, windowStart: w.startAt, windowEnd: w.endAt }))}
-            error={windowErr || err(need('addrWindow') && !(filled(sender.windowStart) && filled(sender.windowEnd))) || null} />
+            error={windowErr || err((askWindow || need('addrWindow')) && !hasWindow, 'Choose a pickup date and time.') || null} />
           <p className="mt-1 text-[12px] text-ink-3">{askWindow
-            ? `Bookable up to ${pickupCfg.bookingHorizonDays} days ahead · same-day cut-off ${pickupCfg.sameDayCutoff}`
-            : need('addrWindow') ? 'When the parcels are ready' : 'Optional — when the parcels are ready'}</p>
+            ? `Your pickup is booked automatically in this window · up to ${pickupCfg.bookingHorizonDays} days ahead · same-day cut-off ${pickupCfg.sameDayCutoff}`
+            : 'Leave empty to schedule the pickup later from Consignment Order'}</p>
         </div>
       )}
     </MSection>
@@ -721,8 +759,8 @@ export default function MerchantOrderForm() {
         </div>
         <OrderSummaryRail sender={sender} receivers={allDrops} boxes={boxes} chargeableKg={weights.chargeable} mode={mode}
           vehicleLine={vehicleLine} quote={quote} priced={ftlOk} currency={currency}
-          canContinue={!!quote && ftlOk}
-          missing={[...missing.map((m) => `Add ${m}`), ...(!mode ? ['Choose a load type'] : ready && !quote ? ['Choose a service'] : []), ...(ready && quote && !ftlOk ? ['Add a vehicle'] : [])]}
+          canContinue={!!quote && ftlOk && (!askWindow || (hasWindow && !windowErr))}
+          missing={[...missing.map((m) => `Add ${m}`), ...(askWindow && !hasWindow ? ['Choose a pickup window'] : []), ...(!mode ? ['Choose a load type'] : ready && !quote ? ['Choose a service'] : []), ...(ready && quote && !ftlOk ? ['Add a vehicle'] : [])]}
           onJump={jumpTo} onContinue={proceed} onSaveLater={saveForLater} problems={showErrors ? problems : 0} />
       </div>
     </div>

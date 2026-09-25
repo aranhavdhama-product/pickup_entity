@@ -95,6 +95,12 @@ export function OrderSummaryRail({
                 <span>Total</span><span className="tabular-nums">{money(quote.total, currency)}</span>
               </div>
               <p className="text-[12px] text-ink-3">Estimated. Paid at checkout.</p>
+              {missing.length > 0 && (
+                <div className="pt-2 text-[12px] text-ink-3">
+                  <p className="font-bold text-ink-2">Still needed</p>
+                  <ul className="mt-0.5 list-disc pl-4">{missing.map((m) => <li key={m}>{m}</li>)}</ul>
+                </div>
+              )}
             </div>
           ) : (
             <div className="text-[13px] text-ink-3">
