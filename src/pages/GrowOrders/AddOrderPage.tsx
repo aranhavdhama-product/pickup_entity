@@ -69,7 +69,17 @@ import { fieldHidden, fieldLabel, loadFieldConfig, loadFormBehavior } from '../C
 
 /* ---- option lists ---- */
 const CONSIGNMENT_TYPES = ['Forward', 'Reverse', 'Exchange', 'Transfer', 'Service']
-const PAYMENT_MODES = ['Prepaid', 'COD', 'To Pay']
+/** payment options for the Payment widget — a gateway pick determines the next step
+ * (redirect to that gateway) rather than collecting an amount inline; Wallet checks
+ * the merchant's pre-loaded balance against the order total instead. */
+const PAYMENT_OPTIONS = [
+  { code: 'COD', label: 'Cash on Delivery', sub: 'Collected by the driver on delivery' },
+  { code: 'Card', label: 'Card', sub: "Charged to the customer's card" },
+  { code: 'Wallet', label: 'Wallet', sub: 'Pay from your pre-loaded FarEye wallet balance' },
+  { code: 'Payment Gateway (ANZ)', label: 'Payment Gateway', sub: 'ANZ — redirects to complete payment' },
+]
+/** sample pre-loaded balance — the portal has no wallet API yet (see Wallet in the nav) */
+const WALLET_BALANCE = 1250
 const RTO_MODES = ['Same As Ship From', 'Use Different Address']
 /** common instruction presets — the merchant can also type a custom one */
 const INSTRUCTION_OPTIONS = [
@@ -980,38 +990,33 @@ export default function AddOrderPage() {
           <F label={lbl('exchangeOrderNumber')} value={c.exchangeOrderNumber ?? ''} placeholder="eg, ABC0000" onChange={(v) => setC({ exchangeOrderNumber: v })}
             helper="Original order being exchanged" />
         )}
-        {!hid('paymentMode') && (
-          <F label={lbl('paymentMode')} value={c.paymentMode ?? ''} placeholder="eg, Prepaid" options={opts(PAYMENT_MODES)} onChange={(v) => setC({ paymentMode: v })} />
-        )}
-        {!hid('orderAmount') && (
-          <FNum label={lbl('orderAmount')} blankZero placeholder="eg, 100.22" value={c.orderAmount ?? 0} onChange={(n) => setC({ orderAmount: n || null })} />
-        )}
       </Grid>
 
-      {/* handling toggles stay in the open — Dedicate Truck is the FTL switch, not a minor setting.
-          Its own details (Service Type, Loading Time) render AFTER it, once it's on — a field
-          driven by a toggle should never appear above the toggle that triggers it. */}
-      <SubHead label="Handling" />
-      <div className="flex flex-wrap items-center gap-3">
-        {!hid('dedicateTruck') && dedicateToggle}
-      </div>
-      {isFtl && (
-        <div className="mt-4">
-          <Grid>
-            {serviceTypeField}
-          </Grid>
+      {/* Handling (left) and Instructions (right), one merged block. Dedicate Truck is the
+          FTL switch, not a minor setting, so it stays in the open; its own details
+          (Service Type, Loading Time) render below it, once it's on — a field driven by a
+          toggle should never appear above the toggle that triggers it. */}
+      <SubHead label="Handling & Instructions" />
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div>
+          {!hid('dedicateTruck') && (
+            <div className="flex flex-wrap items-center gap-3">{dedicateToggle}</div>
+          )}
+          {isFtl && (
+            <div className="mt-4">
+              <Grid>
+                {serviceTypeField}
+              </Grid>
+            </div>
+          )}
         </div>
-      )}
-
-      {(!hid('specialInstructions') || !hid('deliveryInstructions')) && (
-        <>
-          <SubHead label="Instructions" />
+        {(!hid('specialInstructions') || !hid('deliveryInstructions')) && (
           <Fld label="Instructions" info>
             <MultiSelect value={instructionTags} options={INSTRUCTION_OPTIONS} creatable
               placeholder="Pick common instructions or type your own" onChange={setInstructionTagsAndSync} />
           </Fld>
-        </>
-      )}
+        )}
+      </div>
     </SectionCard>
   )
 
@@ -1426,6 +1431,65 @@ export default function AddOrderPage() {
               </div>
             </div>
           </Panel>
+
+          {/* Payment — a gateway pick redirects to complete payment instead of
+              collecting an amount inline; COD/Card ask for the amount here. */}
+          <div className="mt-5">
+            <Panel title="Payment">
+              <div className="px-5 pb-5">
+                <div className="grid gap-2">
+                  {PAYMENT_OPTIONS.map((opt) => {
+                    const on = c.paymentMode === opt.code
+                    return (
+                      <button key={opt.code} type="button" onClick={() => setC({ paymentMode: opt.code })} role="radio" aria-checked={on}
+                        className={`flex items-center gap-3 rounded-md border bg-surface px-3.5 py-2.5 text-left transition-colors
+                          ${on ? 'border-brand-500 bg-brand-50/30' : 'border-line text-ink-2 hover:border-warm-300'}`}>
+                        {on
+                          ? <CircleDot size={15} className="shrink-0 text-brand-500" />
+                          : <span className="h-[15px] w-[15px] shrink-0 rounded-full border border-warm-300" />}
+                        <div className="min-w-0 flex-1">
+                          <span className="block text-[13.5px] font-bold text-ink">{opt.label}</span>
+                          <span className="block text-[12px] text-ink-3">{opt.sub}</span>
+                        </div>
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {(c.paymentMode === 'COD' || c.paymentMode === 'Card') && (
+                  <div className="mt-4">
+                    <FNum label={lbl('orderAmount')} blankZero placeholder="eg, 100.22" value={c.orderAmount ?? 0} onChange={(n) => setC({ orderAmount: n || null })} />
+                  </div>
+                )}
+
+                {c.paymentMode === 'Wallet' && (
+                  <div className="mt-4 rounded-md border border-line bg-warm-25 px-3.5 py-3">
+                    <div className="flex items-center justify-between text-[13px]">
+                      <span className="text-ink-3">Wallet balance</span>
+                      <span className="font-bold text-ink">{money(WALLET_BALANCE, CURRENCY)}</span>
+                    </div>
+                    {WALLET_BALANCE >= svc.price ? (
+                      <p className="mt-1.5 text-[12px] text-success-fg">Sufficient balance to cover this order ({money(svc.price, CURRENCY)}).</p>
+                    ) : (
+                      <p className="mt-1.5 text-[12px] text-danger-fg">Insufficient balance — top up {money(svc.price - WALLET_BALANCE, CURRENCY)} more to pay with wallet.</p>
+                    )}
+                  </div>
+                )}
+
+                {c.paymentMode === 'Payment Gateway (ANZ)' && (
+                  <div className="mt-4 rounded-md border border-line bg-warm-25 px-3.5 py-3">
+                    <p className="text-[12.5px] text-ink-3">You'll be redirected to the ANZ payment gateway to complete payment before the consignment is created.</p>
+                    <div className="mt-3">
+                      <Button variant="outline" size="sm"
+                        onClick={() => toast.info('Opening the ANZ payment gateway — not part of this prototype')}>
+                        Continue to ANZ Payment Gateway
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </Panel>
+          </div>
         </div>
       </div>
 
