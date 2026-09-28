@@ -36,7 +36,7 @@ import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-do
 import {
   CalendarCheck, ChevronDown, ChevronRight, CircleDot, CircleMinus, ClipboardList, FileCheck,
   Package, Package as PackageIcon, Pencil, Plus, ScanBarcode, ScanLine, Truck, Undo2, User,
-  Warehouse, Wrench, X,
+  Warehouse, X,
 } from 'lucide-react'
 import { blankParty, CURRENCY } from '../../growOrders/seed'
 import { growOrderActions, orderById, pickupRequestById, useGrowOrders } from '../../growOrders/store'
@@ -62,7 +62,7 @@ import {
   ADDITIONAL_SERVICES, DEFAULT_FTL_SERVICE, DRAFT_KEY, FTL_SERVICE_CODES, PARCEL_SERVICES, clearDraftKeys,
   coerceVehicleType, ftlQuoteVehicles, ftlServiceType, setDraftSidecar, totalLoadKg, vehicleSpec, vehiclesFor,
   vehiclesOf, volKg, type ConsignmentFields, type FtlVehicle, type OrderDraft, type Parcel, type ParcelItem,
-  type ParcelService, type VasLine,
+  type ParcelService,
 } from '../../growOrders/draft'
 /* the console's field registry — pure module, read-only here */
 import { fieldHidden, fieldLabel, loadFieldConfig, loadFormBehavior } from '../ConsignmentAdd/fieldConfig'
@@ -74,14 +74,9 @@ const RTO_MODES = ['Same As Ship From', 'Use Different Address']
 const DIAL_CODES = ['+63', '+27', '+264', '+267', '+1', '+44', '+91']
 const DIM_UOMS = ['CM', 'IN', 'M']
 const WEIGHT_UOMS = ['KG', 'LB', 'G']
-const VAS_LEVELS: VasLine['level'][] = ['SKU', 'PACKAGE', 'CONSIGNMENT']
-/** sample VAS master — the portal has no vas API */
-const VAS_SERVICES = ['Installation', 'Assembly', 'Unboxing', 'Old Item Pickup', 'Gift Wrapping', 'Wall Mounting',
-  /* the former FTL "Additional Services" — now ordinary VAS options, priced by the rate card */
-  ...ADDITIONAL_SERVICES.map((a) => a.code)]
-/** rate-card price of a VAS option (only the former Additional Services carry one) */
+/** rate-card price of a former FTL "Additional Service" — VAS itself is gone,
+ * but an FTL booking still prices any of these named on the draft (legacy path). */
 const vasPrice = (service: string) => ADDITIONAL_SERVICES.find((a) => a.code === service)?.price ?? 0
-const VAS_OPTS = VAS_SERVICES.map((v) => ({ value: v, label: vasPrice(v) ? `${v} · ${money(vasPrice(v), CURRENCY)}` : v }))
 
 /** One Vehicle Details row: a vehicle type booked `count` times, sharing `loadKg`, to `addressIdx`. */
 interface VehicleRow { vehicleType: string; count: number; loadKg: number; addressIdx: number[] }
@@ -123,8 +118,6 @@ const newParcel = (): Parcel => ({
   items: [], itemInfo: '', quantity: 1, weight: 1, l: 10, w: 10, h: 10, weightMode: 'auto',
   trackingNumber: '', palletSpace: '', description: '',
 })
-const newVas = (): VasLine => ({ level: 'SKU', skuCode: '', service: '', serviceTimeMin: 0, remark: '' })
-const vasOk = (v: VasLine) => !!v.level && !!v.service && (v.level !== 'SKU' || !!v.skuCode)
 const kg = (n: number, d = 4) => `${Number(n.toFixed(d))} kg`
 const round2 = (n: number) => Number(n.toFixed(2))
 const filled = (v: string | undefined) => !!(v ?? '').trim()
@@ -739,12 +732,6 @@ export default function AddOrderPage() {
   const overloaded = vehicles.filter((v) => v.actualLoadKg > vehicleSpec(v.vehicleType).payloadKg)
   const capacityKg = vehicles.reduce((n, v) => n + vehicleSpec(v.vehicleType).payloadKg, 0)
   const skuLines = parcels.flatMap((p, i) => (p.items ?? []).map((it, k) => ({ it, i, k })))
-  const skuLineOpts = useMemo(() => {
-    const seen = new Set<string>()
-    return parcels.flatMap((p) => p.items ?? []).filter((it) => !isBlankItem(it))
-      .map((it) => ({ value: it.skuCode ?? it.name.trim(), label: it.skuCode ? `${it.skuCode} · ${it.name}` : it.name.trim() }))
-      .filter((o) => (seen.has(o.value) ? false : (seen.add(o.value), true)))
-  }, [parcels])
 
   /* ---- identifiers: Order Number is the ONE merchant-facing identifier;
      Reference Number/Consignment Number are never shown, just mirrored for the API ---- */
@@ -765,10 +752,9 @@ export default function AddOrderPage() {
       ...rows.map((r) => !!r.vehicleType && r.count >= 1 && r.loadKg > 0 && r.addressIdx.length > 0), noDg]
     : [...parcels.map((p) => p.quantity > 0 && p.weight > 0 && p.l > 0 && p.w > 0 && p.h > 0), noDg]
   const skuReq = isFtl ? [] : skuLines.map(({ it }) => isBlankItem(it) || (filled(it.name) && it.quantity >= 1))
-  const vasReq = (c.vas ?? []).map(vasOk)
   /* the Services section only exists for LTL — Service Type (FTL) already picks the FTL rate */
   const carrierReq = isFtl ? [] : [!!service]
-  const allReq = [...consignmentReq, ...fromReq, ...toReq, ...rtoReq, ...pieceReq, ...skuReq, ...vasReq, ...carrierReq]
+  const allReq = [...consignmentReq, ...fromReq, ...toReq, ...rtoReq, ...pieceReq, ...skuReq, ...carrierReq]
   const filledCount = allReq.filter(Boolean).length
   const canSubmit = filledCount === allReq.length
   const missingCount = allReq.length - filledCount
@@ -824,7 +810,6 @@ export default function AddOrderPage() {
   const setItem = (i: number, k: number, patch: Partial<ParcelItem>) =>
     setItems(i, (items) => items.map((it, m) => (m === k ? { ...it, ...patch } : it)))
   const removeItem = (i: number, k: number) => setItems(i, (items) => items.filter((_, m) => m !== k))
-  const setVas = (i: number, patch: Partial<VasLine>) => setC({ vas: (c.vas ?? []).map((v, j) => (j === i ? { ...v, ...patch } : v)) })
 
   const pickSender = (code: string) => {
     if (code === OTHER_ADDRESS) {
@@ -921,12 +906,12 @@ export default function AddOrderPage() {
 
   /* ---- the sections, one order regardless of order complexity ---- */
   const sections = ['sec-consignment', 'sec-ship-from', 'sec-rto', 'sec-ship-to',
-    isFtl ? 'sec-vehicle' : 'sec-package', 'sec-vas', ...(isFtl ? [] : ['sec-services'])]
+    isFtl ? 'sec-vehicle' : 'sec-package', ...(isFtl ? [] : ['sec-services'])]
   const doneOf: Record<string, boolean> = {
     'sec-consignment': done(consignmentReq),
     'sec-ship-from': done(fromReq), 'sec-ship-to': done(toReq), 'sec-rto': done(rtoReq),
     'sec-package': done(pieceReq) && done(skuReq), 'sec-vehicle': done(pieceReq),
-    'sec-vas': done(vasReq), 'sec-services': done(carrierReq),
+    'sec-services': done(carrierReq),
   }
 
   const proceed = () => {
@@ -1129,10 +1114,6 @@ export default function AddOrderPage() {
 
   /* Packages is the ONE list — a package's SKU contents are optional, nested
      enrichment. A package with no SKU lines ships as-is. */
-  const [pkgMoreOpen, setPkgMoreOpen] = useState<Set<number>>(new Set())
-  const togglePkgMore = (i: number) => setPkgMoreOpen((s) => {
-    const n = new Set(s); if (n.has(i)) n.delete(i); else n.add(i); return n
-  })
   const [itemMoreOpen, setItemMoreOpen] = useState<Set<string>>(new Set())
   const toggleItemMore = (key: string) => setItemMoreOpen((s) => {
     const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n
@@ -1155,20 +1136,18 @@ export default function AddOrderPage() {
         onRemove={(i) => setParcels((ps) => (ps.length > 1 ? ps.filter((_, j) => j !== i) : [newParcel()]))}
         body={(p, i) => {
           const items = p.items ?? []
-          const moreOpen = pkgMoreOpen.has(i)
           return (
             <>
-              <Grid>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 lg:grid-cols-[1.4fr_0.8fr_1fr_1.8fr]">
                 <div title={packageTypeTitle}>
                   <F label="Package Type" required value={packageValue(p, packageTypes)} options={packageTypeOpts} onChange={(v) => pickPackageType(i, v)} />
                 </div>
-                <F label="Cargo Type" required value={p.cargoType} options={opts(CARGO_TYPES)} onChange={(v) => setParcel(i, { cargoType: v })} />
                 <FNum label="Quantity" required value={p.quantity} min={1} integer onChange={(n) => setParcel(i, { quantity: n })} />
                 <FNum label="Weight" required value={p.weight} unit="kg" error={reqErr(p.weight > 0)}
                   helper={p.weightMode === 'manual' ? undefined : 'Package tare + SKUs'}
                   onChange={(n) => setParcel(i, { weight: n, weightMode: 'manual' })} />
                 {!hid('pkgDimensions') && (
-                  <Fld label="Dimensions (L × W × H)" required error={showErrors && !(p.l > 0 && p.w > 0 && p.h > 0)} className="sm:col-span-2">
+                  <Fld label="Dimensions (L × W × H)" required error={showErrors && !(p.l > 0 && p.w > 0 && p.h > 0)}>
                     <div className="grid grid-cols-3 gap-2">
                       <NumBox value={p.l} unit="cm" error={reqErr(p.l > 0)} onChange={(n) => setParcel(i, { l: n })} />
                       <NumBox value={p.w} unit="cm" error={reqErr(p.w > 0)} onChange={(n) => setParcel(i, { w: n })} />
@@ -1176,27 +1155,7 @@ export default function AddOrderPage() {
                     </div>
                   </Fld>
                 )}
-              </Grid>
-
-              {(!hid('pkgTracking') || !hid('pkgPalletSpace') || !hid('pkgDescription')) && (
-                <>
-                  <MoreToggle open={moreOpen} onToggle={() => togglePkgMore(i)} label="More package details" />
-                  {moreOpen && (
-                    <div className="mt-4">
-                      <Grid>
-                        {!hid('pkgTracking') && (
-                          <F label="Tracking Number" value={p.trackingNumber ?? ''} placeholder="Auto-generated when empty" disabled={!!fromOverage && i === 0}
-                            helper={fromOverage && i === 0 ? 'The overage scan barcode' : undefined} onChange={(v) => setParcel(i, { trackingNumber: v })} />
-                        )}
-                        {!hid('pkgPalletSpace') && <F label="Pallet Space" value={p.palletSpace ?? ''} onChange={(v) => setParcel(i, { palletSpace: v })} />}
-                        {!hid('pkgDescription') && (
-                          <F className="sm:col-span-2" label="Package Description" value={p.description ?? ''} onChange={(v) => setParcel(i, { description: v })} />
-                        )}
-                      </Grid>
-                    </div>
-                  )}
-                </>
-              )}
+              </div>
 
               {/* contents — optional, nested SKU lines scoped to this package */}
               <div className="mt-5 border-t border-line pt-4">
@@ -1336,35 +1295,6 @@ export default function AddOrderPage() {
     </SectionCard>
   )
 
-  const vasSection = (
-    <div id="sec-vas" className="scroll-mt-20">
-      <RepeatableList<VasLine>
-        title="Value Added Services" addNoun="Service" icon={<Wrench size={15} className={ICON} />}
-        caption="Provide the value-added services for this consignment to ensure that the job is assigned with the right capabilities and resources."
-        cardLabel={(i) => `VAS ${i + 1}`}
-        rows={c.vas ?? []}
-        incomplete={(v) => !vasOk(v)}
-        summary={(v) => <Facts items={[v.service, v.level, v.level === 'SKU' && v.skuCode, v.serviceTimeMin ? `${v.serviceTimeMin} min` : null]} />}
-        onAdd={() => setC({ vas: [...(c.vas ?? []), isFtl ? { ...newVas(), level: 'CONSIGNMENT' } : newVas()] })}
-        onRemove={(i) => setC({ vas: (c.vas ?? []).filter((_, j) => j !== i) })}
-        body={(v, i) => (
-          <Grid>
-            <F label="VAS Added Level" required value={v.level} options={opts(VAS_LEVELS)}
-              onChange={(x) => setVas(i, { level: x as VasLine['level'], ...(x === 'SKU' ? {} : { skuCode: '' }) })} />
-            {v.level === 'SKU'
-              ? <F label="SKU Line Item No" required value={v.skuCode} placeholder={skuLineOpts.length ? 'Pick a SKU' : 'Add a SKU first'}
-                  options={skuLineOpts} error={showErrors && !v.skuCode ? ' ' : undefined} onChange={(x) => setVas(i, { skuCode: x })} />
-              : <Fld label="SKU Line Item No"><ReadBox value={v.level === 'PACKAGE' ? 'Every piece' : 'This consignment'} /></Fld>}
-            <F label="Service" required value={v.service} placeholder="Pick a service"
-              options={VAS_OPTS} error={showErrors && !v.service ? ' ' : undefined} onChange={(x) => setVas(i, { service: x })} />
-            <FNum label="Service Time (mins)" required integer value={v.serviceTimeMin} unit="min" onChange={(n) => setVas(i, { serviceTimeMin: n })} />
-            <F label="Remark" className="sm:col-span-2" value={v.remark} placeholder="Optional" onChange={(x) => setVas(i, { remark: x })} />
-          </Grid>
-        )}
-      />
-    </div>
-  )
-
   /* LTL only — an FTL booking's rate/TAT already comes from the vehicles configured
      above and its Service Type is picked in Consignment Details, so this section
      doesn't apply and is left out of `sections` entirely when Dedicate Truck is on. */
@@ -1403,7 +1333,7 @@ export default function AddOrderPage() {
   const byId: Record<string, ReactNode> = {
     'sec-consignment': consignmentSection, 'sec-ship-from': shipFromSection,
     'sec-rto': rtoSection, 'sec-ship-to': shipToOpen ? shipToSection : shipToPlaceholder, 'sec-package': packageSection,
-    'sec-vehicle': vehicleSection, 'sec-vas': vasSection, 'sec-services': servicesSection,
+    'sec-vehicle': vehicleSection, 'sec-services': servicesSection,
   }
   const pct = Math.round((filledCount / allReq.length) * 100)
 
