@@ -993,7 +993,6 @@ export default function AddOrderPage() {
           driven by a toggle should never appear above the toggle that triggers it. */}
       <SubHead label="Handling" />
       <div className="flex flex-wrap items-center gap-3">
-        {!hid('scannable') && <ChipToggle icon={ScanLine} label="Do you want separate labels for each package? - Yes or no" checked={!!c.scannable} onChange={(v) => setC({ scannable: v })} />}
         {!hid('dedicateTruck') && dedicateToggle}
       </div>
       {isFtl && (
@@ -1074,7 +1073,7 @@ export default function AddOrderPage() {
      narrow. Either expanding to a full address form drops back to full-width stacking
      so the 4-column field grid isn't squeezed into a half-width column. */
   const shipFromRtoRow = (
-    <div id="sec-ship-from-rto" className={`scroll-mt-20 grid items-start gap-5 ${!editFrom && c.rtoMode !== RTO_MODES[1] ? 'lg:grid-cols-2' : ''}`}>
+    <div id="sec-ship-from-rto" className={`scroll-mt-20 grid gap-5 ${!editFrom && c.rtoMode !== RTO_MODES[1] ? 'lg:grid-cols-2 lg:items-stretch' : ''}`}>
       {shipFromSection}
       {rtoSection}
     </div>
@@ -1149,6 +1148,12 @@ export default function AddOrderPage() {
   })
   const packageSection = (
     <div id="sec-package" className="scroll-mt-20">
+      {!hid('scannable') && (
+        <div className="mb-4">
+          <ChipToggle icon={ScanLine} label="Do you want separate labels for each package? - Yes or no"
+            checked={!!c.scannable} onChange={(v) => setC({ scannable: v })} />
+        </div>
+      )}
       <RepeatableList<Parcel>
         title="Packages" addNoun="Package" icon={<PackageIcon size={15} className={ICON} />}
         caption="Add the packages in this consignment. A package can ship as-is, or you can optionally list what's inside it."
