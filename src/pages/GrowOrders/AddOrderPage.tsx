@@ -34,7 +34,7 @@ import { useEffect, useMemo, useRef, useState, type ComponentProps, type Keyboar
 import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  CalendarCheck, ChevronDown, ChevronRight, CircleDot, CircleMinus, ClipboardList, FileCheck,
+  ChevronDown, ChevronRight, CircleDot, CircleMinus, ClipboardList, FileCheck,
   Package, Package as PackageIcon, Pencil, Plus, ScanBarcode, ScanLine, Truck, Undo2, User,
   Warehouse, X,
 } from 'lucide-react'
@@ -48,7 +48,7 @@ import {
 import { ORIGIN_COUNTRIES } from '../../data/originCountries'
 import { toast } from '../../nueva/toast'
 import {
-  Button, Checkbox, DateInput, IconButton, Input, MenuSelect, MultiSelectDropdown, PageHeader, Panel,
+  Button, Checkbox, DateInput, IconButton, Input, MenuSelect, MultiSelect, MultiSelectDropdown, PageHeader, Panel,
   SearchInput, StatusPill, Toggle,
 } from '../../nueva/components'
 import { DateTimeRangeInput } from '../../nueva/DateRangeFilter'
@@ -71,6 +71,12 @@ import { fieldHidden, fieldLabel, loadFieldConfig, loadFormBehavior } from '../C
 const CONSIGNMENT_TYPES = ['Forward', 'Reverse', 'Exchange', 'Transfer', 'Service']
 const PAYMENT_MODES = ['Prepaid', 'COD', 'To Pay']
 const RTO_MODES = ['Same As Ship From', 'Use Different Address']
+/** common instruction presets — the merchant can also type a custom one */
+const INSTRUCTION_OPTIONS = [
+  'Leave at the door', 'Hand to recipient only', 'Call before delivery',
+  'Ring the doorbell', 'Do not ring the doorbell', 'Leave with security / reception',
+  'Fragile — handle with care', 'Signature required',
+]
 const DIAL_CODES = ['+63', '+27', '+264', '+267', '+1', '+44', '+91']
 const DIM_UOMS = ['CM', 'IN', 'M']
 const WEIGHT_UOMS = ['KG', 'LB', 'G']
@@ -672,6 +678,19 @@ export default function AddOrderPage() {
   })
   const setC = (patch: Partial<ConsignmentFields>) => setCState((x) => ({ ...x, ...patch }))
   const [instructions, setInstructions] = useState(saved?.instructions ?? '')
+  /* One merged Instructions field feeds both underlying paths — ops-facing
+     consignmentDetails.specialInstructions and driver-facing OrderDraft.instructions —
+     since a merchant doesn't think in terms of that internal split. */
+  const [instructionTags, setInstructionTags] = useState<string[]>(() => {
+    const seed = saved?.instructions || saved?.consignment?.specialInstructions || ''
+    return seed ? seed.split('; ').filter(Boolean) : []
+  })
+  const setInstructionTagsAndSync = (next: string[]) => {
+    setInstructionTags(next)
+    const joined = next.join('; ')
+    setC({ specialInstructions: joined })
+    setInstructions(joined.slice(0, 150))
+  }
 
   /* ---- FTL: Dedicate Truck on → Vehicle Details ---- */
   const isFtl = !fromOverage && !!c.dedicateTruck
@@ -974,10 +993,8 @@ export default function AddOrderPage() {
           driven by a toggle should never appear above the toggle that triggers it. */}
       <SubHead label="Handling" />
       <div className="flex flex-wrap items-center gap-3">
-        {!hid('scannable') && <ChipToggle icon={ScanLine} label={lbl('scannable')} checked={!!c.scannable} onChange={(v) => setC({ scannable: v })} />}
-        {!hid('schedulingConfirmation') && <ChipToggle icon={CalendarCheck} label={lbl('schedulingConfirmation')} checked={!!c.schedulingConfirmation} onChange={(v) => setC({ schedulingConfirmation: v })} />}
+        {!hid('scannable') && <ChipToggle icon={ScanLine} label="Do you want separate labels for each package? - Yes or no" checked={!!c.scannable} onChange={(v) => setC({ scannable: v })} />}
         {!hid('dedicateTruck') && dedicateToggle}
-        {!hid('clearanceRequired') && <ChipToggle icon={FileCheck} label={lbl('clearanceRequired')} checked={!!c.clearanceRequired} onChange={(v) => setC({ clearanceRequired: v })} />}
       </div>
       {isFtl && (
         <div className="mt-4">
@@ -990,16 +1007,10 @@ export default function AddOrderPage() {
       {(!hid('specialInstructions') || !hid('deliveryInstructions')) && (
         <>
           <SubHead label="Instructions" />
-          <div className="grid grid-cols-1 gap-x-6 gap-y-4 md:grid-cols-2">
-            {!hid('specialInstructions') && (
-              <F label={lbl('specialInstructions')} multiline value={c.specialInstructions ?? ''} placeholder="Handling notes visible to operations"
-                onChange={(v) => setC({ specialInstructions: v })} />
-            )}
-            {!hid('deliveryInstructions') && (
-              <F label={lbl('deliveryInstructions')} multiline value={instructions} placeholder="Instructions for the driver at the door"
-                onChange={(v) => setInstructions(v.slice(0, 150))} helper={`Shared with the pickup and delivery driver · ${instructions.length}/150`} />
-            )}
-          </div>
+          <Fld label="Instructions" info>
+            <MultiSelect value={instructionTags} options={INSTRUCTION_OPTIONS} creatable
+              placeholder="Pick common instructions or type your own" onChange={setInstructionTagsAndSync} />
+          </Fld>
         </>
       )}
     </SectionCard>
@@ -1042,7 +1053,7 @@ export default function AddOrderPage() {
     <SectionCard id="sec-rto" title="Return To Origin (RTO)" done={done(rtoReq)}
       icon={<Undo2 size={15} className={ICON} />}
       caption="Provide the return-to-origin address and contact details for this consignment.">
-      <Segmented options={RTO_MODES} value={c.rtoMode ?? RTO_MODES[0]} onChange={(m) => setC({ rtoMode: m })} />
+      <Segmented compact options={RTO_MODES} value={c.rtoMode ?? RTO_MODES[0]} onChange={(m) => setC({ rtoMode: m })} />
       {c.rtoMode === RTO_MODES[1] && (
         <div className="mt-5">
           <PartyFields party={rto} set={(p) => setRto((x) => ({ ...x, ...p }))} nameLabel="Name" windowLabel={null} hid={hid}
@@ -1100,13 +1111,20 @@ export default function AddOrderPage() {
             </div>
             <PartyFields party={d} set={set} nameLabel="Customer Name" windowLabel="Delivery" requireContact hid={hid} showErrors={showErrors}
               advancedDefaultOpen={advancedDefaultOpen} />
+            {/* customs clearance only applies once this address crosses a border from Ship From — shown
+                right by the country that triggers it, not as a blanket Handling toggle */}
+            {!hid('clearanceRequired') && sender.country && d.country && d.country !== sender.country && (
+              <div className="mt-3">
+                <ChipToggle icon={FileCheck} label={lbl('clearanceRequired')} checked={!!c.clearanceRequired} onChange={(v) => setC({ clearanceRequired: v })} />
+              </div>
+            )}
           </div>
         )
       })}
       <button type="button" onClick={() => setDrops((ds) => [...ds, blankParty()])}
         className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-warm-300 py-3
                    text-[13px] font-bold text-brand-500 transition-colors hover:border-brand-500 hover:bg-brand-50/40">
-        <Plus size={14} /> Add a delivery address
+        <Plus size={14} /> Add another delivery address
       </button>
     </SectionCard>
   )

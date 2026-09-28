@@ -119,21 +119,24 @@ export function SubHead({ label, first }: { label: string; first?: boolean }) {
   )
 }
 
-export function Segmented({ options, value, onChange }: {
+export function Segmented({ options, value, onChange, compact }: {
   options: string[]; value: string; onChange: (v: string) => void
+  /** one row, no wrap, options share the width evenly — for a narrow column (e.g. a half-width card) */
+  compact?: boolean
 }) {
   return (
-    <div className="flex flex-wrap gap-3">
+    <div className={compact ? 'flex gap-2' : 'flex flex-wrap gap-3'}>
       {options.map((o) => {
         const on = o === value
         return (
           <button
             key={o} type="button" onClick={() => onChange(o)}
-            className={`flex items-center gap-2.5 rounded-md border px-4 py-2.5 text-[14px] transition-colors
-              ${on
-                ? 'border-brand-500 bg-brand-50/60 text-ink'
-                : 'border-line bg-surface text-ink-2 hover:text-ink'}`}>
-            <CircleDot size={15} className={on ? 'text-brand-500' : 'text-warm-400'} />
+            className={compact
+              ? `flex flex-1 items-center justify-center gap-1.5 whitespace-nowrap rounded-md border px-2 py-2 text-[12.5px] transition-colors
+                ${on ? 'border-brand-500 bg-brand-50/60 font-bold text-brand-500' : 'border-line bg-surface text-ink-2 hover:text-ink'}`
+              : `flex items-center gap-2.5 rounded-md border px-4 py-2.5 text-[14px] transition-colors
+                ${on ? 'border-brand-500 bg-brand-50/60 text-ink' : 'border-line bg-surface text-ink-2 hover:text-ink'}`}>
+            {!compact && <CircleDot size={15} className={on ? 'text-brand-500' : 'text-warm-400'} />}
             {o}
           </button>
         )
