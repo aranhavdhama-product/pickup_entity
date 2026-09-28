@@ -905,11 +905,11 @@ export default function AddOrderPage() {
   }
 
   /* ---- the sections, one order regardless of order complexity ---- */
-  const sections = ['sec-consignment', 'sec-ship-from', 'sec-rto', 'sec-ship-to',
+  const sections = ['sec-consignment', 'sec-ship-from-rto', 'sec-ship-to',
     isFtl ? 'sec-vehicle' : 'sec-package', ...(isFtl ? [] : ['sec-services'])]
   const doneOf: Record<string, boolean> = {
     'sec-consignment': done(consignmentReq),
-    'sec-ship-from': done(fromReq), 'sec-ship-to': done(toReq), 'sec-rto': done(rtoReq),
+    'sec-ship-from-rto': done(fromReq) && done(rtoReq), 'sec-ship-to': done(toReq),
     'sec-package': done(pieceReq) && done(skuReq), 'sec-vehicle': done(pieceReq),
     'sec-services': done(carrierReq),
   }
@@ -1012,7 +1012,7 @@ export default function AddOrderPage() {
   /* Ship From — a compact location card + edit pencil by default (was Simplified-only);
      the pencil reveals the full PartyFields form, same as it always did on edit. */
   const shipFromSection = (
-    <SectionCard id="sec-ship-from" title="Ship From" done={doneOf['sec-ship-from']}
+    <SectionCard id="sec-ship-from" title="Ship From" done={done(fromReq)}
       icon={<Warehouse size={15} className={ICON} />}
       caption="Provide the pickup address and contact details for this consignment."
       action={editFrom ? saveSenderToggle : undefined}>
@@ -1039,7 +1039,7 @@ export default function AddOrderPage() {
   )
 
   const rtoSection = (
-    <SectionCard id="sec-rto" title="Return To Origin (RTO)" done={doneOf['sec-rto']}
+    <SectionCard id="sec-rto" title="Return To Origin (RTO)" done={done(rtoReq)}
       icon={<Undo2 size={15} className={ICON} />}
       caption="Provide the return-to-origin address and contact details for this consignment.">
       <Segmented options={RTO_MODES} value={c.rtoMode ?? RTO_MODES[0]} onChange={(m) => setC({ rtoMode: m })} />
@@ -1056,6 +1056,17 @@ export default function AddOrderPage() {
         </div>
       )}
     </SectionCard>
+  )
+
+  /* side by side while both are in their compact state (the common case) — cuts page
+     height since a collapsed Ship From card and the RTO segmented control are both
+     narrow. Either expanding to a full address form drops back to full-width stacking
+     so the 4-column field grid isn't squeezed into a half-width column. */
+  const shipFromRtoRow = (
+    <div id="sec-ship-from-rto" className={`scroll-mt-20 grid items-start gap-5 ${!editFrom && c.rtoMode !== RTO_MODES[1] ? 'lg:grid-cols-2' : ''}`}>
+      {shipFromSection}
+      {rtoSection}
+    </div>
   )
 
   /* collapsed by default on a dedicated-truck booking — see shipToOpen above */
@@ -1331,8 +1342,8 @@ export default function AddOrderPage() {
   )
 
   const byId: Record<string, ReactNode> = {
-    'sec-consignment': consignmentSection, 'sec-ship-from': shipFromSection,
-    'sec-rto': rtoSection, 'sec-ship-to': shipToOpen ? shipToSection : shipToPlaceholder, 'sec-package': packageSection,
+    'sec-consignment': consignmentSection, 'sec-ship-from-rto': shipFromRtoRow,
+    'sec-ship-to': shipToOpen ? shipToSection : shipToPlaceholder, 'sec-package': packageSection,
     'sec-vehicle': vehicleSection, 'sec-services': servicesSection,
   }
   const pct = Math.round((filledCount / allReq.length) * 100)
