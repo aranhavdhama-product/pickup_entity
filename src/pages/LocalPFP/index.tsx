@@ -31,21 +31,29 @@ import { toast } from '../../nueva/toast'
    scratchpad/split/pixel-diff-log.md */
 import { ClearFilters, DateRange, FilterLine, LocalTabs, SearchBox } from '../../local/chrome'
 import { Layers, Package as PackageIcon, Truck } from 'lucide-react'
-import { useGrowOrders, growOrderActions, growOrdersSnapshot } from '../../growOrders/store'
-import { daysFromNow } from '../../growOrders/tabs'
-import { hubName, inboundHubFor } from '../../growOrders/hubs'
+import { useGrowOrders, growOrderActions } from '../../growOrders/store'
+import type { PrAction } from '../../growOrders/prActions'
+import { PrActionDialogs } from '../LocalPickup/prSelectionActions'
+import { prSelectionItems, type PrDialog, type PrSelectionItem } from '../LocalPickup/prSelectionItems'
+import { STATUS_FILTER_OPTIONS, matchesStatus } from '../LocalPickup/prModel'
+import { cancelReasonLabel } from '../../growOrders/pickupReasons'
 import { usePickupModuleConfig } from '../../config/pickupModule'
 import {
   CATEGORY_FLAGS, csvOf, downloadCsv, isPendingForPlanning, isPendingPickup, isPickupRow,
-  pickupLoadOf, toConsignmentRow, toPickupRow,
-  type CategoryFlag, type LocalConsignmentRow, type LocalPickupRow, type UnifiedRow,
+  pickupScheduleTargetOf, toConsignmentRow, toPickupRow,
+  type CategoryFlag, type LocalConsignmentRow, type UnifiedRow, executionOverlay,
 } from './adapter'
 import { hiddenStagingColumns } from './columnConfig'
-import { ROW_TYPES, type RowType } from './fieldRegistry'
+import { type RowType } from './fieldRegistry'
 import { planningActions, usePlanning } from './planningStore'
 import {
-  CancelOrderModal, CancelPickupModal, CloseConsignmentModal, FailPickupModal, PlanCollectionModal,
-  PlanRouteModal, RaiseExceptionModal, RtoConfirmModal, ScheduleModal, type PlanCollectionChoice,
+  COMMON_COLUMNS, CONSIGNMENT_TAB_COLUMNS, LINK_COLUMNS, MEASURED_COLUMNS, PILL_COLUMNS, PR_VIEW_COLUMNS, TABS,
+  TYPE_OPTIONS, extraCells, inTab, typeKeyOf, parseTab, viewOf, widthOf,
+  type ColumnView, type ExtraCtx, type GroupBy, type TabKey,
+} from './viewColumns'
+import {
+  CancelOrderModal, CancelPickupModal, CloseConsignmentModal,
+  PlanRouteModal, RaiseExceptionModal, RtoConfirmModal, ScheduleModal,
 } from './modals'
 import ViewConsignment from './ViewConsignment'
 import ViewPickup from './ViewPickup'
@@ -53,15 +61,41 @@ import {
   ArrowRight, Barbell, Biohazard, CaretDown, CaretDownSolid, CaretUpSolid, ChevronLeft,
   ChevronRight, Close, Clock, CalendarCheck, Download, Eye, Funnel, GridFour, ListChecks,
   ListGlyph, MagnifyingGlass, NotePencil, Refresh, RoutePath, Star, Stack,
+  ArrowUturnLeft, MapPin, Package as PackageGlyph, Send, Sparkles,
   StepDown, StepUp, TableEdit, Trash, WarningCircle, WarningTriangle, WineGlass,
 } from './icons'
 import { COLUMNS, FUNNEL_FILTERS, ROLE, TABLE_SCROLL_WIDTH, cssVars } from './stagingTokens'
+import { STATE_OPTIONS, matchesState } from './stateVocabulary'
 import {
   FIXTURE_CARRIERS, FIXTURE_CATEGORIES, FIXTURE_DATE_RANGE, FIXTURE_STATS,
   STAGING_FIXTURE_ROWS, fixtureRequested, type FixtureRow,
 } from './stagingFixture'
 
 /* ------------------------------------------------------------ vocabulary --- */
+
+/**
+ * The filter line per row kind (owner, 2026-09-25):
+ *  - consignment  staging's set (date on Ship By · State/Secondary State · Merchant ·
+ *                 Order Type · funnel), + the Carriers / Categories chips + Quick Filter
+ *  - pickup       the Pickup page's grammar (date on the pickup window · Status ·
+ *                 Merchant · funnel: Type, Pickup Address, Destination Hub, Source)
+ *  - common       All: date (Ship By / Pickup Start) · Merchant · Type · funnel: Destination
+ */
+type FilterMode = 'consignment' | 'pickup' | 'common'
+const filterModeOf = (v: ColumnView): FilterMode => (v === 'pickup' ? 'pickup' : v === 'common' ? 'common' : 'consignment')
+const FILTER_DIMS: Record<FilterMode, string[]> = {
+  consignment: FUNNEL_FILTERS.filter((d) => d !== 'Merchant' && d !== 'Order Type'),
+  pickup: ['Type', 'Pickup Address', 'Destination Hub', 'Source'],
+  common: ['Destination'],
+}
+
+/** search: a pickup request by its number / pickup address, a consignment by its numbers / address */
+const matchesSearch = (r: UnifiedRow, needle: string): boolean => (isPickupRow(r)
+  ? `${r.reference} ${r.merchant} ${r.shipFromName} ${r.shipFromAddress}`
+  : `${r.orderNumber} ${r.referenceNumber} ${r.merchant} ${r.address}`).toLowerCase().includes(needle)
+
+/** the consignment states that still need planning (owner, 2026-09-25) */
+const NEEDS_PLANNING_STATES = new Set(['Created', 'Ready To Ship', 'Pickup Requested'])
 
 const FLAG_ICON: Record<CategoryFlag, (p: { size?: number }) => React.JSX.Element> = {
   VIP: (p) => <Star {...p} />,
@@ -71,23 +105,9 @@ const FLAG_ICON: Record<CategoryFlag, (p: { size?: number }) => React.JSX.Elemen
   'Heavy Weight': (p) => <Barbell {...p} />,
 }
 
-/**
- * Staging's `State/Secondary State` popover, verbatim — 41 options over BOTH
- * vocabularies in one list (that is why the control is named for two things).
- * Most of them can never occur on local data; they are rendered anyway, because
- * the list's length is part of the chrome being replicated.
- */
-const STATE_OPTIONS = [
-  'At Facility', 'Created', 'Driver Out', 'Intransit', 'Lost', 'Partial At Facility', 'Pending',
-  'Pickedup', 'Pickup Failed', 'Reached Location', 'Ready To Ship', 'RTO Initiated', 'Undelivered',
-  'At Delivery Location', 'At Pickup Location', 'Damage', 'Dispatched', 'Driver Assigned',
-  'Driver Assigned For Delivery', 'Driver Assigned For Pickup', 'Driver Assigned For Service',
-  'Geo Lookup Not Found', 'Label Generated', 'Loaded', 'Loaded On Lastmile', 'Missing',
-  'Out For Delivery', 'Out For Pickup', 'Out For Service', 'Partially Delivered',
-  'Partially Loaded On Lastmile', 'Partially Pickedup', 'Permanent Damage', 'Planned',
-  'Ready For Last Mile Dispatch', 'Request For Reschedule', 'Scheduled', 'Staged',
-  'Staging Started', 'Stored', 'Unplanned',
-]
+/* The `State/Secondary State` option list is shared with both Consignment
+   Order pages — staging's 41-option popover plus the official primary states it
+   lacks (see ./stateVocabulary). */
 
 /** staging's Exceptions dropdown */
 const EXCEPTION_OPTIONS = ['Geo Lookup Not Found', 'Damaged', 'Misroute']
@@ -139,19 +159,22 @@ interface DisplayRow {
    * deviation note in `stagingTokens.ts`.
    */
   rowType: RowType
-  /**
-   * The Type column's SECOND line. The first says what kind of record this is;
-   * this says which kind of that kind — LTL / FTL / Reserved for a booking, and
-   * for a consignment its direction plus the legs it actually generates.
-   */
-  typeDetail: string
   flags: CategoryFlag[]
   flagsDash: boolean
   cells: Record<string, string>
+  /** hover text where it differs from the cell value (the pickup-request columns) */
+  titles?: Record<string, string>
   editable: boolean
 }
 
-const toDisplay = (r: UnifiedRow): DisplayRow => {
+/** a row's staging cells plus the cells the other tabs' column sets read */
+const toDisplay = (r: UnifiedRow, ctx: ExtraCtx): DisplayRow => {
+  const d = toStagingDisplay(r)
+  const extra = extraCells(r, d.cells, ctx)
+  return { ...d, cells: { ...d.cells, ...extra.cells }, titles: extra.titles }
+}
+
+const toStagingDisplay = (r: UnifiedRow): DisplayRow => {
   if (isPickupRow(r)) {
     /* A Reserved booking's weight is the merchant's ESTIMATE, not a sum over
        real orders — it must say so. And an unknown weight is '-', never 0:
@@ -161,47 +184,48 @@ const toDisplay = (r: UnifiedRow): DisplayRow => {
       ? `${r.weightApprox ? '~ ' : ''}${r.weightKg.toFixed(1)}`
       : '-'
     return {
-      id: r.id, orderId: '', rowType: r.rowType, typeDetail: pickupLoadOf(r.request),
+      id: r.id, orderId: '', rowType: r.rowType,
       flags: [], flagsDash: true, editable: false,
       cells: {
         orderNumber: r.reference, referenceNumber: r.reference,
         shipByDate: r.pickupWindow.start.slice(0, 10), state: String(r.state),
         carrier: '-', secondaryState: r.secondaryState || '',
+        /* a pickup request IS the first-mile leg */
+        activeLeg: 'First Mile',
         dispatchDate: '-', weight, volume: '-',
         palletSpaces: '-', sku: '-', serviceTime: '-', tag: r.tags.join(', ') || '-',
         /* the exact sub-type, not a flat 'Pickup': Reserved and FTL behave
            differently enough that collapsing them hides the difference */
-        specialInstructions: '-', merchant: r.merchant, orderType: 'Pickup Request',
+        specialInstructions: '-', merchant: r.merchant, orderType: '-',
         ageing: String(r.ageingDays), address: r.shipFromAddress,
       },
     }
   }
   return {
     id: r.id, orderId: r.orderId, rowType: 'Consignment',
-    /* e.g. 'Forward · FM-MM-LM' — a reverse order collected from the customer
-       reads 'Reverse · FM-LM', which is the case that was invisible before */
-    typeDetail: `${r.orderTypeLabel} · ${r.legChain}`,
     flags: r.flags, flagsDash: r.flags.length === 0, editable: true,
     cells: {
       orderNumber: r.orderNumber, referenceNumber: r.referenceNumber,
       shipByDate: r.shipByDate, state: String(r.state),
       carrier: r.carrier, secondaryState: r.secondaryState,
+      activeLeg: r.activeLeg || '-',
       dispatchDate: r.dispatchDate || '-', weight: String(r.weightKg),
       volume: String(r.volumeMm3), palletSpaces: String(r.palletSpaces ?? 1),
       sku: String(r.skuCount), serviceTime: String(r.serviceTimeMin),
       tag: r.tag || '-', specialInstructions: r.specialInstructions || '-',
-      merchant: r.merchant, orderType: 'Consignment',
+      /* staging's Order Type column: Forward / Reverse */
+      merchant: r.merchant, orderType: r.orderTypeLabel,
       ageing: String(r.ageingDays), address: r.address,
     },
   }
 }
 
 const fixtureToDisplay = (f: FixtureRow, i: number): DisplayRow => ({
-  id: `fixture-${i}`, orderId: '', rowType: 'Consignment', typeDetail: f.orderType,
+  id: `fixture-${i}`, orderId: '', rowType: 'Consignment',
   flags: f.flags, flagsDash: f.flagsDash, editable: true,
   cells: {
     orderNumber: f.orderNumber, referenceNumber: f.referenceNumber, shipByDate: f.shipByDate,
-    state: f.state, carrier: f.carrier, secondaryState: f.secondaryState,
+    state: f.state, carrier: f.carrier, secondaryState: f.secondaryState, activeLeg: '-',
     dispatchDate: f.dispatchDate, weight: f.weight, volume: f.volume,
     palletSpaces: f.palletSpaces, sku: f.sku, serviceTime: f.serviceTime, tag: f.tag,
     specialInstructions: f.specialInstructions, merchant: f.merchant, orderType: f.orderType,
@@ -218,27 +242,17 @@ const SORTABLE = new Set(['orderNumber', 'referenceNumber', 'shipByDate', 'palle
 
 /**
  * OWNER-REQUESTED DEVIATION (logged in scratchpad/split/pixel-diff-log.md):
- * staging has no tab strip on this page. `?tab=` narrows the queue to one row
- * kind before any other filter runs; All is the page as it was. The strip is
- * drawn with the Carriers-card chip tokens (`.pfp-chip`, `.pfp-chip-count`) —
- * no new colour or measurement.
+ * staging has no tab strip on this page. `?tab=` (first-mile · last-mile · all;
+ * the old pickups / consignments slugs are aliases) narrows the queue before
+ * any other filter runs, and picks the column set — see `viewColumns.ts`.
  */
-const TABS = [
-  { key: 'consignments', label: 'Shipments' },
-  { key: 'pickups', label: 'Pickups' },
-  { key: 'all', label: 'All' },
-] as const
-type TabKey = typeof TABS[number]['key']
-const TAB_ICON: Record<TabKey, typeof Layers> = { all: Layers, consignments: PackageIcon, pickups: Truck }
-
-const inTab = (tab: TabKey, r: UnifiedRow): boolean =>
-  tab === 'all' || (tab === 'pickups') === isPickupRow(r)
+const TAB_ICON: Record<TabKey, typeof Layers> = { all: Layers, 'last-mile': PackageIcon, 'first-mile': Truck }
 
 /* ------------------------------------------------------------- the page ---- */
 
 type ModalKind = 'schedule' | 'rto' | 'plan' | 'close' | 'exception' | 'cancel'
-  | 'planPickup' | 'failPickup' | 'cancelPickup' | null
-type PopKind = 'state' | 'funnel' | 'settings' | 'pagesize' | null
+  | 'cancelMixed' | null
+type PopKind = 'state' | 'prStatus' | 'funnel' | 'settings' | 'pagesize' | null
 
 /**
  * `variant`:
@@ -257,17 +271,22 @@ const PFP_BASE: Record<PfpVariant, string> = {
   replica: '/local/pending-for-planning-replica',
 }
 
-export default function LocalPendingForPlanning({ variant = 'current' }: { variant?: PfpVariant } = {}) {
+export default function LocalPendingForPlanning({ variant: variantProp }: { variant?: PfpVariant } = {}) {
+  /* owner, 2026-09-29: ONE Pending for Planning, always the NEW page. Pickup module OFF = no tabs and no
+     pickup rows (only the consignments); module ON — manual OR auto (an auto-raised request still needs
+     planning) — = the First Mile · Last Mile · All tabs, All mixing pickup requests and consignments.
+     The explicit `variant` prop (the -replica route, kept for the pixel-diff tooling) still forces the
+     staging look. The base path follows the ROUTE. */
+  const pickupCfg = usePickupModuleConfig()
+  const pickupsOn = pickupCfg.enabled
+  const variant: PfpVariant = variantProp ?? 'current'
   const replica = variant === 'replica'
-  const basePath = PFP_BASE[variant]
+  const basePath = PFP_BASE[variantProp ?? 'current']
   const nav = useNavigate()
   const { search } = useLocation()
   const { id: overlayId, prId: pickupOverlayId } = useParams()
   const db = useGrowOrders()
   const plan = usePlanning()
-  /* Module off = the page as it was before pickups joined it: no Pickups tab,
-     and no pickup rows anywhere in the queue (so no pickup actions either). */
-  const pickupsOn = usePickupModuleConfig().enabled
   const [params, setParams] = useSearchParams()
 
   const fixture = fixtureRequested(search)
@@ -276,6 +295,9 @@ export default function LocalPendingForPlanning({ variant = 'current' }: { varia
   const [to, setTo] = useState(fixture ? FIXTURE_DATE_RANGE.to : '')
   const [stateSel, setStateSel] = useState<string[]>([])
   const [stateDraft, setStateDraft] = useState<string[]>([])
+  /* First Mile (pickup-request rows): the Pickup page's Status filter */
+  const [prStatusSel, setPrStatusSel] = useState<string[]>([])
+  const [prStatusDraft, setPrStatusDraft] = useState<string[]>([])
   const [funnel, setFunnel] = useState<Record<string, string>>({})
   const [q, setQ] = useState('')
   const [exception, setException] = useState('')
@@ -304,6 +326,7 @@ export default function LocalPendingForPlanning({ variant = 'current' }: { varia
   const [wrapping, setWrapping] = useState('Default')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [modal, setModal] = useState<ModalKind>(null)
+  const [prDialog, setPrDialog] = useState<PrDialog | null>(null)
 
   /* The saved column configuration still governs which of staging's 20 columns
      this listing shows — `/local/columns` is the page that edits it, and its
@@ -316,78 +339,119 @@ export default function LocalPendingForPlanning({ variant = 'current' }: { varia
 
   const all = useMemo<UnifiedRow[]>(() => {
     const left = new Set(plan.leftQueue)
+    const prPlanned = new Set(db.pickupRequests.filter((p) => !isPendingPickup(p)).map((p) => p.id))
+    const onDeliveryTrip = new Set(plan.trips.flatMap((t) => t.stops.filter((x) => x.kind === 'delivery' && x.orderId).map((x) => x.orderId as string)))
     const consignments = db.orders
       .filter((o) => isPendingForPlanning(o, left))
       .map((o) => toConsignmentRow(o, db, {
         secondaryState: plan.secondaryState[o.id],
         schedule: plan.scheduleOverrides[o.id],
         exception: plan.exceptions[o.id],
+        ...executionOverlay(o, plan.trips),
       }))
+      /* owner, 2026-09-25: only rows that STILL NEED PLANNING — a consignment
+         while it is on no route / trip yet (Created · Ready To Ship · Pickup
+         Requested with its request unplanned); nothing picked up, planned,
+         assigned, out for pickup or delivery, or closed */
+      .filter((r) => NEEDS_PLANNING_STATES.has(String(r.state))
+        /* its request already planned / assigned / on a trip / with a 3PL →
+           the consignment is planned with it */
+        && !(r.order.pickupRequestId && prPlanned.has(r.order.pickupRequestId))
+        && !onDeliveryTrip.has(r.orderId))
     const pickups = pickupsOn ? db.pickupRequests.filter(isPendingPickup).map((p) => toPickupRow(p, db)) : []
     return [...consignments, ...pickups].sort((a, b) => (sortKey(a) < sortKey(b) ? 1 : -1))
   }, [db, plan, pickupsOn])
 
   /* ---- the tab: narrows the queue before any filter runs ---- */
-  const tabs = TABS.filter((t) => pickupsOn || t.key !== 'pickups')
-  const rawTab = params.get('tab')
-  /* an unknown value — or Pickups while the module is off — reads as All */
-  const tab: TabKey = rawTab === 'consignments' ? 'consignments'
-    : rawTab === 'pickups' && pickupsOn ? 'pickups' : 'all'
-  const tabCounts = useMemo(() => {
-    const pickups = all.filter(isPickupRow).length
-    return { all: all.length, consignments: all.length - pickups, pickups }
-  }, [all])
-  const tabRows = useMemo(() => all.filter((r) => inTab(tab, r)), [all, tab])
+  /* owner, 2026-09-24: with the pickup module OFF the page has no tabs at all — only the consignments */
+  /* owner, 2026-09-29: All always opens first; with the module off it is the ONLY tab (every consignment) */
+  const tabs = pickupsOn ? TABS : TABS.filter((t) => t.key === 'all')
+  /* an unknown value reads as All. With the module off there are no tabs: the
+     queue holds only consignments, all of them, on the staging column set. */
+  const tab: TabKey = pickupsOn ? parseTab(params.get('tab')) : 'all'
+  /* owner, 2026-09-29: First Mile lists PICKUP REQUESTS only — no Group by (a stale `?group=none` is ignored) */
+  const group: GroupBy = 'pr'
+  const view: ColumnView = fixture || !pickupsOn ? 'consignment' : viewOf(tab, group)
+  /* owner, 2026-09-25: the filter line follows the tab's ROW KIND — pickup
+     requests get the Pickup page's grammar, consignments the staging set, All
+     the common set (see FILTER_DIMS) */
+  const filterMode: FilterMode = filterModeOf(view)
+  const tabRows = useMemo(
+    () => (pickupsOn ? all.filter((r) => inTab(tab, group, r)) : all), [all, tab, group, pickupsOn])
+  /** what the pickup-request and All cells read */
+  const cellCtx = useMemo<ExtraCtx>(() => ({
+    stores: db.stores,
+    byId: new Map(db.orders.map((o) => [o.id, o])),
+    prById: new Map(db.pickupRequests.map((p) => [p.id, p])),
+  }), [db])
 
   const consignmentRows = useMemo(
     () => all.filter((r): r is LocalConsignmentRow => !isPickupRow(r)), [all])
 
+  /* the chips and the funnel offer what THIS tab lists (All drops the
+     first-mile consignments, so their values must not appear there) */
+  const tabConsignments = useMemo(
+    () => tabRows.filter((r): r is LocalConsignmentRow => !isPickupRow(r)), [tabRows])
+
   const carriers = useMemo(
-    () => (fixture ? FIXTURE_CARRIERS : uniq(consignmentRows.map((r) => r.carrier))),
-    [fixture, consignmentRows])
+    () => (fixture ? FIXTURE_CARRIERS : uniq(tabConsignments.map((r) => r.carrier))),
+    [fixture, tabConsignments])
 
   const categories = useMemo(() => (fixture
     ? FIXTURE_CATEGORIES
-    : CATEGORY_FLAGS.map((f) => ({ label: f, count: consignmentRows.filter((r) => r.flags.includes(f)).length }))
-  ), [fixture, consignmentRows])
+    : CATEGORY_FLAGS.map((f) => ({ label: f, count: tabConsignments.filter((r) => r.flags.includes(f)).length }))
+  ), [fixture, tabConsignments])
 
   /** the options behind each of the funnel's 14 single-selects */
   const funnelOptions = useMemo<Record<string, string[]>>(() => ({
-    Facility: uniq(consignmentRows.map((r) => r.origin)),
-    Destination: uniq(all.map((r) => (isPickupRow(r) ? r.shipToName : r.destination))),
-    'Order Type': uniq(consignmentRows.map((r) => `${r.orderTypeLabel} · ${r.legChain}`)),
-    Merchant: uniq(all.map((r) => r.merchant)),
-    'Sort Code': uniq(consignmentRows.map((r) => r.shipToPincode)),
+    Facility: uniq(tabConsignments.map((r) => r.origin)),
+    Destination: uniq(tabRows.map((r) => (isPickupRow(r) ? r.shipToName : r.destination))),
+    /* Forward / Reverse only — the leg chain is the Active Leg column's job (owner, 2026-09-25) */
+    'Order Type': uniq(tabConsignments.map((r) => r.orderTypeLabel)),
+    Merchant: uniq(tabRows.map((r) => r.merchant)),
+    'Sort Code': uniq(tabConsignments.map((r) => r.shipToPincode)),
     Scheduling: ['Scheduled', 'Not scheduled'],
-    'Service Type': uniq(consignmentRows.map((r) => r.serviceType)),
+    'Service Type': uniq(tabConsignments.map((r) => r.serviceType)),
     /* staging offers these four over data this queue has no equivalent for; the
        control is rendered in full (its presence is part of the chrome) and is
        inert until a local row can answer it */
     'Attempt Count': ['0', '1', '2', '3'],
     Clearance: ['Required', 'Done', 'Not required'],
-    Tags: uniq(all.flatMap((r) => (isPickupRow(r) ? r.tags : r.tag.split(', ')))),
+    Tags: uniq(tabRows.flatMap((r) => (isPickupRow(r) ? r.tags : r.tag.split(', ')))),
     'Cod Amount': ['0', '1 - 100', '101 - 500', '500+'],
     'Total Weight': ['0 - 10', '10 - 50', '50 - 200', '200+'],
     'Total Volume': ['0 - 1,000', '1,000 - 100,000', '100,000+'],
-    'Ageing (days)': uniq(all.map((r) => String(r.ageingDays))),
-  }), [all, consignmentRows])
+    'Ageing (days)': uniq(tabRows.map((r) => String(r.ageingDays))),
+    /* the pickup-request dims — option lists from the rows (Type = prModel's labels) */
+    Type: TYPE_OPTIONS.filter((t) => t !== 'Consignment'),
+    'Pickup Address': uniq(tabRows.flatMap((r) => (isPickupRow(r) ? [r.shipFromName] : []))),
+    'Destination Hub': uniq(tabRows.flatMap((r) => (isPickupRow(r) ? [r.shipToName] : []))),
+    Source: uniq(tabRows.flatMap((r) => (isPickupRow(r) ? [r.request.source] : []))),
+  }), [tabRows, tabConsignments])
 
   /* the four row kinds actually present, in the order the discriminator declares */
   const typeOptions = useMemo(
-    () => ROW_TYPES.filter((t) => tabRows.some((r) => r.rowType === t)), [tabRows])
+    () => TYPE_OPTIONS.filter((t) => tabRows.some((r) => typeKeyOf(r) === t)), [tabRows])
 
-  const filtersOn = !!(from || to || stateSel.length || q || exception || carrier || flag || quick
+  const filtersOn = !!(from || to || stateSel.length || prStatusSel.length || q || exception || carrier || flag || quick
     || typeSel || Object.values(funnel).some(Boolean))
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase()
     return tabRows.filter((r) => {
       const pickup = isPickupRow(r)
-      const day = sortKey(r)
-      if (from && day < from) return false
-      if (to && day > to) return false
-      if (stateSel.length && !stateSel.includes(String(r.state)) && !stateSel.includes(r.secondaryState)) return false
-      if (typeSel && r.rowType !== typeSel) return false
+      if (filterMode === 'pickup' && pickup) {
+        /* the pickup WINDOW overlaps the range (a window may span days) */
+        if (from && r.pickupWindow.end.slice(0, 10) < from) return false
+        if (to && r.pickupWindow.start.slice(0, 10) > to) return false
+        if (prStatusSel.length && !prStatusSel.some((st) => matchesStatus(r.request, st))) return false
+      } else {
+        const day = sortKey(r)
+        if (from && day < from) return false
+        if (to && day > to) return false
+      }
+      if (!matchesState(stateSel, String(r.state), r.secondaryState)) return false
+      if (typeSel && typeKeyOf(r) !== typeSel) return false
       if (exception && r.exception !== exception) return false
       if (quick && !quickTest(quick, r)) return false
       if (flag && (pickup || !r.flags.includes(flag))) return false
@@ -398,13 +462,17 @@ export default function LocalPendingForPlanning({ variant = 'current' }: { varia
         if (dim === 'Merchant' && r.merchant !== value) return false
         if (dim === 'Ageing (days)' && String(r.ageingDays) !== value) return false
         if (pickup) {
+          if (dim === 'Type' && typeKeyOf(r) !== value) return false
+          if (dim === 'Pickup Address' && r.shipFromName !== value) return false
+          if (dim === 'Destination Hub' && r.shipToName !== value) return false
+          if (dim === 'Source' && r.request.source !== value) return false
           if (dim === 'Destination' && r.shipToName !== value) return false
           if (dim === 'Tags' && !r.tags.includes(value)) return false
           if (dim === 'Facility' || dim === 'Order Type' || dim === 'Service Type' || dim === 'Sort Code') return false
         } else {
           if (dim === 'Facility' && r.origin !== value) return false
           if (dim === 'Destination' && r.destination !== value) return false
-          if (dim === 'Order Type' && `${r.orderTypeLabel} · ${r.legChain}` !== value) return false
+          if (dim === 'Order Type' && r.orderTypeLabel !== value) return false
           if (dim === 'Service Type' && r.serviceType !== value) return false
           if (dim === 'Sort Code' && r.shipToPincode !== value) return false
           if (dim === 'Tags' && !r.tag.includes(value)) return false
@@ -412,20 +480,24 @@ export default function LocalPendingForPlanning({ variant = 'current' }: { varia
         }
       }
 
-      if (needle) {
-        const hay = pickup
-          ? `${r.reference} ${r.merchant} ${r.shipFromName} ${r.shipFromAddress}`.toLowerCase()
-          : `${r.orderNumber} ${r.referenceNumber} ${r.merchant} ${r.address}`.toLowerCase()
-        if (!hay.includes(needle)) return false
-      }
+      if (needle && !matchesSearch(r, needle)) return false
       return true
     })
-  }, [tabRows, from, to, stateSel, exception, quick, flag, carrier, funnel, q, typeSel])
+  }, [tabRows, from, to, stateSel, prStatusSel, exception, quick, flag, carrier, funnel, q, typeSel, filterMode])
+
+  /* the tab counts: the open tab = what it lists after ITS filters; the others
+     = their rows under what survives a tab switch (Merchant + search) */
+  const tabCounts = useMemo(() => {
+    const needle = q.trim().toLowerCase()
+    const base = (r: UnifiedRow) => (!funnel.Merchant || r.merchant === funnel.Merchant) && (!needle || matchesSearch(r, needle))
+    const count = (t: TabKey) => (t === tab ? filtered.length : all.filter((r) => inTab(t, group, r) && base(r)).length)
+    return { 'first-mile': count('first-mile'), 'last-mile': count('last-mile'), all: count('all') }
+  }, [all, filtered, tab, group, q, funnel.Merchant])
 
   /** what the table actually renders — the fixture short-circuits every filter */
   const display = useMemo<DisplayRow[]>(() => {
     if (fixture) return STAGING_FIXTURE_ROWS.map(fixtureToDisplay)
-    const rows = filtered.map(toDisplay)
+    const rows = filtered.map((r) => toDisplay(r, cellCtx))
     if (!sort) return rows
     const { key, dir } = sort
     return [...rows].sort((a, b) => {
@@ -435,7 +507,7 @@ export default function LocalPendingForPlanning({ variant = 'current' }: { varia
         ? n - m : x.localeCompare(y)
       return dir === 'asc' ? cmp : -cmp
     })
-  }, [fixture, filtered, sort])
+  }, [fixture, filtered, sort, cellCtx])
 
   /* The fixture is ONE page of staging's 101 rows, so its pager must be
      staging's — five numbered buttons and an enabled next arrow. Deriving the
@@ -524,6 +596,16 @@ export default function LocalPendingForPlanning({ variant = 'current' }: { varia
     [selectedRows])
 
   const selIds = selectedRows.map((r) => r.orderId)
+  /** order id → the pickup request the Schedule popup moves instead (module on, first mile) */
+  const pickupTargets = useMemo(() => {
+    const m = new Map<string, string>()
+    if (!pickupCfg.enabled) return m
+    for (const r of selectedRows) {
+      const pr = pickupScheduleTargetOf(r, db.pickupRequests)
+      if (pr) m.set(r.orderId, pr.id)
+    }
+    return m
+  }, [pickupCfg.enabled, selectedRows, db.pickupRequests])
   const clearSelection = () => setSelected(new Set())
 
   const done = (msg: string) => {
@@ -543,66 +625,58 @@ export default function LocalPendingForPlanning({ variant = 'current' }: { varia
 
   /* A tab change clears the selection: rows picked on another tab would stay
      selected out of sight, and the panel would act on rows nobody can see. */
-  const switchTab = (next: TabKey) => {
+  const switchTab = (next: TabKey, nextGroup: GroupBy = group) => {
     setParams((p) => {
       const n = new URLSearchParams(p)
       if (next === 'all') n.delete('tab'); else n.set('tab', next)
+      n.delete('group')
       return n
     }, { replace: true })
     clearSelection()
     setPage(1)
-    if (typeSel && !all.some((r) => inTab(next, r) && r.rowType === typeSel)) setTypeSel('')
+    /* a filter that belongs to the other row kind no longer applies: reset
+       everything but Merchant and search (owner, 2026-09-25) */
+    if (filterModeOf(viewOf(next, nextGroup)) !== filterMode) {
+      setFrom(''); setTo(''); setStateSel([]); setPrStatusSel([]); setTypeSel('')
+      setException(''); setCarrier(''); setFlag(''); setQuick(''); setQuickOpen(false)
+      setFunnel((f): Record<string, string> => (f.Merchant ? { Merchant: f.Merchant } : {}))
+    } else if (typeSel && !all.some((r) => inTab(next, nextGroup, r) && typeKeyOf(r) === typeSel)) setTypeSel('')
   }
 
-  /* ---- Plan Collection For Routing: one hub per route ---- */
-  /* the hub a collection is carried to: its booked inbound hub, else (a Reserved
-     or FTL booking that names none) the hub its pickup point falls under */
-  const hubOf = (r: LocalPickupRow): string => {
-    if (r.request.destinationCode) return r.request.destinationCode
-    const party = r.request.shipFrom ?? db.stores.find((x) => x.code === r.request.storeCode)?.party
-    return party ? inboundHubFor(party) : ''
-  }
-  const pickupHubs = [...new Set(selectedPickups.map(hubOf))]
-  const planHub = pickupHubs.length === 1 ? pickupHubs[0] : null
-  const drivers = useMemo(
-    () => uniq(plan.trips.map((t) => t.driverName ?? '')), [plan.trips])
-  const planDate = useMemo(() => {
-    const today = daysFromNow(0)
-    const first = selectedPickups.map((r) => r.pickupWindow.start.slice(0, 10)).filter(Boolean).sort()[0]
-    return first && first > today ? first : today
-  }, [selectedPickups])
-
-  /** routed pickups leave the queue; any consignments stay selected for Plan For Routing */
-  const planCollections = (rows: LocalPickupRow[], c: PlanCollectionChoice) => {
-    const trip = c.mode === 'existing'
-      ? plan.trips.find((t) => t.id === c.tripId)
-      : planningActions.createTrip({ hubCode: planHub ?? '', name: c.name, date: c.date, driverName: c.driverName })
-    if (!trip) { toast.error('That route is no longer available.'); return }
-    const ok = rows.filter((r) => planningActions.addPickupToTrip(trip.id, r.prId)).length
-    const leftover = profile.consignments
-    setSelected((s) => {
-      const next = new Set(s)
-      rows.forEach((r) => next.delete(r.id))
-      return next
-    })
-    setModal(null)
-    const state = trip.driverName ? `Assigned to ${trip.driverName}` : 'Planned'
-    if (ok === 0) { toast.error(`No pickup could be added to ${trip.id}.`); return }
-    toast.success(`${ok} pickup${ok === 1 ? '' : 's'} added to ${trip.id} — ${state}.`
-      + (ok < rows.length ? ` ${rows.length - ok} could not be routed.` : ''))
-    if (leftover > 0) {
-      toast.info(`${leftover} shipment${leftover === 1 ? ' is' : 's are'} still selected — use Plan For Routing for ${leftover === 1 ? 'it' : 'them'}.`)
-    }
-  }
+  /* ---- pickup-request rows: the SAME 16-item menu as the /local/pickup grid
+          (owner, 2026-09-25; LocalPickup/prSelectionItems.ts), gated by the
+          one matrix, reason = the item's tooltip only (owner, 2026-09-25) ---- */
+  const prItems = useMemo(() => prSelectionItems(selectedPickups.map((r) => r.request), {
+    cfg: pickupCfg, db, openDialog: setPrDialog, clear: clearSelection,
+  }), [selectedPickups, pickupCfg, db])
 
   const clearAll = () => {
-    setFrom(''); setTo(''); setStateSel([]); setFunnel({}); setQ(''); setTypeSel('')
+    setFrom(''); setTo(''); setStateSel([]); setPrStatusSel([]); setFunnel({}); setQ(''); setTypeSel('')
     setException(''); setCarrier(''); setFlag(''); setQuick(''); setPage(1)
   }
 
   /* ---------------------------------------------------------------- view --- */
 
-  const columns = COLUMNS.filter((c) => c.key === '_select' || c.key === '_flags' || c.key === '_pad' || !hidden.has(c.key))
+  /* the per-tab column set (viewColumns.ts). The measured staging set is the
+     only one `/local/columns` configures, and the only one at the measured
+     scroll width; the others are as wide as their columns. */
+  const stagingColumns = COLUMNS.filter((c) => c.key === '_select' || c.key === '_flags' || c.key === '_pad' || !hidden.has(c.key))
+  /* owner, 2026-09-25 ("need them only"): consignment rows on the First Mile
+     (Group by None) and Last Mile tabs carry EXACTLY staging's grid — no
+     Active Leg, no Pickup Request column (viewColumns.CONSIGNMENT_TAB_COLUMNS).
+     Active Leg stays on All and on the module-off page (no tabs). A column
+     hidden on `/local/columns` is hidden here too. */
+  const tabColumns = pickupsOn && !fixture
+    ? CONSIGNMENT_TAB_COLUMNS.filter((c) => c.key === '_select' || c.key === '_flags' || c.key === '_pad' || !hidden.has(c.key))
+    : stagingColumns
+  const columns = view === 'pickup' ? PR_VIEW_COLUMNS
+    : view === 'common' ? COMMON_COLUMNS
+    : tabColumns
+  /* the measured scroll width, less / plus what this set drops / adds against
+     the measured capture (the grid keeps its measured horizontal rhythm) */
+  const tableWidth = view === 'consignment' || view === 'firstMileConsignment'
+    ? TABLE_SCROLL_WIDTH + widthOf(columns) - widthOf(tabColumns === stagingColumns ? stagingColumns : MEASURED_COLUMNS)
+    : widthOf(columns)
 
   /* ---- the controls, built once and placed per variant ---- */
 
@@ -655,9 +729,10 @@ export default function LocalPendingForPlanning({ variant = 'current' }: { varia
       value={typeSel} data-placeholder={!typeSel}
       onChange={(e) => { setTypeSel(e.target.value); setPage(1) }}>
       <option value="">Type</option>
-      {typeOptions.map((o) => <option key={o} value={o}>{o === 'Consignment' ? 'Shipment' : o}</option>)}
+      {typeOptions.map((o) => <option key={o} value={o}>{o}</option>)}
     </select>
   )
+
 
   const exceptionsControl = (
     <select className="pfp-select" aria-label="Exceptions" value={exception}
@@ -673,7 +748,7 @@ export default function LocalPendingForPlanning({ variant = 'current' }: { varia
   const funnelControl = (
     <div style={{ position: 'relative' }} onClick={(e) => e.stopPropagation()}>
       <button type="button" className="pfp-funnel" aria-label="More filters"
-        data-active={!!((!replica && exception) || FUNNEL_FILTERS.some((d) => d !== 'Merchant' && funnel[d])) || undefined}
+        data-active={!!((!replica && filterMode === 'consignment' && exception) || FILTER_DIMS[filterMode].some((d) => funnel[d])) || undefined}
         onClick={() => setPop(pop === 'funnel' ? null : 'funnel')}>
         <Funnel size={16} />
       </button>
@@ -683,8 +758,8 @@ export default function LocalPendingForPlanning({ variant = 'current' }: { varia
             {/* current page: Exceptions moved off the toolbar into the funnel
                 as its FIRST section (owner, spec §11). The replica keeps it on
                 the list toolbar, where staging has it. */}
-            {!replica && exceptionsControl}
-            {FUNNEL_FILTERS.filter((dim) => dim !== 'Merchant').map((dim) => (
+            {!replica && filterMode === 'consignment' && exceptionsControl}
+            {FILTER_DIMS[filterMode].map((dim) => (
               <select key={dim} className="pfp-select" value={funnel[dim] ?? ''}
                 onChange={(e) => { setFunnel((f) => ({ ...f, [dim]: e.target.value })); setPage(1) }}>
                 <option value="">{dim}</option>
@@ -695,6 +770,46 @@ export default function LocalPendingForPlanning({ variant = 'current' }: { varia
         </div>
       )}
     </div>
+  )
+
+  /* First Mile: the Pickup page's Status filter (prModel.STATUS_FILTER_OPTIONS),
+     the same popover grammar as State/Secondary State */
+  const prStatusControl = (
+    <div style={{ position: 'relative' }} onClick={(e) => e.stopPropagation()}>
+      <div className="pfp-select" style={{ width: ROLE.stateSelect.width }} data-placeholder={prStatusSel.length === 0}
+        role="button" tabIndex={0}
+        onClick={() => { setPrStatusDraft(prStatusSel); setPop(pop === 'prStatus' ? null : 'prStatus') }}>
+        <span>{prStatusSel.length ? `${prStatusSel.length} selected` : 'Status'}</span>
+        <span className="pfp-select-caret"><CaretDown size={16} /></span>
+      </div>
+      {pop === 'prStatus' && (
+        <div className="pfp-pop" style={{ top: 36, left: 0, width: 240 }}>
+          <div className="pfp-pop-scroll">
+            {STATUS_FILTER_OPTIONS.map((o) => (
+              <button key={o} type="button" className="pfp-pop-option"
+                onClick={() => setPrStatusDraft((d) => d.includes(o) ? d.filter((x) => x !== o) : [...d, o])}>
+                <input type="checkbox" readOnly checked={prStatusDraft.includes(o)} />{o}
+              </button>
+            ))}
+          </div>
+          <div className="pfp-pop-foot">
+            <button type="button" data-kind="clear" onClick={() => setPrStatusDraft([])}>Clear</button>
+            <button type="button" data-kind="apply"
+              onClick={() => { setPrStatusSel(prStatusDraft); setPage(1); setPop(null) }}>Apply</button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+
+  /* consignment tabs: staging's Order Type (Forward / Reverse) on the row */
+  const orderTypeControl = (
+    <select className="pfp-select" style={{ width: 170 }} aria-label="Order Type"
+      value={funnel['Order Type'] ?? ''} data-placeholder={!funnel['Order Type']}
+      onChange={(e) => { setFunnel((f) => ({ ...f, 'Order Type': e.target.value })); setPage(1) }}>
+      <option value="">Order Type</option>
+      {(funnelOptions['Order Type'] ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
+    </select>
   )
 
   const dateControl = (
@@ -757,20 +872,13 @@ export default function LocalPendingForPlanning({ variant = 'current' }: { varia
       routable={routable.length}
       profile={profile}
       pickupMetrics={pickupMetrics}
+      prItems={prItems}
       onClose={clearSelection}
       onAction={(kind) => {
-        /* ---- pickup-side actions: each opens its popup ---- */
-        if (kind === 'planPickup' && !planHub && pickupHubs.length > 1) {
-          /* a route runs out of ONE hub — never put a pickup on another hub's trip */
-          toast.error(`These pickups go to ${pickupHubs.length} different hubs — plan one hub at a time.`)
-          return
-        }
-        if (kind === 'loadPlanPickup') {
-          /* P4 — each hub's collections join today's "Load plan <hub> <date>" trip */
-          const r = planningActions.sendPickupsToLoadPlanning(selectedPickups.map((x) => x.prId))
-          if (!r.added.length) { toast.error('None of the selected pickups could be sent to load planning.'); return }
-          done(`${r.added.length} pickup${r.added.length === 1 ? '' : 's'} sent to load planning on ${r.trips.map((t) => t.id).join(', ')} — Planned.`
-            + (r.skipped.length ? ` ${r.skipped.length} skipped (closed or on a 3PL carrier).` : ''))
+        /* staging actions with no local implementation (owner, 2026-09-25: the
+           consignment panel carries staging's exact list) */
+        if (kind === 'modify' || kind === 'carrier' || kind === 'storage' || kind === 'driver' || kind === 'bestRoute') {
+          toast.info('Not available in the prototype.')
           return
         }
         if (kind === 'ready') {
@@ -848,21 +956,25 @@ export default function LocalPendingForPlanning({ variant = 'current' }: { varia
               staging's order, plus Merchant and Type after State */}
           <FilterLine>
             {dateControl}
-            {stateControl}
+            {filterMode === 'consignment' && stateControl}
+            {filterMode === 'pickup' && prStatusControl}
             {merchantControl}
-            {typeControl}
+            {filterMode === 'consignment' && orderTypeControl}
+            {filterMode === 'common' && typeControl}
             {funnelControl}
             <ClearFilters active={filtersOn} onClick={clearAll} />
-            <button type="button" className="pfp-quick" aria-pressed={quickOpen}
-              onClick={() => setQuickOpen((v) => !v)}>
-              <WarningCircle size={18} style={{ color: 'rgb(199, 40, 32)' }} />
-              Quick Filter
-              <CaretDown size={16} />
-            </button>
+            {filterMode === 'consignment' && (
+              <button type="button" className="pfp-quick" aria-pressed={quickOpen}
+                onClick={() => setQuickOpen((v) => !v)}>
+                <WarningCircle size={18} style={{ color: 'rgb(199, 40, 32)' }} />
+                Quick Filter
+                <CaretDown size={16} />
+              </button>
+            )}
           </FilterLine>
 
           {/* ------------------------------ row 2: Carriers / Categories cards */}
-          {quickOpen ? quickStrip : (
+          {filterMode !== 'consignment' ? null : quickOpen ? quickStrip : (
             <div className="pfp-strip">
               <section className="pfp-card">
                 <h3 className="pfp-card-title">Carriers</h3>
@@ -900,9 +1012,11 @@ export default function LocalPendingForPlanning({ variant = 'current' }: { varia
           {/* ---------------------------------------------------- row 1: filters */}
           <FilterLine>
             {dateControl}
-            {stateControl}
+            {filterMode === 'consignment' && stateControl}
+            {filterMode === 'pickup' && prStatusControl}
             {merchantControl}
-            {typeControl}
+            {filterMode === 'consignment' && orderTypeControl}
+            {filterMode === 'common' && typeControl}
             {funnelControl}
             <ClearFilters active={filtersOn} onClick={clearAll} />
 
@@ -912,17 +1026,17 @@ export default function LocalPendingForPlanning({ variant = 'current' }: { varia
 
             {/* Show / Hide cards and Quick Filter — icon-only (owner request),
                 the label moves to the tooltip; pressed = the section is open */}
-            <button type="button" className="pfp-iconbtn pfp-toggle" onClick={toggleStrip}
+            {filterMode === 'consignment' && <button type="button" className="pfp-iconbtn pfp-toggle" onClick={toggleStrip}
               aria-pressed={stripOpen}
               aria-label={stripOpen ? 'Hide the Carriers and Categories chips' : 'Show the Carriers and Categories chips'}
               title={stripOpen ? 'Hide carriers & categories' : 'Show carriers & categories'}>
               <GridFour size={16} />
-            </button>
+            </button>}
 
-            <button type="button" className="pfp-iconbtn pfp-toggle" onClick={() => setQuickOpen((v) => !v)}
+            {filterMode === 'consignment' && <button type="button" className="pfp-iconbtn pfp-toggle" onClick={() => setQuickOpen((v) => !v)}
               aria-pressed={quickOpen} aria-label="Quick Filter" title="Quick Filter">
               <WarningCircle size={18} style={{ color: 'rgb(199, 40, 32)' }} />
-            </button>
+            </button>}
 
             {/* the bulk-actions affordance: disabled until rows are picked — the
                 old "Select orders for more action" hint is now its tooltip */}
@@ -943,14 +1057,14 @@ export default function LocalPendingForPlanning({ variant = 'current' }: { varia
               (icons + "Label (n)"), same as /local/pickup and /local/consignments
               — an explicit owner override of the replica rule, logged in
               pixel-diff-log.md. Hidden under ?fixture=staging. */}
-          {!fixture && (
+          {!fixture && tabs.length > 0 && (
             <LocalTabs
               tabs={tabs.map((t) => ({ id: t.key, label: t.label, count: tabCounts[t.key], icon: TAB_ICON[t.key] }))}
               active={tab} onChange={(id) => switchTab(id as TabKey)} />
           )}
 
           {/* ----------------------------------------------- row 2: the strip */}
-          {quickOpen ? quickStrip : stripOpen ? (
+          {filterMode !== 'consignment' ? null : quickOpen ? quickStrip : stripOpen ? (
             /* Carriers / Categories as ONE compact chip line (owner request) —
                same chips, same filters, no card boxes; scrolls within itself */
             <div className="pfp-chipbar">
@@ -966,7 +1080,7 @@ export default function LocalPendingForPlanning({ variant = 'current' }: { varia
 
       {/* --------------------------------------------------------- the table */}
       <div className="pfp-tablewrap">
-        <table className="pfp-table" style={{ width: TABLE_SCROLL_WIDTH }}>
+        <table className="pfp-table" style={{ width: tableWidth }}>
           <colgroup>
             {columns.map((c) => <col key={c.key} style={{ width: c.width }} />)}
           </colgroup>
@@ -1084,8 +1198,19 @@ export default function LocalPendingForPlanning({ variant = 'current' }: { varia
 
       {/* ------------------------------------------------------------ popups */}
       {modal === 'schedule' && (
-        <ScheduleModal rows={selectedRows} onClose={() => setModal(null)}
-          onApply={(v) => { planningActions.schedule(selIds, v); done(`Delivery slot updated for ${selIds.length}.`) }} />
+        <ScheduleModal rows={selectedRows} pickupCount={pickupTargets.size} onClose={() => setModal(null)}
+          onApply={(v) => {
+            /* owner, 2026-09-25: first-mile rows move their pickup request's window
+               (module on); every other row gets staging's delivery slot, unchanged */
+            const prIds = [...new Set(pickupTargets.values())]
+            prIds.forEach((id) => growOrderActions.reschedulePickupRequest(id, v))
+            const delivery = selIds.filter((id) => !pickupTargets.has(id))
+            if (delivery.length) planningActions.schedule(delivery, v)
+            done([
+              prIds.length ? `Pickup window updated for ${prIds.length} pickup request${prIds.length === 1 ? '' : 's'}.` : '',
+              delivery.length ? `Delivery slot updated for ${delivery.length}.` : '',
+            ].filter(Boolean).join(' '))
+          }} />
       )}
       {modal === 'rto' && (
         <RtoConfirmModal count={selIds.length} onClose={() => setModal(null)}
@@ -1120,31 +1245,16 @@ export default function LocalPendingForPlanning({ variant = 'current' }: { varia
         }} />
       )}
 
-      {modal === 'planPickup' && planHub !== null && (
-        <PlanCollectionModal rows={selectedPickups} hubCode={planHub}
-          hubLabel={planHub ? hubName(planHub, db.stores) : 'No inbound hub'}
-          trips={plan.trips} drivers={drivers} defaultDate={planDate}
-          onClose={() => setModal(null)}
-          onApply={(c) => planCollections(selectedPickups, c)} />
-      )}
-      {modal === 'failPickup' && (
-        <FailPickupModal count={selectedPickups.length} onClose={() => setModal(null)} onApply={({ code, note }) => {
-          const ids = new Set(selectedPickups.map((r) => r.prId))
-          selectedPickups.forEach((r) => growOrderActions.failPickupRequest(r.prId, note, code))
-          /* a failure with attempts left may raise its retry at once — a new
-             Requested row (attempt n+1) takes the failed one's place */
-          const retries = growOrdersSnapshot().pickupRequests.filter((p) => p.parentPrId && ids.has(p.parentPrId)).length
-          const n = ids.size
-          done(`${n} pickup${n === 1 ? '' : 's'} marked failed.`
-            + (retries ? ` ${retries} re-attempt${retries === 1 ? '' : 's'} raised and back in the queue.` : ''))
-        }} />
-      )}
-      {modal === 'cancelPickup' && (
-        <CancelPickupModal count={selectedPickups.length} onClose={() => setModal(null)} onApply={(code) => {
+      {modal === 'cancelMixed' && (
+        <CancelPickupModal count={selectedAll.length} onClose={() => setModal(null)} onApply={(code) => {
           selectedPickups.forEach((r) => growOrderActions.cancelPickupRequest(r.prId, code, 'Ops'))
-          done(`${selectedPickups.length} pickup${selectedPickups.length === 1 ? '' : 's'} cancelled.`)
+          selIds.forEach((id) => growOrderActions.update(id, { status: 'Cancelled' }))
+          planningActions.cancel(selIds, cancelReasonLabel(code))
+          done(`${selIds.length} order${selIds.length === 1 ? '' : 's'} cancelled and ${selectedPickups.length} pickup${selectedPickups.length === 1 ? '' : 's'} called off.`)
         }} />
       )}
+
+      <PrActionDialogs dialog={prDialog} db={db} onClose={() => setPrDialog(null)} />
 
       {/* the detail is an OVERLAY over this list, exactly as staging renders it */}
       {overlayId && <ViewConsignment basePath={basePath} />}
@@ -1205,7 +1315,7 @@ function Cell({ col, row, selected, onToggle, onOpen }: {
 
   const value = row.cells[col] ?? '-'
 
-  if (col === 'orderNumber') {
+  if (LINK_COLUMNS.has(col)) {
     return (
       <td>
         <button type="button" className="pfp-order" onClick={onOpen}>
@@ -1214,26 +1324,21 @@ function Cell({ col, row, selected, onToggle, onOpen }: {
       </td>
     )
   }
-  /* TYPE — the row-kind discriminator, first thing after the flags column.
-     Tinted for a pickup so a mixed list separates at a glance; a consignment
-     keeps the plain neutral tag so the ordinary case stays quiet. */
-  if (col === 'orderType') {
+  /* TYPE (All tab) — the row kind ONLY: Consignment or Pickup request (owner,
+     2026-09-25). No flow / leg chain line: which leg a row is on is the Active
+     Leg column's job. Tinted for a pickup so a mixed list separates at a glance. */
+  if (col === 'c:type') {
     return (
       <td>
-        <span className="pfp-typecell" title={`${row.rowType} — ${row.typeDetail}`}>
+        <span className="pfp-typecell" title={value}>
           <span className="pfp-typekind" data-kind={row.rowType === 'Consignment' ? 'consignment' : 'pickup'}>
-            {/* UI copy: a consignment reads "Shipment" (owner rename) */}
-            {value === 'Consignment' ? 'Shipment' : value}
+            {value}
           </span>
-          {row.typeDetail && (
-            /* the leg chain reads as a journey, so it is drawn as one */
-            <span className="pfp-typedetail">{row.typeDetail.replace(/-/g, ' → ')}</span>
-          )}
         </span>
       </td>
     )
   }
-  if (col === 'state') return <td><span className="pfp-pill">{value}</span></td>
+  if (PILL_COLUMNS.has(col)) return <td title={row.titles?.[col]}><span className="pfp-pill">{value}</span></td>
   if (col === 'weight' || col === 'volume') {
     return (
       <td>
@@ -1265,7 +1370,7 @@ function Cell({ col, row, selected, onToggle, onOpen }: {
       </td>
     )
   }
-  return <td title={value}>{value || '-'}</td>
+  return <td title={row.titles?.[col] ?? value}>{value || '-'}</td>
 }
 
 /**
@@ -1276,7 +1381,16 @@ function Cell({ col, row, selected, onToggle, onOpen }: {
  * PICKUP rows only (spec P4, PM decision 2026-09-24) — consignments still have
  * no such action here, as on staging.
  */
-function SelectionPanel({ count, metrics, routable, profile, pickupMetrics, onClose, onAction }: {
+/** the replica's glyph per pickup-request action (extracted SVGs only) */
+const PR_GLYPH: Partial<Record<PrAction, React.JSX.Element>> = {
+  planCollection: <RoutePath size={16} />, addToRoute: <RoutePath size={16} />, assignCarrier: <Send size={16} />,
+  switchToFleet: <Send size={16} />, reschedule: <Clock size={16} />, addConsignments: <PackageGlyph size={16} />,
+  split: <Stack size={16} />, confirmSlot: <CalendarCheck size={16} />, reattempt: <Refresh size={16} />,
+  markPickedUp: <ListChecks size={16} />, markFailed: <WarningTriangle size={16} />, closeHandover: <ListChecks size={16} />,
+  merge: <Stack size={16} />, printLabel: <Download size={16} />, cancel: <Trash size={16} />, downloadCsv: <Download size={16} />,
+}
+
+function SelectionPanel({ count, metrics, routable, profile, pickupMetrics, prItems, onClose, onAction }: {
   count: number
   metrics: { weight: number; volume: number; pallets: number }
   routable: number
@@ -1285,9 +1399,11 @@ function SelectionPanel({ count, metrics, routable, profile, pickupMetrics, onCl
     forward: number; reverse: number; reserved: number; ftl: number; mixed: boolean
   }
   pickupMetrics: { orders: number; weight: number; known: boolean; approx: boolean }
+  /** the shared pickup-request menu for the selected pickups (a pickups-only selection) */
+  prItems: PrSelectionItem[]
   onClose: () => void
   onAction: (kind: 'schedule' | 'rto' | 'plan' | 'ready' | 'close' | 'csv' | 'exception' | 'cancel'
-    | 'planPickup' | 'loadPlanPickup' | 'failPickup' | 'cancelPickup') => void
+    | 'modify' | 'carrier' | 'storage' | 'driver' | 'bestRoute' | 'cancelMixed') => void
 }) {
   /**
    * Each action declares HOW MANY of the selected rows it can actually act on,
@@ -1302,37 +1418,38 @@ function SelectionPanel({ count, metrics, routable, profile, pickupMetrics, onCl
     label: string
     icon: React.JSX.Element
     eligible: number
-    /** which row kinds this action exists for at all */
-    kind: 'consignment' | 'pickup' | 'both'
+    /** which row kinds this action exists for at all ('mixed' = only on a mixed selection) */
+    kind: 'consignment' | 'pickup' | 'both' | 'mixed'
     scope?: string
+    /** the matrix's reason when the action is blocked for this selection */
+    blocked?: string
     danger?: boolean
   }[] = [
-    /* ---- consignment actions ---- */
+    /* ---- consignment actions: EXACTLY staging's list, in staging's order
+            (owner, 2026-09-25). The five with no local implementation say so
+            in a toast. ---- */
+    { key: 'modify', label: 'Modify Order Details', icon: <NotePencil size={16} />, eligible: c, kind: 'consignment' },
     { key: 'schedule', label: 'Schedule', icon: <Clock size={16} />, eligible: c, kind: 'consignment',
       scope: 'A pickup is scheduled by its collection window instead.' },
-    { key: 'rto', label: 'Initiate Return to Origin', icon: <RoutePath size={16} />, eligible: profile.forward,
+    { key: 'rto', label: 'Initiate Return to Origin', icon: <ArrowUturnLeft size={16} />, eligible: profile.forward,
       kind: 'consignment', scope: 'Forward consignments only — a reverse order is already returning.' },
-    { key: 'ready', label: 'Mark Ready for Planning', icon: <CalendarCheck size={16} />, eligible: c, kind: 'consignment' },
-    { key: 'close', label: 'Close Shipment', icon: <ListChecks size={16} />, eligible: c, kind: 'consignment' },
-    { key: 'exception', label: 'Raise Exception', icon: <WarningTriangle size={16} />, eligible: c, kind: 'consignment' },
-    { key: 'cancel', label: 'Cancel Order', icon: <Trash size={16} />, eligible: c, kind: 'consignment', danger: true },
-
-    /* ---- pickup actions: a collection is a routable stop, and a booking can
-            be called off or reported as failed ---- */
-    { key: 'planPickup', label: 'Plan Collection For Routing', icon: <RoutePath size={16} />, eligible: p, kind: 'pickup',
-      scope: 'Adds the collection as a stop on a route / trip at its hub. A routed pickup is Planned and leaves this queue.' },
-    { key: 'loadPlanPickup', label: 'Send to Load Planning', icon: <Stack size={16} />, eligible: p, kind: 'pickup',
-      scope: 'Puts the collection on today\'s load-plan route for its hub (Un-assigned). A 3PL pickup is skipped.' },
-    { key: 'failPickup', label: 'Mark Pickup Failed', icon: <WarningTriangle size={16} />, eligible: p, kind: 'pickup',
-      scope: 'Nobody turned up, or there was nothing to collect. The orders return to Ready for Pickup.' },
-    { key: 'cancelPickup', label: 'Cancel Pickup', icon: <Trash size={16} />, eligible: p, kind: 'pickup', danger: true,
-      scope: 'Calls the booking off. Its orders drop back to Ready for Pickup.' },
-
-    /* ---- valid for either ---- */
+    { key: 'carrier', label: 'Modify Carrier', icon: <PackageGlyph size={16} />, eligible: c, kind: 'consignment' },
+    { key: 'storage', label: 'Modify Storage Location', icon: <MapPin size={16} />, eligible: c, kind: 'consignment' },
+    { key: 'driver', label: 'Assign To Driver', icon: <Send size={16} />, eligible: c, kind: 'consignment' },
+    { key: 'bestRoute', label: 'Add To Best Route', icon: <Sparkles size={16} />, eligible: routable, kind: 'consignment',
+      scope: 'Shipments that are at the facility and have a delivery window.' },
     { key: 'plan', label: 'Plan For Routing', icon: <RoutePath size={16} />, eligible: routable, kind: 'consignment',
       scope: 'Shipments that are at the facility and have a delivery window.' },
+    { key: 'ready', label: 'Mark Ready for Planning', icon: <CalendarCheck size={16} />, eligible: c, kind: 'consignment' },
+    { key: 'close', label: 'Close Consignment', icon: <ListChecks size={16} />, eligible: c, kind: 'consignment' },
     { key: 'csv', label: 'Download CSV', icon: <Download size={16} />, eligible: c, kind: 'both',
-      scope: 'Exports the shipment rows — the columns are the shipment shape.' },
+      scope: 'Exports the consignment rows.' },
+    { key: 'exception', label: 'Raise Exception', icon: <WarningTriangle size={16} />, eligible: c, kind: 'consignment' },
+    { key: 'cancel', label: 'Cancel Order', icon: <Trash size={16} />, eligible: c, kind: 'consignment', danger: true },
+    /* a MIXED selection's cancel: calls off the pickups AND cancels the consignments */
+    { key: 'cancelMixed', label: 'Cancel', icon: <Trash size={16} />, eligible: profile.total, kind: 'mixed', danger: true,
+      scope: 'Cancels the selected consignments and calls off the selected pickup requests.' },
+
   ]
 
   /**
@@ -1345,11 +1462,18 @@ function SelectionPanel({ count, metrics, routable, profile, pickupMetrics, onCl
    * there the reader genuinely needs to know an action exists and why it is
    * unavailable right now.
    */
+  /* owner, 2026-09-25: a MIXED selection (All tab) shows ONLY what is valid
+     for both kinds — Plan For Routing (n), Download CSV, Cancel; a
+     single-kind selection shows that kind's list and nothing else */
+  const MIXED_KEYS = new Set<string>(['plan', 'csv', 'cancelMixed'])
   const actions = ALL.filter((a) => {
+    if (profile.mixed) return MIXED_KEYS.has(a.key)
+    if (a.kind === 'mixed') return false
     if (a.kind === 'both') return true
-    if (profile.mixed) return true
-    return a.kind === 'consignment' ? c > 0 : p > 0
+    return a.kind === 'consignment' && c > 0
   })
+  /* a pickups-only selection: the shared 16-item pickup-request menu instead */
+  const pickupsOnly = c === 0 && p > 0
 
   return (
     <div className="pfp-panel" onClick={(e) => e.stopPropagation()}>
@@ -1397,15 +1521,25 @@ function SelectionPanel({ count, metrics, routable, profile, pickupMetrics, onCl
         </p>
       )}
       <div className="pfp-panel-actions">
-        {actions.map((a) => {
+        {pickupsOnly && prItems.map((it) => (
+          <button key={it.id} type="button" className="pfp-panel-action"
+            data-danger={it.id === 'cancel' || undefined} disabled={it.disabled}
+            title={it.reason} onClick={it.onClick}>
+            {PR_GLYPH[it.id] ?? <ListChecks size={16} />}
+            <span>
+              {it.label}
+            </span>
+          </button>
+        ))}
+        {!pickupsOnly && actions.map((a) => {
           const partial = a.eligible > 0 && a.eligible < profile.total
           return (
             <button key={a.key} type="button" className="pfp-panel-action"
               data-danger={a.danger} disabled={a.eligible === 0}
-              title={a.eligible === 0 ? `Nothing in this selection can be ${a.label.toLowerCase()}d. ${a.scope ?? ''}`.trim() : a.scope}
+              title={a.eligible === 0 ? (a.blocked ?? `Nothing in this selection can be ${a.label.toLowerCase()}d. ${a.scope ?? ''}`.trim()) : a.scope}
               onClick={() => onAction(a.key)}>
               {a.icon}{a.label}
-              {(partial || a.key === 'plan') && <span className="pfp-panel-count">{a.eligible}</span>}
+              {(partial || a.key === 'plan' || a.key === 'bestRoute') && <span className="pfp-panel-count">{a.eligible}</span>}
             </button>
           )
         })}

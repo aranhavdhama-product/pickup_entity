@@ -17,8 +17,8 @@ const DOT: Record<StopStatus, string> = {
   Done: 'bg-success-bg border-success-fg text-success-fg',
   Failed: 'bg-danger-bg border-danger-fg text-danger-fg',
 }
-/* a pickup still ahead carries the brand tint, so collections read at a glance */
-const PICKUP_PENDING = 'bg-brand-50 border-brand-500 text-brand-600'
+/* a pickup still ahead carries an ink ring on the neutral pair, so collections read at a glance (no brand wash) */
+const PICKUP_PENDING = 'bg-neutral-bg border-ink text-ink'
 
 const hourOf = (eta: string) => {
   const [h, m] = eta.split(':').map(Number)
@@ -66,13 +66,13 @@ export function StatusChip({ label, count, active, tone = 'neutral', onClick }: 
   label: string; count: number; active: boolean; tone?: 'neutral' | 'danger'; onClick: () => void
 }) {
   const on = active
-    ? tone === 'danger' ? 'border-danger-fg bg-danger-bg text-danger-fg' : 'border-brand-500 bg-brand-50 text-brand-600'
+    ? tone === 'danger' ? 'border-danger-fg bg-danger-bg text-danger-fg' : 'border-ink bg-warm-50 font-bold text-ink'
     : tone === 'danger' ? 'border-line bg-surface text-danger-fg hover:bg-warm-50' : 'border-line bg-surface text-ink-2 hover:bg-warm-50'
   return (
     <button type="button" onClick={onClick}
       className={`h-8 shrink-0 inline-flex items-center gap-2 rounded-full border px-3 text-[13px] font-bold transition-colors ${on}`}>
       {label}
-      <span className={`min-w-5 rounded-full px-1.5 text-[11.5px] leading-[18px] ${active ? 'bg-surface' : 'bg-warm-100 text-ink-2'}`}>{count}</span>
+      <span className={`min-w-5 rounded-full px-1.5 text-[11px] leading-[18px] ${active ? 'bg-surface' : 'bg-warm-100 text-ink-2'}`}>{count}</span>
     </button>
   )
 }

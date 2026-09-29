@@ -8,7 +8,7 @@
  * rather than being quietly dropped.
  */
 import { useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 /* icons come from the tree's own extracted set — this route drops the lucide icon package */
 import {
   ArrowLeft, ChatText, ClipboardList, Close, Eye, FileImage, GridFour, ListTree, MapPin,
@@ -21,7 +21,7 @@ import {
 import { toast } from '../../nueva/toast'
 import { useGrowOrders } from '../../growOrders/store'
 import type { GrowOrder, Party } from '../../growOrders/types'
-import { stateTone, toConsignmentRow, type LocalConsignmentRow } from './adapter'
+import { stateTone, toConsignmentRow, type LocalConsignmentRow, executionOverlay } from './adapter'
 import { planningActions, usePlanning } from './planningStore'
 /* the SHARED drawer bits — the pickup drawer renders the same ones, so the two
    detail views cannot drift apart into two different-looking surfaces */
@@ -78,10 +78,14 @@ export default function ViewConsignment({ basePath = '/local/pending-for-plannin
       secondaryState: plan.secondaryState[order.id],
       schedule: plan.scheduleOverrides[order.id],
       exception: plan.exceptions[order.id],
+      ...executionOverlay(order, plan.trips),
     })
     : null), [order, db, plan])
 
-  const back = () => nav(basePath)
+  /* opened from a pickup request's Booked orders list → Close returns to that
+     request (it is the previous history entry); otherwise back to the list */
+  const fromPickup = !!(useLocation().state as { fromPickup?: boolean } | null)?.fromPickup
+  const back = () => (fromPickup ? nav(-1) : nav(basePath))
 
   if (!order || !row) {
     return (

@@ -130,7 +130,7 @@ export default function InboundScanner() {
           </label>
         </div>
         {samples.length > 0 && (
-          <p className="px-5 pb-4 text-[12.5px] text-ink-3">
+          <p className="px-5 pb-4 text-[12px] text-ink-3">
             Try: {samples.map((s, i) => (
               <span key={s}>
                 {i > 0 && ', '}

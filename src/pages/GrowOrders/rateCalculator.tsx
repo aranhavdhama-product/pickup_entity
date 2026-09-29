@@ -1,9 +1,10 @@
 /**
  * Rate Calculator — what a booking would cost, before anyone commits to it.
  *
- * It quotes from the SAME rate card the Add Order flow and checkout use
- * (`growOrders/draft.ts`: `parcelQuote`, `ftlQuote`, `withTax`), so a number
- * seen here and the number charged at checkout cannot disagree. That is the
+ * It quotes from the SAME lane rate card the merchant order form and checkout
+ * use (`growOrders/rates.ts` `quoteService`), so a number seen here and the
+ * number charged at checkout cannot disagree. With no real addresses, the
+ * route is asked as a distance band (same city · same region · nationwide). That is the
  * whole point of a calculator — one that kept its own prices would be a
  * plausible-looking lie.
  *
@@ -15,9 +16,12 @@
 import { useMemo, useState } from 'react'
 import { Calculator, Package, Truck } from 'lucide-react'
 import {
-  ADDITIONAL_SERVICES, DEFAULT_FTL_SERVICE, EXTRA_DROP_RATE, FTL_SERVICE_CODES, PARCEL_SERVICES, TAX_RATE, VEHICLE_SPECS,
-  VEHICLE_UNITS, coerceVehicleType, ftlQuote, parcelQuote, vehiclesFor, volKg, withTax,
+  ADDITIONAL_SERVICES, DEFAULT_FTL_SERVICE, FTL_SERVICE_CODES, TAX_RATE, VEHICLE_SPECS,
+  VEHICLE_UNITS, coerceVehicleType, vehiclesFor, volKg,
 } from '../../growOrders/draft'
+import {
+  ZONE_LABEL, bookableServices, extraDropRate, offers, quoteService, vasPrice, zoneParties, type LaneZone,
+} from '../../growOrders/rates'
 import { CURRENCY } from '../../growOrders/seed'
 import { money } from './utils'
 import { Button, Field, Input, MenuSelect, Modal, Tabs } from '../../nueva/components'
@@ -38,7 +42,9 @@ export function RateCalculatorDialog({ onClose }: { onClose: () => void }) {
   const [l, setL] = useState('')
   const [w, setW] = useState('')
   const [h, setH] = useState('')
-  const [service, setService] = useState(PARCEL_SERVICES[0].code)
+  const ltlServices = useMemo(() => bookableServices().filter((s) => offers(s, 'ltl')).map((s) => s.code), [])
+  const [service, setService] = useState(() => ltlServices[0] ?? 'Standard')
+  const [zone, setZone] = useState<LaneZone>('regional')
 
   /* vehicle inputs */
   const [ftlService, setFtlService] = useState(DEFAULT_FTL_SERVICE)
@@ -52,14 +58,21 @@ export function RateCalculatorDialog({ onClose }: { onClose: () => void }) {
     const actual = num(weight)
     const volumetric = volKg({ l: num(l), w: num(w), h: num(h) } as never)
     const chargeable = Math.max(actual, volumetric)
-    const net = parcelQuote(service)
-    return { actual, volumetric, chargeable, net, gross: withTax(net) }
-  }, [weight, l, w, h, service])
+    const q = quoteService({ code: service, name: service }, {
+      ...zoneParties(zone), parcels: [{ cargoType: 'Parcel', itemInfo: '', quantity: 1, weight: actual, l: num(l), w: num(w), h: num(h) }],
+      mode: 'ltl', currency: '₱',
+    })
+    return { actual, volumetric, chargeable, net: q.net, gross: q.total, days: q.days }
+  }, [weight, l, w, h, service, zone])
 
   const ftl = useMemo(() => {
-    const net = ftlQuote(vehicleType, num(units) || 1, num(drops), services)
-    return { net, gross: withTax(net) }
-  }, [vehicleType, units, drops, services])
+    const q = quoteService({ code: ftlService, name: ftlService }, {
+      ...zoneParties(zone), parcels: [], mode: 'ftl', currency: '₱', vas: services,
+      drops: Array.from({ length: num(drops) }, () => zoneParties(zone).to),
+      vehicles: Array.from({ length: num(units) || 1 }, () => ({ vehicleType, actualLoadKg: 0, addressIdx: [0] })),
+    })
+    return { net: q.net, gross: q.total, days: q.days }
+  }, [vehicleType, units, drops, services, ftlService, zone])
 
   const isParcel = tab === TABS[0]
   const quote = isParcel ? parcel : ftl
@@ -68,9 +81,15 @@ export function RateCalculatorDialog({ onClose }: { onClose: () => void }) {
   return (
     <Modal open title="Rate Calculator" onClose={onClose}
       footer={<Button variant="outline" onClick={onClose}>Close</Button>}>
-      <p className="mb-3 text-[12.5px] text-ink-3">An estimate from the same rate card checkout charges from.</p>
+      <p className="mb-3 text-[12px] text-ink-3">An estimate from the same rate card checkout charges from.</p>
       <Tabs tabs={[...TABS]} active={TABS.indexOf(tab as (typeof TABS)[number])} icons={TAB_ICONS}
         onChange={(i) => setTab(TABS[i])} />
+      <div className="mt-4 grid grid-cols-2 items-end gap-3">
+        <Field label="Route">
+          <MenuSelect value={zone} onChange={(v) => setZone(v as LaneZone)} options={['local', 'regional', 'national']}
+            labels={(z) => ZONE_LABEL[z as LaneZone]} />
+        </Field>
+      </div>
 
       <div className="flex flex-col gap-4 pb-3 pt-4">
         {isParcel ? (
@@ -78,8 +97,7 @@ export function RateCalculatorDialog({ onClose }: { onClose: () => void }) {
             <div className="grid grid-cols-2 items-end gap-3">
               <Field label="Actual weight (kg)"><Input type="number" value={weight} onChange={setWeight} placeholder="0" /></Field>
               <Field label="Service">
-                <MenuSelect value={service} onChange={setService} options={PARCEL_SERVICES.map((s) => s.code)}
-                  labels={(c) => `${c} · ${PARCEL_SERVICES.find((s) => s.code === c)?.days ?? '-'} days`} />
+                <MenuSelect value={service} onChange={setService} options={ltlServices} searchable={ltlServices.length > 8} />
               </Field>
             </div>
             <div className="grid grid-cols-3 items-end gap-3">
@@ -118,7 +136,7 @@ export function RateCalculatorDialog({ onClose }: { onClose: () => void }) {
             <div className="grid grid-cols-2 items-start gap-3">
               <Field label="Extra delivery addresses">
                 <Input type="number" value={drops} onChange={setDrops} placeholder="0" />
-                <p className="mt-1 text-[12px] text-ink-3">{money(EXTRA_DROP_RATE, CURRENCY)} per address after the first</p>
+                <p className="mt-1 text-[12px] text-ink-3">{money(extraDropRate('₱'), CURRENCY)} per address after the first</p>
               </Field>
             </div>
 
@@ -131,12 +149,12 @@ export function RateCalculatorDialog({ onClose }: { onClose: () => void }) {
                     <button key={s.code} type="button"
                       onClick={() => setServices((v) => (on ? v.filter((x) => x !== s.code) : [...v, s.code]))}
                       className={`flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-left text-[13px] transition-colors
-                        ${on ? 'border-brand-500 bg-brand-50/60' : 'border-line hover:border-warm-300'}`}>
+                        ${on ? 'border-ink bg-warm-50' : 'border-line hover:border-warm-300'}`}>
                       <span className="min-w-0">
-                        <span className={`block font-bold ${on ? 'text-brand-500' : 'text-ink'}`}>{s.code}</span>
+                        <span className={`block font-bold ${'text-ink'}`}>{s.code}</span>
                         <span className="block truncate text-[12px] text-ink-3">{s.note}</span>
                       </span>
-                      <span className="shrink-0 text-ink">{money(s.price, CURRENCY)}</span>
+                      <span className="shrink-0 text-ink">{money(vasPrice(s.code, '₱'), CURRENCY)}</span>
                     </button>
                   )
                 })}
@@ -147,11 +165,11 @@ export function RateCalculatorDialog({ onClose }: { onClose: () => void }) {
 
         {/* the quote itself, with the tax shown rather than folded in */}
         <div className="rounded-md border border-line bg-warm-25 px-4 py-3 text-[13px]">
-          <Row label={isParcel ? 'Delivery' : 'Vehicle + extras'} value={money(quote.net, CURRENCY)} />
+          <Row label={`${isParcel ? 'Delivery' : 'Vehicle + extras'} · ${quote.days} day${quote.days === 1 ? '' : 's'}`} value={money(quote.net, CURRENCY)} />
           <Row label={`Taxes (${Math.round(TAX_RATE * 100)}%)`} value={money(quote.gross - quote.net, CURRENCY)} />
           <div className="mt-2 flex items-center justify-between border-t border-line pt-2">
-            <span className="text-[14px] font-bold text-ink">Estimated total</span>
-            <span className="text-[18px] font-bold text-ink">{money(quote.gross, CURRENCY)}</span>
+            <span className="text-[15px] font-bold text-ink">Estimated total</span>
+            <span className="text-[15px] font-bold text-ink">{money(quote.gross, CURRENCY)}</span>
           </div>
         </div>
 

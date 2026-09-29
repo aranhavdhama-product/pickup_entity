@@ -17,6 +17,9 @@ export const INBOUND_HUBS: InboundHub[] = [
   { code: 'MNL-01', name: 'Manila Inbound Hub' },
   { code: 'CEB-01', name: 'Cebu Inbound Hub' },
   { code: 'SANPABLO', name: 'San Pablo Inbound Hub' },
+  /* the staging pull's destinations (Chicago network, company 20106) */
+  { code: 'ORD', name: 'Chicago ORD Hub' },
+  { code: 'CHICAGO', name: 'Chicago DC' },
 ]
 
 export const DEFAULT_INBOUND_HUB = 'SANPABLO'

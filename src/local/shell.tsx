@@ -35,10 +35,10 @@ export function ShellRowBody({ icon: Icon, label, suffix, active, collapsed }: {
   if (collapsed) return <Icon size={18} strokeWidth={1.75} />
   return (
     <>
-      <Icon size={17} strokeWidth={1.75} className={active ? 'text-[#E84E1B]' : 'text-gray-500'} />
+      <Icon size={17} strokeWidth={1.75} className={active ? 'text-brand-500' : 'text-ink-3'} />
       <span className="flex-1 truncate">
         {label}
-        {suffix && <span className="ml-1 text-[12px] font-normal text-gray-400">{suffix}</span>}
+        {suffix && <span className="ml-1 text-[12px] font-normal text-ink-3">{suffix}</span>}
       </span>
     </>
   )
@@ -56,25 +56,25 @@ export function ShellSidebar({ items, activeId, homeTo = '/', footer }: {
 
   return (
     <aside
-      className={`flex flex-shrink-0 flex-col border-r border-gray-200 bg-white transition-all duration-200
+      className={`flex flex-shrink-0 flex-col border-r border-line bg-surface transition-all duration-200
         ${collapsed ? 'w-14' : 'w-[256px]'}`}
       style={{ height: '100vh', position: 'sticky', top: 0 }}
     >
-      <div className="flex min-h-[56px] items-center justify-between border-b border-gray-100 px-4 py-3">
+      <div className="flex min-h-[56px] items-center justify-between border-b border-line px-4 py-3">
         {!collapsed ? (
           <>
             <Link to={homeTo} className="flex items-center gap-2">
               <img src="/fareye-logo.png" alt="" className="h-7 w-7 object-contain" draggable={false} />
-              <span className="text-[15px] font-bold tracking-tight text-gray-800">FarEye</span>
+              <span className="text-[15px] font-bold tracking-tight text-ink">FarEye</span>
             </Link>
             <button onClick={() => setCollapsed(true)} aria-label="Collapse sidebar"
-              className="rounded p-1 text-gray-400 hover:bg-gray-100">
+              className="rounded p-1 text-ink-3 hover:bg-warm-100">
               <ChevronsLeft size={16} />
             </button>
           </>
         ) : (
           <button onClick={() => setCollapsed(false)} aria-label="Expand sidebar"
-            className="mx-auto rounded p-1.5 text-gray-400 hover:bg-gray-100">
+            className="mx-auto rounded p-1.5 text-ink-3 hover:bg-warm-100">
             <ChevronsRight size={16} />
           </button>
         )}
@@ -99,7 +99,7 @@ export function ShellSidebar({ items, activeId, homeTo = '/', footer }: {
         })}
       </nav>
 
-      {footer && <div className="border-t border-gray-100 py-2">{footer(collapsed)}</div>}
+      {footer && <div className="border-t border-line py-2">{footer(collapsed)}</div>}
     </aside>
   )
 }
@@ -112,8 +112,8 @@ export function ShellSidebar({ items, activeId, homeTo = '/', footer }: {
 export function ShellHeader({ title, right }: { title: string; right?: ReactNode }) {
   return (
     <header className="flex h-[65px] flex-shrink-0 items-center justify-between bg-canvas px-4">
-      {/* measured: Lato 20/30, letter-spacing .3px, rgb(32,44,57), at x=272 */}
-      <h1 className="text-[20px] font-bold leading-[30px] tracking-[0.3px] text-[rgb(32,44,57)]">{title}</h1>
+      {/* measured: Lato 20/30, letter-spacing .3px, rgb(32,44,57) = ink, at x=272 */}
+      <h1 className="text-[20px] font-bold leading-[30px] tracking-[0.3px] text-ink">{title}</h1>
       {right && <div className="flex items-center gap-4">{right}</div>}
     </header>
   )

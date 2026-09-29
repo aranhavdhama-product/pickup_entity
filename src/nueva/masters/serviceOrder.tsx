@@ -93,6 +93,7 @@ const consignmentTypesColumn = {
   render: (r: MasterRecord) => String(r.consignmentTypeNames ?? '') || '—',
 }
 
+
 /** design-system tag editor for free-form value lists (Business Parameter) —
  * Enter/comma adds, Backspace removes the last, blur commits the rest */
 function TagInput({ value, readOnly, placeholder, onChange }: {

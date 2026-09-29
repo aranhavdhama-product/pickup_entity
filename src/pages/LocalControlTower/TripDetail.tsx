@@ -118,7 +118,7 @@ export default function TripDetail() {
     {
       key: 'kind', label: 'Type', width: 104,
       render: (r) => (r as StopRow).kind === 'pickup'
-        ? <span className="inline-flex items-center gap-1"><Truck size={13} className="text-brand-500" /><StatusPill label="Pick Up" tone="warning" /></span>
+        ? <span className="inline-flex items-center gap-1"><Truck size={13} className="text-ink-3" /><StatusPill label="Pick Up" tone="neutral" /></span>
         : <StatusPill label="Delivery" tone="info" />,
     },
     {
@@ -223,7 +223,7 @@ export default function TripDetail() {
                   <Counter label="On-time" n={comp.onTime} tone="success" />
                   <Counter label="Delayed" n={comp.delayed} tone="danger" />
                 </div>
-                <p className="mt-1.5 text-[11.5px] text-ink-3">Placeholder — no actual arrival times are recorded locally.</p>
+                <p className="mt-1.5 text-[12px] text-ink-3">Placeholder — no actual arrival times are recorded locally.</p>
               </div>
             </div>
             <div className="mt-4 rounded-md border border-line px-3 pt-2"><StopTimeline trip={trip} /></div>

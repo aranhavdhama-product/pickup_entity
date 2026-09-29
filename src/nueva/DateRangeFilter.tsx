@@ -48,7 +48,7 @@ function MonthGrid({ year, month, from, to, hover, onPick, onHover }: {
               onClick={() => onPick(dIso)} onMouseEnter={() => inMonth && onHover(dIso)}
               className={`h-8 text-[12.5px] tabular-nums transition-colors
                 ${isEdge ? 'bg-brand-500 text-white rounded-md font-bold'
-                  : mid ? 'bg-brand-50 text-ink'
+                  : mid ? 'bg-warm-100 text-ink'
                   : inMonth ? 'text-ink hover:bg-warm-100 rounded-md' : 'text-warm-300 cursor-default'}`}>
               {d.getDate()}
             </button>
@@ -117,7 +117,7 @@ export default function DateRangeFilter({ value, fields, onApply, meta }: {
                 return (
                   <button key={f.code} onClick={() => setField(f.code)}
                     className={`w-full rounded-md border px-3 py-2.5 text-[13px] text-center transition-colors
-                      ${on ? 'border-brand-500 bg-brand-50 text-brand-600 font-bold' : 'border-warm-200 bg-warm-50 text-ink-2 hover:border-warm-300'}`}>
+                      ${on ? 'border-ink bg-warm-50 text-ink font-bold' : 'border-warm-200 bg-warm-50 text-ink-2 hover:border-warm-300'}`}>
                     {f.label}
                   </button>
                 )
@@ -208,7 +208,7 @@ function TimeSelect({ value, onChange, placeholder }: {
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => { onChange(t); setOpen(false) }}
               className={`w-full px-3 py-1.5 text-left text-[12.5px] tabular-nums transition-colors hover:bg-warm-50
-                ${t === value ? 'bg-brand-50 font-bold text-brand-500' : 'text-ink'}`}>
+                ${t === value ? 'bg-warm-50 font-bold text-ink' : 'text-ink'}`}>
               {t}
             </button>
           ))}
@@ -297,7 +297,7 @@ export function DateTimeRangeInput({ startDate, startTime, endDate, endTime, onA
                 const fillingStart = !from || !!to
                 const tile = (active: boolean) =>
                   `rounded-md border px-3 py-2 transition-colors ${active
-                    ? 'border-brand-500 bg-brand-50/60'
+                    ? 'border-ink bg-warm-50'
                     : 'border-line bg-warm-25'}`
                 const lbl = (active: boolean) =>
                   `text-[10.5px] font-black uppercase tracking-[0.08em] ${active ? 'text-brand-600' : 'text-ink-3'}`

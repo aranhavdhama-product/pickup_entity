@@ -166,7 +166,7 @@ const CHANGES: Change[] = [
   },
   {
     area: 'Actions', kind: 'added',
-    what: 'Plan Collection For Routing, Mark Pickup Failed and Cancel Pickup.',
+    what: 'The Pickup page\'s pickup-request menu (Plan pickup request for routing, Add to route, Mark Pickup Failed, Cancel …).',
     why: 'A collection IS a routable stop — the driver picks up instead of dropping off — and a booking can be called off or reported as failed. All three are real operations that already existed on the pickup store; the queue simply had no way to reach them.',
   },
   {

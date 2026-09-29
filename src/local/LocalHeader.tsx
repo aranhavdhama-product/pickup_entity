@@ -14,6 +14,7 @@
  */
 import { Link, useLocation } from 'react-router-dom'
 import { ShellHeader } from './shell'
+import { readRoutingPlans, useRoutingPlans } from '../pages/LocalRouting/routingPlans'
 
 /* Title only — this bar is measured at 65px (staging's 64 plus its 1px rule),
    which is what puts Pending For Planning's filter row at the measured y=81. */
@@ -23,14 +24,30 @@ const TITLES: [string, string][] = [
   ['/local/pending-for-planning', 'Pending For Planning'],
   ['/local/pickup', 'Pickup'],
   ['/local/control-tower', 'Control Tower'],
+  ['/local/routing', 'Same/Next Day Routing'],
   ['/local/inbound', 'Inbound'],
-  ['/local/settings/pickup', 'Pickup Request Settings'],
+  ['/local/settings/masters/service_order', 'Service & Order masters'],
+  ['/local/settings/pickup', 'Pickup module'],
+  ['/local/settings/general', 'General Settings'],
+  ['/local/settings/consignment-order', 'Consignment Order'],
   ['/local/settings', 'Settings'],
   ['/local/columns', 'Column Configuration'],
   ['/local/changes', "What's Changed"],
 ]
 
+/* staging titles its route page "Route & Dispatch | ORD | 17 Sep 2026" */
+function routingPlanTitle(pathname: string): string | null {
+  const m = /^\/local\/routing\/(\d+)$/.exec(pathname)
+  if (!m) return null
+  const p = readRoutingPlans().find((x) => x.id === m[1])
+  if (!p) return 'Route & Dispatch'
+  const d = new Date(`${p.dispatchDate}T00:00:00`)
+  return `Route & Dispatch | ${p.hubCode} | ${d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`
+}
+
 function localTitle(pathname: string): string {
+  const plan = routingPlanTitle(pathname)
+  if (plan) return plan
   for (const [prefix, title] of TITLES) {
     if (pathname === prefix || pathname.startsWith(prefix + '/')) return title
   }
@@ -50,12 +67,13 @@ function AppsGridIcon({ size = 18 }: { size?: number }) {
 
 export default function LocalHeader() {
   const { pathname } = useLocation()
+  useRoutingPlans()   // re-render when a plan lands (its title is read from the store)
   return (
     <ShellHeader title={localTitle(pathname)} right={<>
-      <Link to="/" title="All apps" aria-label="All apps" className="rounded p-1.5 text-gray-400 hover:bg-gray-50 hover:text-gray-600">
+      <Link to="/" title="All apps" aria-label="All apps" className="rounded p-1.5 text-ink-3 hover:bg-warm-50 hover:text-ink-2">
         <AppsGridIcon />
       </Link>
-      <span className="text-[13px] font-medium text-gray-500">Delivery Management</span>
+      <span className="text-[13px] font-normal text-ink-3">Delivery Management</span>
     </>} />
   )
 }

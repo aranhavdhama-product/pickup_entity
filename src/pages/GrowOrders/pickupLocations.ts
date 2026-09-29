@@ -19,6 +19,8 @@ import {
   type MasterSource, type Masters,
 } from '../../growOrders/masters'
 import { OTHER_ADDRESS, storeOptionLabel } from './utils'
+import { useAddressBook, type AddressEntry } from '../../growOrders/addressBook'
+import { defaultStoreCodeOf, useMerchantSettingsDb } from '../../growOrders/merchantSettings'
 
 export interface PickupLocations {
   /** Master rows first, then the addresses the merchant saved themselves. */
@@ -51,6 +53,8 @@ export function usePickupLocations(localStores: StoreLocation[], merchantCodeOve
   const merchant = merchantCodeOverride !== undefined
     ? masters.merchants.find((m) => m.code === merchantCodeOverride) ?? null
     : currentMerchant(masters.merchants, signedInCode)
+  /* Settings → Pickup Address "Default" is listed first (re-render on a change) */
+  const settingsDb = useMerchantSettingsDb()
 
   return useMemo(() => {
     /* a Location Master row often has no CONTACT name (staging's MC_0021), and a
@@ -69,7 +73,10 @@ export function usePickupLocations(localStores: StoreLocation[], merchantCodeOve
     const ordered = [...(registered ? [named(registered)] : []), ...master, ...localStores.filter((x) =>
       masters.source === 'sample' || !SEED_CODES.has(x.code))]
     const seen = new Set<string>()
-    const stores = ordered.filter((x) => (seen.has(x.code) ? false : (seen.add(x.code), true)))
+    const deduped = ordered.filter((x) => (seen.has(x.code) ? false : (seen.add(x.code), true)))
+    const def = defaultStoreCodeOf(merchant?.code ?? null)
+    const stores = def && deduped.some((x) => x.code === def)
+      ? [...deduped.filter((x) => x.code === def), ...deduped.filter((x) => x.code !== def)] : deduped
     return {
       stores,
       options: [
@@ -81,7 +88,8 @@ export function usePickupLocations(localStores: StoreLocation[], merchantCodeOve
       loading: masters.loading,
       merchantName: merchant?.name ?? '',
     }
-  }, [masters.locations, masters.source, masters.loading, merchant, localStores])
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- settingsDb: re-read the default store on a Settings write
+  }, [masters.locations, masters.source, masters.loading, merchant, localStores, settingsDb])
 }
 
 /* --------------------------------------------------- receiver address book ---- */
@@ -108,7 +116,9 @@ export interface BookEntry {
  * Exported from here (rather than built inside the page) so the pickup dialog
  * can offer the same book.
  */
-export function receiverBook(masters: Masters, merchantCode: string | null, orders: GrowOrder[]): BookEntry[] {
+export function receiverBook(masters: Masters, merchantCode: string | null, orders: GrowOrder[], saved: AddressEntry[] = []): BookEntry[] {
+  /* the merchant's own Address Book comes FIRST (rows failing validation are left out) */
+  const fromBook = saved.filter((e) => !e.error).map((e) => ({ party: e.party, tag: 'Address book' }))
   const fromMaster = masters.locations
     .filter((l) => l.enabled && DELIVERY_TYPES[l.type]
       && (l.merchantCodes.length === 0 || (merchantCode != null && l.merchantCodes.includes(merchantCode))))
@@ -120,7 +130,7 @@ export function receiverBook(masters: Masters, merchantCode: string | null, orde
     .map((o) => ({ party: o.receiver, tag: null }))
   const seen = new Set<string>()
   const key = (p: Party) => `${p.name}|${p.line1}`.toLowerCase()
-  return [...fromMaster, ...fromHistory].filter((e) => {
+  return [...fromBook, ...fromMaster, ...fromHistory].filter((e) => {
     const k = key(e.party)
     if (!e.party.name && !e.party.line1) return false
     if (seen.has(k)) return false
@@ -138,5 +148,6 @@ export function useReceiverBook(orders: GrowOrder[], merchantCodeOverride?: stri
   const masters = useMasters()
   const signedInCode = useMerchantCode()
   const code = merchantCodeOverride !== undefined ? merchantCodeOverride : (currentMerchant(masters.merchants, signedInCode)?.code ?? null)
-  return useMemo(() => receiverBook(masters, code, orders), [masters, code, orders])
+  const saved = useAddressBook()
+  return useMemo(() => receiverBook(masters, code, orders, saved), [masters, code, orders, saved])
 }

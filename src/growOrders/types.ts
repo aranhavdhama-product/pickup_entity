@@ -120,9 +120,9 @@ export interface GrowOrder {
   receiver: Party
   drops: Party[]               // additional delivery addresses (multi-drop)
   shipmentType: ShipmentType
-  vehicleType: string          // FTL only — the FIRST vehicle's type (derived from `vehicles`)
-  vehicleUnit?: number         // FTL only — how many vehicles (derived from `vehicles`)
-  actualLoad?: number          // FTL only — total kg across the vehicles (derived)
+  vehicleType: string          // FTL or dedicated-truck parcel — the FIRST vehicle's type (derived from `vehicles`)
+  vehicleUnit?: number         // FTL / dedicated truck — how many vehicles (derived from `vehicles`)
+  actualLoad?: number          // FTL / dedicated truck — total kg across the vehicles (derived)
   additionalServices?: string[] // FTL only
   /** FTL only — the booking, one entry per vehicle with the delivery addresses it
    *  serves. Optional: a pre-list record reads through `vehiclesOf()` in draft.ts.
@@ -143,6 +143,9 @@ export interface GrowOrder {
   /* ---- payment / pickup lifecycle (one Orders page, status tabs) ---- */
   paymentStatus: PaymentStatus   // 'Unpaid' until checkout Proceed
   isDraft: boolean               // saved from the stepper, never checked out
+  /** FarEye's `consignment::marked-ready-for-ship`: false = CREATED / Label Generated,
+   *  true = READY_TO_SHIP. Optional so older blobs load (normalize() → false). */
+  readyToShip?: boolean
   pickupRequestId: string | null // set once the order is in a pickup request
   /** The request the parcel was ACTUALLY collected under, when that is not the
    *  one it was booked into. Null = collected where it was booked (or not yet). */
@@ -261,12 +264,18 @@ export interface GrowPickupRequest {
    *  `reattemptPrId` = the retry raised from this one. The second is what stops a
    *  failed request from being re-attempted twice and moves it to Closed. */
   parentPrId: string | null
+  /** Split lineage (owner, 2026-09-25): the request this one was SPLIT out of —
+   *  a split sibling shares the point and window by design, so it is never a Duplicate. */
+  splitFromPrId: string | null
   reattemptPrId: string | null
   /** orderId → the reason code the driver gave for NOT collecting it. */
   notPickedReasons: Record<string, string>
   /* ---- handover (driver scan → hub in-scan reconciliation) ---- */
   handover: PickupHandover
   source: PickupSource
+  /** Shipper slot confirmation (auto pickup, `autoPickup.slotConfirmation`):
+   *  null = not required · false = pending · true = confirmed. */
+  slotConfirmed: boolean | null
 }
 
 export type CarrierMode = 'FLEET' | 'CARRIER'
@@ -341,7 +350,7 @@ export interface GrowOrdersDb {
 export const PR_DEFAULTS = {
   tripId: null, driverName: null, carrierCode: null, carrierName: null, carrierMode: null, carrierPickupRef: null,
   attempt: 1, maxAttempts: 3, failureReason: null, cancelReason: null, manualOverride: null,
-  parentPrId: null, reattemptPrId: null, source: 'Merchant',
+  parentPrId: null, splitFromPrId: null, reattemptPrId: null, source: 'Merchant', slotConfirmed: null,
 } as const satisfies Partial<GrowPickupRequest>
 
 export const blankHandover = (mode: HandoverMode = 'both'): PickupHandover => ({

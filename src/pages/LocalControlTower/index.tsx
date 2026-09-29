@@ -136,7 +136,7 @@ export default function LocalControlTower() {
             <span className="block truncate font-bold text-ink">{t.name}</span>
             <Link to={`/local/control-tower/trips/${t.id}`} onClick={(e) => e.stopPropagation()}
               className="font-mono text-[12px] font-bold text-brand-500 hover:underline">{t.id}</Link>
-            {t.vehicle && <span className="ml-1.5 text-[11.5px] text-ink-3">· {t.vehicle}</span>}
+            {t.vehicle && <span className="ml-1.5 text-[12px] text-ink-3">· {t.vehicle}</span>}
           </span>
         )
       },

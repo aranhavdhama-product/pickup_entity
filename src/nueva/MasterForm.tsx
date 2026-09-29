@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { AddForm, FieldDef, FormSection } from './mastersTree'
+import type { MasterRow } from './mastersEnv'
 import { Button, Field, Input, Select, Toggle, Checkbox } from './components'
 import { Clock, XCircle, Plus, CalendarDays } from 'lucide-react'
 
@@ -111,7 +112,7 @@ function Section({ s, values, set, pageStyle, uppercase }: { s: FormSection; val
         </div>
       )}
       <div className={`grid grid-cols-2 ${pageStyle ? 'gap-x-8 gap-y-5' : 'gap-x-6 gap-y-4'}`}>
-        {isOps ? <OperatingHours /> : s.fields.map((f) => f.type === 'checkbox' ? (
+        {isOps ? <OperatingHours /> : s.fields.filter((f) => !f.showWhen || values[f.showWhen.label] === f.showWhen.equals).map((f) => f.type === 'checkbox' ? (
           <div key={f.label} className={`flex items-center ${pageStyle ? 'pt-7' : 'h-8'} ${f.full ? 'col-span-2' : ''}`}>
             <Checkbox checked={!!values[f.label]} onChange={(v) => set(f.label, v)} label={f.label} />
           </div>
@@ -125,12 +126,14 @@ function Section({ s, values, set, pageStyle, uppercase }: { s: FormSection; val
   )
 }
 
-export function MasterFormBody({ form, onCancel, onSubmit }: { form: AddForm; onCancel: () => void; onSubmit: () => void }) {
+export function MasterFormBody({ form, initial, onCancel, onSubmit }: {
+  form: AddForm; initial?: MasterRow; onCancel: () => void; onSubmit: (values: MasterRow) => void
+}) {
   const pageStyle = form.kind === 'page'
   const [values, setValues] = useState<Record<string, any>>(() => {
     const init: Record<string, any> = {}
     form.sections.forEach((s) => s.fields.forEach((f) => { if (f.default !== undefined) init[f.label] = f.default }))
-    return init
+    return { ...init, ...initial }
   })
   const set = (k: string, v: any) => setValues((s) => ({ ...s, [k]: v }))
   return (
@@ -140,7 +143,7 @@ export function MasterFormBody({ form, onCancel, onSubmit }: { form: AddForm; on
       {pageStyle && (
         <div className="flex items-center justify-end gap-2 pt-4 border-t border-line mt-2">
           <Button variant="outline" onClick={onCancel}>{form.cancelLabel ?? 'Cancel'}</Button>
-          <Button onClick={onSubmit}>{form.submitLabel ?? 'Save'}</Button>
+          <Button onClick={() => onSubmit(values)}>{form.submitLabel ?? 'Save'}</Button>
         </div>
       )}
     </div>

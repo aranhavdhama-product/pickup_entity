@@ -71,6 +71,23 @@ Beyond Masters, every sub-nav item is a live page hooked to real staging APIs
 **Do not restyle the Masters pages** (`pages.tsx`, `MasterForm.tsx`, `mastersTree.ts`)
 — their UI is the reference handed to the FarEye developers.
 
+### Masters audit trail — SED-8163 (2026-09-25)
+
+Every master row's Action cluster has a **Logs** (`History`) icon and every master's toolbar a
+**Logs** icon beside Export; both open `nueva/AuditTrailSlideOver.tsx` (Nueva `SlideOver`: search ·
+Action · User · From / To · Clear Filters, the timeline latest-first with changed fields only,
+"Compare all fields" = the full before / after snapshot, PageSize + Pagination, Export CSV). Data =
+`nueva/auditTrail.ts`, an APPEND-ONLY localStorage store (`local-masters-audit-v1`, no React, no
+fetch, no `src/auth`): `recordAudit()` is the only write; seed history is DERIVED from a master's
+sample rows (never stored); "Reset demo data" clears it. Recording lives in ONE place,
+`pages.tsx` `MasterTablePanel` (add / edit through the persist → `diffRows`, delete, every status
+change, bulk upload via `UploadDataModal`'s additive `onComplete`); the actor is
+`MastersEnv.actor` (local app `dms_admin`, console default `console.user`). Additive to the frozen
+Masters pages — the icons reuse the existing 28 px action-button style. `?logs=all` / `?logs=<rowId>` on a
+master URL opens a trail on load (deep link; used for the Figma captures). Design note:
+`docs/superpowers/research/2026-09-25-masters-audit-trail.md`; Figma (code-to-canvas captures of the three
+states, 2026-09-25): https://www.figma.com/design/YASssnzV7Da9tBNaAciWQ1.
+
 ### Masters replica (original scope):
 
 - `components.tsx` — design-system primitives (Button, Input, Select, Toggle, Checkbox,
@@ -102,11 +119,14 @@ removed from `src/index.css` and `GrowOrders/ui.tsx` is RETIRED (nothing imports
 it, never import it again). Grow keeps its routes, stores and behaviour; only rendering changed.
 Non-component helpers live in `utils.ts` (window spans, overdue/duplicate selectors,
 `groupForPickup`); data is the local `src/growOrders` store (types/seed/store/tabs/draft/hubs,
-localStorage key `fareye-grow-orders-v14`, every persisted record is normalized on load — bump
+localStorage key `fareye-grow-orders-v17`, every persisted record is normalized on load — bump
 the key when a required field is added). `hubs.ts` holds `INBOUND_HUBS` + `inboundHubFor()`:
-every parcel order carries an `inboundHubCode` derived from its receiver. The seed is ~80
-orders / ~30 pickup requests, built from deterministic index math (never `Math.random`) so a
-reload shows the same data. Runs with no session.
+every parcel order carries an `inboundHubCode` derived from its receiver. The seed is ~80 demo
+orders / ~30 pickup requests, built from deterministic index math (never `Math.random`), PLUS
+150 LIVE consignments pulled from staging (`src/growOrders/stagingConsignments.ts` — company
+20106 Chicago network, generated 2026-09-24 through `POST /staging/sbs/graphql`; regenerate,
+never hand-edit; their stores and the ORD/CHICAGO hubs ride along), so a reload shows the same
+data. Runs with no session.
 
 Product changes layered on the replica (deliberate departures from the live portal):
 - **Consignment Order page** (`/grow/orders`, nav "Consignments") — the `/local/consignments`
@@ -122,26 +142,56 @@ Product changes layered on the replica (deliberate departures from the live port
   RTO · Print Label · Download CSV · Cancel Shipment) → Pagination/PageSize. Rows =
   `shipmentRows.ts` (`toConsignmentRow` + the console planning overlay; drafts = State `Draft` /
   Secondary `Save for later`); columns = `shipmentTable.tsx` `useShipmentColumns` (persisted
-  `grow-shipments-columns-v1`; empty columns hidden). Row click → drawer `?order=<id>` in the
-  console drawer's markup (Details · SKU / Package · Tracking · Notes; Resume for drafts).
-- **Pickup Requests page** (`/grow/orders/pickups`) — same grammar, NO tabs; old `?tab=` slugs
-  become filter presets. Filter line: pickup-window range · Status `FilterMultiSelect` · funnel
-  (Pickup Address, Exception, Type, Carrier/Driver, Source, Reserved) · Clear Filters; right:
-  search · "Eligible (n)" toggle (swaps in the shipments columns, `grow-eligible-columns-v1`,
-  with Schedule Pickup) · ⚙ · **Add** (Create Pickup Request dialog). Columns
-  (`pickupRequestColumns.tsx`, formatting from `LocalPickup/prModel.ts`, persisted
-  `grow-pickup-columns-v1`) = the `/local/pickup` grid minus Merchant: Reference · Status ·
-  Exception · Pickup window · Pickup address → hub · Shipments · Weight · Driver / Carrier ·
-  Trip; `PrStatusChip` / `PrExecutionLine` (`pickupRequestTable.tsx`) are the one status
-  rendering. Row click opens the request page. Also kept: `PR-000123` references, weight/qty
+  `grow-shipments-columns-v3`; empty columns hidden). Row click → `?order=<id>` and `/grow/orders/:id` BOTH
+  render `GrowConsignmentView` = the console View Consignment overlay (`LocalConsignments/
+  ConsignmentView`) with `audience="merchant"` + `readSections` (owner, 2026-09-25: "only what is
+  relevant to them … based on the add consignment form"): staging's ten sections do NOT render;
+  the body is the merchant order form read back (`merchantConsignmentSections.tsx`, one scroll,
+  rail = anchors with scroll-spy) — Status (state chip · master tracking no. · carrier · pickup
+  request link) · Consignment details · Ship From · Ship To (+ Return To Origin) · Packages (package cards
+  with their SKUs — HSN, origin, qty) · Value-added services · Service Type (the form's
+  `RateCard` + Shipping/Tax/Total; the checkout's frozen `charges`, else "Estimated"; FTL vehicle
+  lines). Built from the form's `MSection`/`MGrid`; a field/section with no data is not rendered
+  (no "No … available" placeholders); no Load, Attempt, Notes, Customer Feedback, driver, trip,
+  hub, routing, carrier-code or category fields. View Events = the milestone-only log
+  (`viewModel.merchantEventsOf`, no Ops/Customer toggle). Merchant actions in the header (Book
+  Pickup · Resume · Print Label · Cancel Shipment / Discard Draft). `OrderViewPage` is a thin
+  host (the list behind the overlay).
+- **Pickup Requests page** (`/grow/orders/pickups`) — the console `/local/pickup` tabs (owner,
+  2026-09-25): `LocalTabs` **Attention Required · Active · Closed · All · Eligible consignments**
+  (same order, `?tab=` slugs from `tabs.ts`, membership `inLocalPrTab(…, pickupRequestById)`,
+  counts `localPrTabCounts` off the unfiltered lists, default Attention Required; Eligible only in
+  manual mode; pre-tab slugs requested/scheduled/out-for-pickup → active, completed → closed,
+  exceptions → attention) with **Add** (Create Pickup Request dialog) on the strip's right. Filter
+  line: pickup-window range · Status `FilterMultiSelect` · funnel (Pickup Address, Attention
+  Required, Type, Carrier, Reserved) · Clear Filters; right: search · ⚙ · download. Eligible
+  consignments tab = the shipments columns (`grow-eligible-columns-v2`), one-line caption, Schedule
+  Pickup. Bulk actions = merchant only, each gated by `prActions.prBulkState(…, role 'merchant')`:
+  Reschedule · Cancel · Split (`LocalPickup/bookingCards.SplitPickupDialog`; one request, ≥ 2
+  consignments) · Merge (`'merge'` is in `prActions.MERCHANT_ACTIONS`: 2+ Requested/Planned LTL at
+  one pickup point, before `merchantCancelUntil`) · Print Consolidated Label · Download CSV (`merchantPrCsv`, merchant columns only). Merchant columns: Merchant,
+  Source, Trip are neither shown nor in the ⚙ chooser; Driver / Carrier → **Carrier** (the 3PL's
+  name only when `carrierMode === 'CARRIER'`); status chip flags = the console's `statusTags`
+  minus Discrepancy. Columns = ONE definition for both pickup grids (2026-09-25: one value per cell,
+  single-line, `table-fixed` + sideways scroll like Consignment Order): `LocalPickup/prModel.ts`
+  `PR_COLUMN_DEFS` rendered by `LocalPickup/prColumns.tsx` `usePrGridColumns` — Reference ·
+  Status · Type · Attempt · Pickup Window (start – end in ONE column, owner 2026-09-25) · Pickup Address · Destination
+  Hub · Merchant · Shipments · Weight · Driver / Carrier · Trip · Source (Grow = the merchant subset
+  above; NO Exception column — flags live on the Status chip and the detail page); persisted `grow-pickup-columns-v4` / `local-pickup-columns-v3`. `PrStatusChip`
+  (`pickupRequestTable.tsx`) is Grow's one status rendering. Row click opens the request page. Also kept: `PR-000123` references, weight/qty
   summed from linked orders, Overdue + Duplicate markers, detail page with status history,
   Reschedule / Cancel / Print Consolidated Label, a dev
   "Simulate next step" through Requested → Planned → Ready For Last Mile Dispatch → Assigned → Out For Pickup → Completed (derived `Partially picked`; side exits Pickup Failed / Cancelled).
   Pickup windows are two datetimes and may run overnight or
-  across days (≤ 7): multi-day rows render two lines + an `overnight` / `n days` tag, Overdue
+  across days (≤ 7) — every booking / reschedule / split dialog (2026-09-25) asks From: Pickup date ·
+  Start time → To: End date · End time (`LocalPickup/slotFields.tsx`; no Slot dropdown — slot
+  definitions only give the default + the "earliest" rule; `violatesCutoff(start, now, policy, end)`:
+  end after start, ≤ 12 h on one day / ≤ 7 days, lead time, same-day cut-off, operating days,
+  holidays, hours; `slot` on the record is derived from the two times): multi-day rows render two lines + an `overnight` / `n days` tag, Overdue
   is measured on the window's END, and Duplicate = same pickup point + overlapping intervals.
   **`Create Pickup Request`** books a courier slot before the orders exist and shows a
-  `Reserved` chip (the record's internal flag is still `blind`).
+  Type of **LTL blind** / **FTL blind** (the record's internal flag is still `blind`). Pickup Type vocabulary everywhere
+  (grids, detail chips, Type rows) is ONLY LTL · FTL · LTL blind · FTL blind (owner, 2026-09-25) — never "Parcel" or "Reserved".
 - **Pickup reconciliation** (`Completed` / `Pickup Failed` requests): `pickedOrderIds` +
   `overages` on the request and `pickedInRequestId` on the order record what the driver
   ACTUALLY collected. The detail page swaps its Orders card for **Pickup outcome**
@@ -152,11 +202,14 @@ Product changes layered on the replica (deliberate departures from the live port
   **A pickup request with no orders and no overage scans can never reach `Completed`** —
   `advancePickupRequest` / `completePickupRequest` turn that transition into
   `Pickup Failed` with the note `No orders to collect`.
-- **Create Order** has a `Parcel (LTL) | Vehicle (FTL)` tab strip above the (unchanged) 3-step
-  stepper; `/grow/orders/add/vehicle` = FTL. FTL step 2 (Vehicle Details) follows the Citylink
+- **Create Order** (2026-09-25: the merchant form below — Shared | Full vehicle is a segment in its
+  Service Type section; `/grow/orders/add/vehicle` = Full vehicle preselected). The FTL vocabulary
+  (older wording, still the data model) follows the Citylink
   tenant's live step (2026-09-23): a required **Service Type** first (`FTL_SERVICE_TYPES` in
-  `draft.ts` — the owner's 11: Inland LTL/FTL/Crossdocking, Sea LCL/FCL, RORO FTL/LTL, Rolling
-  Cargo, Air Freight LCL, CEP Inland, Hustling), which decides the **Vehicle Type** catalogue;
+  `draft.ts` — the vehicle catalogues; the demo keeps EXACTLY 10 service types (owner,
+  2026-09-25; `SERVICE_TYPES`): Standard · Express · White Glove Delivery · CEP Inland · Inland LTL ·
+  Sea LCL · Air Freight LCL · Inland FTL · Sea FCL · RORO FTL (no LTL/FTL restriction since 2026-09-29); retired names
+  map via `RETIRED_SERVICE_TYPES` on load), which decides the **Vehicle Type** catalogue;
   then a LIST of vehicles (`FtlVehicle` — type, actual load, `addressIdx` = which of the step-1
   delivery addresses it serves; "+ Add vehicle" below the cards). Next is blocked until every
   vehicle has a type, a load and an address and every address has a vehicle. The chosen service
@@ -172,17 +225,118 @@ Product changes layered on the replica (deliberate departures from the live port
   merchant's registered address → its Location Master rows → user-saved stores →
   `Other address…` (`pickupLocations.ts`); seed hubs only on sample data. Package presets fall
   back to the company list when the merchant owns none (on staging all belong to one merchant).
-- **Create Order form language** (`AddOrderPage.tsx`): *form fields in forms, columns in
-  tables*. Entry = 56px floating-label `OutlinedField` in aligned grids; lists = tables with
-  12px uppercase headers whose cells are `variant="ghost"` fields. Every dropdown is the
-  custom listbox in `ui.tsx` (no native `<select>`); focus colour is coral `grow-accent-2`.
-  Type scale is exactly 12/13/15/17/24. A package = Cargo Type + Package Type + No. of
-  packages + weight (derived from tare + items until typed over) + L/W/H + an items table
-  where "+ Add item" appends a line whose name cell is the SKU autocomplete; "+ Add package"
-  sits below the cards. `Parcel.quantity` = packages of this spec, `ParcelItem.quantity` =
-  units per package.
-`?step=1|2` (+`&type=FTL`) on Create Order deep-links into a step with sample parties (QA
-shortcut). Never reintroduce a Grow-only look: new Grow UI uses the shared console components.
+- **Add Consignment: console = staging's Add Order form; Grow = the MERCHANT order form** (owner,
+  2026-09-25 — overrides the 2026-09-24 "both portals" rule for Grow only). Console
+  `/local/consignments/add[/vehicle]` = `AddOrderPage.tsx` (staging-exact, capture
+  `docs/superpowers/research/2026-09-24-staging-add-order-form.md`; Order Category, Merchant select,
+  Carriers, creates outright; primitives in `components/consignmentForm.tsx`). Grow
+  `/grow/orders/add[/vehicle]` = **the v2 form in merchant mode** (owner, 2026-09-29: "make grow form like this,
+  no carrier-specific feature"): `LocalConsignments/AddConsignmentV2.tsx` with `portal="merchant"` — the SAME cards,
+  address cards + popup (Save this address), goods entry and fields, minus the carrier/ops ones (`MERCHANT_OFF`:
+  Merchant = the header ⇄, Consignment Number, Total Loading Time, the console's Load type / Vehicle Type, lat/long,
+  Pallet Space; no Carriers card, no Shipment legs, no form builder, no Simplified tier, no Transfer type, no hubs as
+  addresses). Cards: Consignment details · Ship From → Ship To (pickup window under Ship From follows the pickup
+  module: off · manual optional · auto-ask required · auto-rule shown) · Package & SKU · **Handling** (the console's:
+  six category chips · toggles · Tags, + Grow's **Load type** Shared | Full vehicle, default Shared) · **Service &
+  instructions** (Label Format · instructions · VAS in the lane's currency) · **Service Type LAST**
+  (`serviceCards.ServiceTypeChooser hideMode`: the lane's rate cards show at once, vehicle cards with count steppers
+  for Full vehicle, which also allows extra drops). The console form's saved customisation (`fe-consignment-form-v2-rules`:
+  hidden · labels · More · Required) applies to Grow too (owner, 2026-09-29), plus the Form Fields tab's Required.
+  Sticky footer = the estimate · Go Back · Save for later · Continue to checkout (DRAFT_KEY → `/grow/orders/checkout`,
+  a session draft is restored on Back). Package card (both portals): a chevron-only "more package details" at the END of
+  the package's field row (level with the inputs), Add SKU on its own line below; a SKU's details toggle is a chevron only (words in the tooltip). The old `MerchantOrderForm` / `packageEditor` / `orderSummaryRail` are gone. Selected card = 2px brand
+  border, no fill; segments/choices neutral (border-ink + bg-warm-50). Pricing = ONE module
+  `src/growOrders/rates.ts` (`quoteLane`/`quoteService`, ESTIMATED; ₱ card for PH, $ card for the
+  Chicago/US network; zone same city · region · nationwide), also used by the Rate Calculator and
+  OrderViewPage; checkout freezes `draft.rate` + `draft.currency`. Settings that drive it:
+  `fe-consignment-form-behavior` (`hidden`, `identifier`, and `required` — written by the new
+  **Form Fields** tab on `/local/settings/consignment-order`; hides reach both forms, Required is
+  Grow-only), Form Builder relabels, the local Service Type master rows (Active),
+  SKU/Package/Location masters, Vehicle Config, the pickup module's window rules.
+  `Parcel.quantity` = packages of this spec, `ParcelItem.quantity` = units per package.
+- **Add Consignment v2** (owner, 2026-09-29): `/local/consignments/new` (+ `/new/vehicle`) =
+  `LocalConsignments/AddConsignmentV2.tsx`, a COPY of `AddOrderPage` (the staging replica at `/add` stays
+  untouched); the list's **Add** opens it directly (owner, 2026-09-29; no menu, and no link to the old `/add` form — it stays reachable by URL only), and
+  **Modify Shipment Details** opens `/new?draft=<id>`: a LIVE order prefills from `draft.draftFromOrder` when it has no
+  stored form state and **Save changes** writes onto it through `growOrderActions.modifyOrder` (status, payment, pickup
+  request, ready-to-ship kept — never saveDraft + markPaid). Header = PageHeader's back chevron + title + ONE subtitle
+  "Provide the order details to ensure accurate processing, routing, and billing of the shipment." (both portals; no
+  change count, no simplified-form note) + Edit consignment form. Same
+  `OrderDraft`; one tier; ordered by dependency for the least scroll (the file's doc comment is the spec):
+  Consignment details → Ship From → Ship To (saved-address pickers read back as cards, Add / Edit in a popup,
+  "Save this address" to the store list or the address book) + **Shipment legs** — ONE simple line below the two
+  addresses (owner, 2026-09-29): pills First Mile · Line Haul · Last Mile · or · **Pick & Del**, and on the right the
+  hubs it passes in words ("Via San Pablo Inbound Hub → …", only KNOWN hubs; the saved value in its tooltip). The legs
+  are a CHOICE (`shipmentLegs.legsOf` / `movementOfLegs` / `legsOfMovement`: the 7 leg combinations + Pick & Del = the
+  8 movement types, stored as `consignment.movementType`); each leg FOLLOWS the chosen address until set by hand (FM /
+  LM: an address = on, a hub = off; LH: the two ends' hubs differ). A leg set by hand narrows that end's picker (FM on
+  = an address, off = a hub) and clears an end of the wrong kind; address cards carry a Merchant / Customer address ·
+  Hub pill; a Transfer locks Line Haul only; soft hints for LH vs the hubs. A pickup request is booked only with First
+  Mile. Grow never shows it → Package & SKU (Items = SKU + quantity,
+  master or typed SKU — a typed code is kept on Enter / Tab / leaving the field; or Packages, Add Package at the
+  bottom; Handling = two rows: Order Category chips, then Barcode on every box · Delivered in parts · Clearance ·
+  Tags) → **Service & instructions** (one card: Service Type · Load type · Vehicle Type · Total Loading Time, then
+  Special Instructions + VAS per package or SKU, `VasLine.packageId`) → **Carriers last** (names only). Label Format
+  sits in Consignment details; RTO = one toggle "RTO address same as Ship From address".
+  Consignment Type drives the ends (Reverse swaps them, Transfer = hub → hub, RTO / payment only where they
+  apply, Exchange requires its order no., Service = goods optional). Consignment Number has no fallback.
+  **How goods are entered** is ONE builder setting (`fe-consignment-form-v2-goods`, no per-order selector):
+  SKU-based (default) · SKUs, then packages (SKU list with a Package column, then the boxes) · Packages with
+  their SKUs; Add SKU sits under its SKUs, Add Package under all packages. **Handling** is its own card (Order
+  Category chips — each hideable — · Barcode · In parts · Clearance · Tags) between Package & SKU and **Service &
+  instructions**. Service Type is required (locked); Vehicle Type is optional. The footer carries the tier switch
+  (**Switch to Simplified**, `console-consignment-form-v2-tier`): the original Simplified tier restyled — 3-column
+  Consignment (window on the Ship By Date) · address cards · one Package & SKU table · Carriers; not customisable.
+  **Form builder** ("Edit consignment form"): the live form is the preview — rename · Required · More (waits
+  behind "More information", revealed IN PLACE) · hide, an eye for the hidden ones; locks = registry mandatory +
+  SKU / package weight + L × W × H + Service Type; v2-only keys Lift, Vehicle Type (optional), the VAS section and
+  each Handling category; a block / card whose fields are all hidden leaves no gap; card captions live behind an ⓘ
+  (local `FormCard` + `InfoTip`); row-adders are compact `+ Add SKU` links;
+  address fields are customised inside the address popup. Rules live in `fe-consignment-form-v2-rules` over the shared config —
+  never changes `/add`, Grow or the list. Errors only after an Add Order attempt. OWNER EXCEPTION to the
+  type-scale rule, this form only: local SFld (13px ink labels) and a 24px row gap.
+- **Service Type has no Load type** (owner, 2026-09-29): `draft.loadTypeOf` returns `'both'` for every
+  service, so Shared / Full vehicle is the booking's free choice on every form (the old form's Load type is no
+  longer locked; Grow's service cards list every service in both modes); the Load type column / filter / form
+  field are gone from both Service Type masters.
+`?step=1|2` (+`&type=FTL`) on Create Order prefills sample parties + a package and scrolls to
+Packages (1) / Service Type (2) (QA shortcut). Never reintroduce a Grow-only look: new Grow UI uses the shared console components.
+- **Money & account pages** (2026-09-25, research `docs/superpowers/research/2026-09-25-grow-portal-pages.md` §4–§9;
+  localStorage stores via `src/growOrders/localStore.ts`, deterministic seeds, normalize-on-load; shared bits in
+  `GrowOrders/accountBits.tsx`): **Wallet** `/grow/orders/wallet?tab=wallet|payments` (+ `/:id` receipt) = `WalletPage` /
+  `ReceiptPage` on `growOrders/ledger.ts` (`grow-wallet-v2`; Wallet tab = the GROW-STAGING wallet: Recharge (demo
+  credit row) · Balance/Credits/Debits tiles · running balance per currency from `walletOf()`; Payments tab = the
+  2GO_PH list; seeded opening credit per currency; one checkout = one DR entry, seeded from paid orders,
+  **payment flow** = `GrowOrders/paymentSheet.tsx` `PaymentSheet` (Wallet balance + inline Recharge · Card demo, only
+  the last 4 digits kept · Pay later on a Postpaid account · COD for a COD order; choice saved as
+  `merchantSettings.defaultPayMethod`) on Checkout, `PayNowDialog` on Billing / Payments ⋮ for Pending (pay-later /
+  COD) debits, `PayNowButton` for the order overlay; `debitsWallet()` = only Wallet/'Credit' debits move the balance,
+  `recordPayment(order, method, last4)` called by CheckoutPage, idempotent; `chargesOf()` = frozen charges else rate card, flagged
+  estimated). **Billing** `/grow/orders/billing` = `BillingPage` — invoices DERIVED per month × currency by
+  `growOrders/invoices.ts` (never sum ₱ and $), status from Settings' Payment Type. **Disputes**
+  `/grow/orders/disputes` (+ `/:id`) = `DisputesPage` on `growOrders/disputes.ts` (`grow-disputes-v3`): the live
+  GROW-STAGING tenant's three kinds Wallet (Transaction) · Tracking (queries) · Invoice in the Consignment Order
+  grammar — ONE list, tabs Open · Closed · All, kind = the "Type" filter (`?kind=` presets it), union of the live
+  columns with empty ones hidden; raise via `?raise=<kind>:<subject>` — Wallet ⋮, Billing invoice dialog, and
+  `RaiseDisputeButton` (for the consignment overlay). **Address Book** `/grow/orders/address-book` (+ `/add`,
+  `/:id`, `/:id/edit`) on `growOrders/addressBook.ts` (`grow-address-book-v1`); `receiverBook()` lists saved rows
+  FIRST. **Settings** `/grow/orders/settings?tab=account|packages|users|email|storefront` on
+  `growOrders/merchantSettings.ts` (`grow-merchant-settings-v1`, per merchant code): saved packages join the form's
+  presets through `packageTypesForMerchant` (`SAVED-` codes), the default pickup address is listed first by
+  `usePickupLocations`; User Management / Email / Store Front are "not captured" empty states.
+
+**Grow analytics & tools pages (2026-09-25, research `docs/superpowers/research/2026-09-25-grow-portal-pages.md`
+§1–3, §6, §10; live arrangement, our components):** `/grow/orders/dashboard` (`DashboardPage.tsx` — date range +
+store filter → `KpiTile`s Pickup Failed · Schedule Pickup (= the Eligible consignments rule) · On Time Performance →
+Summary / Deliveries / OTP charts in plain SVG → Help Center card; all derived, no store) · `/grow/orders/tracking`
+(`TrackingPage.tsx` — the live 9 columns over booked `shipmentRows`, date presets in `dateRanges.ts`, EDD /
+delivered-at / rate in `trackingModel.ts`, row → `GrowConsignmentView`, columns `grow-tracking-columns-v1`) ·
+`/grow/orders/quote` (`QuotePage.tsx` — from / to postal / packages → `quoteLane` as `RateCard`s; "Create order now"
+writes the session draft `grow-order-draft`) · `/grow/orders/reports` (+ `/reports/subscriptions`; `ReportsPage.tsx` +
+store `src/growOrders/reports.ts`, key `grow-reports-v1`: jobs, subscriptions, templates, the VERBATIM Order-report
+column universe; Download = a local CSV) · `/grow/orders/help` (`HelpCenterPage.tsx` + `helpArticles.ts`, SAMPLE
+content — the live `/faq/` was never captured). `GrowOrdersLayout` `PAGE_SLUGS` lists every literal page slug so
+only a real order id gets the `/grow/orders/:id` order-view chrome — add a new page's slug there.
 
 ## First-mile pickup program — `/local/*` + `/driver` (2026-09-23)
 
@@ -204,20 +358,127 @@ effects (a cancelled/rescheduled PR leaving its trip) flow through `onPickupRequ
   `manualOverride`, `source`) and `handover` (mode driver|hub|both, `driverScanned`,
   `hubScanned`, `scanLog`, `arrivedAtHubAt`, `closedAt`, `pod`). Statuses are unchanged;
   `tabs.ts` derives Handed Over / In transit to hub / Discrepancy / Overdue / Re-attempt.
-  `LOCAL_PR_TABS` = All · Eligible for Pickup · Active · Closed · Exception — always pass
+  `LOCAL_PR_TABS` = All · Active · Closed · **Attention Required** (was "Exception"; slug
+  `attention`, old `exception` still lands) · **Eligible consignments** (LAST; was "Eligible for
+  Pickup", slug `eligible`; one-line caption above its grid; Add to new / existing pickup). The same
+  consignments can also be booked from `/local/consignments` (Schedule Pickup + Add to existing
+  pickup) and Grow `/grow/orders` (Schedule Pickup) — always pass
   `pickupRequestById` as the lookup to `localPrTabOf` / `inLocalPrTab`.
+- **A pickup request opens as a SLIDE-OVER over its list** (owner, 2026-09-25), never a page:
+  `/local/pickup/:id` and `/grow/orders/pickups/:id` mount the LIST, which hosts
+  `LocalPickup/PickupRequestDetail` / `GrowOrders/PickupRequestPage` in nueva `SlideOver` +
+  `SlideOverSections` (the Consignment view's shell — `ConsignmentView` uses the same primitive;
+  `side` prop flips it to the left in one line). Modals sit above it (z-70); Esc closes the top one.
+- **Every pickup action is gated by `src/growOrders/prActions.ts`** (owner, 2026-09-25):
+  `prActionState(action, pr, { cfg, role: 'ops' | 'merchant' })` / `prBulkState` (a selection =
+  enabled only if EVERY row is, + one hub to route / one point to merge / single-row dialogs);
+  disabled items stay visible with the `reason` (`SelectionAction.reason`, `MenuItem.disabled/reason`).
+  `prModel.can.*` delegates to it. Never gate a pickup action inline in a page. Research:
+  `docs/superpowers/research/2026-09-25-pickup-actions-by-status.md`. A request made by a split carries
+  `splitFromPrId` and is never a Duplicate of its sibling. ONE pickup-point key: `prActions.pickupPointKey`
+  (store code for a known location; + address line only for "Other address…"). Split / Merge are LTL only;
+  a multi-select Split = `splitAllPickupRequests` (one request per consignment).
 - Rules live in the store, not in pages: multi-PR policy (merge on create), same-day
   cutoff (`pickupSlots.ts`), auto re-attempt on failure, "no orders left" → Pickup Failed,
   unpicked released at completion, handover auto-closes when scans reconcile, a forwarded
   misroute may be in-scanned at its own hub. Reason codes: `pickupReasons.ts`.
+- `GrowOrder.readyToShip`: a paid consignment with no open PR reads **Created / Label
+  Generated** until `/local/consignments` bulk **Mark Ready To Ship** (`markReadyToShip`) sets
+  it → **Ready To Ship**; the `marked-ready-for-ship` / `-plan` auto triggers require it (seed:
+  even ids ready; staging fixture from its remarks state token).
 - Account config = `src/config/pickupModule.ts` (localStorage mirror written by the console
   Base Modules → **Pickup Request** page and the Pilot Driver App → Pickup Module card; the
   local app never calls `/staging`). `enabled:false` hides only the pickup additions.
+  **Booking rules (owner, 2026-09-25): ONE shared horizon `bookingHorizonDays` (1–30, default 7;
+  `autoPickup.maxDaysAhead` is derived from it) + `sameDayCutoff`, enforced by `violatesCutoff()` (every
+  manual dialog) and `userWindowError()`; `/local/settings/pickup` shows them once, in its shared
+  "Booking rules" card (both modes).**
+  **Pickup days (owner, 2026-09-25): `pickupDaysSource` = `merchant-then-hub` (default: the pickup
+  address's Location Master `operating_hours` → `MasterLocation.operatingDays`, else the drop hub's
+  Holiday Master) · `hub`. (A `module` "days only" choice was removed the same day — a stored value
+  normalizes to the default.) Hub holidays ALWAYS block, and a merchant preference is intersected with the hub's operating days (merchant
+  hours, hub holidays). `growOrders/operatingCalendar.ts` `pickupCalendarFor` resolves it and
+  `pickupPolicy(merchant, { pickupLocationCode, hubCode })` folds days + holidays + hours into the policy
+  (every dialog, re-attempt and auto window pass the where); hub operating days are DERIVED from the
+  hub's Holiday Master policy (weekly offs + working hours, staging's shape — research
+  `2026-09-25-staging-holiday-master.md`). Holiday Master page = `/local/settings/masters/service_order/holiday-master`
+  (tabs Holiday Policies · Holidays, persisted by ServiceOrderMasters, read back by key); the "Pickup days
+  follow" row sits in the settings page's Booking rules card, with a "Hub holidays → Holiday master" row. Dialogs show one caption naming the source and
+  grey holidays with a "Holiday · name" tooltip.**
+  **`mode` (owner, 2026-09-24): `manual` (default) = merchants/ops book; `auto` = a request is
+  raised the moment a consignment is created on the date `autoPickup` computes
+  (`afterState` Created | Label Generated | Ready To Ship = the consignment state that raises it —
+  `autoPickupEligible()`; a consignment reaching it LATER is booked from `update()`;
+  `userSelectsWindow` + `bookingHorizonDays` = the consignment form offers a date + slot under the slot
+  rules (`userWindowError()`), stored as the sender's window and honoured by
+  `autoPickupWindowFor()` else the fallback rule; in auto mode the settings page asks ONLY
+  auto-relevant options — add-to-existing, merchant-cancel and merchant rules are manual-only; `dateRule`
+  same-day | next-business-day | days-after-order, `daysAfterOrder`, `slot`, `pickupDays`; `autoPickupWindow()` / `autoPickupSummary()` in `pickupSlots.ts`; the legacy
+  `autoCreateOnConsignment` is derived from it). `/local/settings/pickup` (owner, 2026-09-25 "improve
+  settings UI") = five cards in ONE row grammar (13px bold label + one 12px hint left, control in a fixed
+  260px column, rows `border-line` py-4, 24px between cards): Pickup module switch (off = nothing else) ·
+  How requests are raised (two equal mode cards, "Selected" check, border-ink + warm-50) · Auto / Manual
+  pickup options (the chosen mode's rows only) · Booking rules (shared) · Pickup attempts; a sticky footer
+  Cancel (revert to saved) · Save with an "Unsaved changes" caption — no "Restore defaults". Other keys keep
+  their stored values and stay editable on the console's Base Modules → Pickup Request twin. In auto mode every manual booking control is
+  replaced by an "Auto pickup · rule" pill: Schedule Pickup (console + Grow), Book Pickup
+  (Grow view), Create Pickup (console Pickup page), Add + Eligible consignments (Grow Pickup Requests).
+  **Manual card = "Manual pickup requests"** (2026-09-25); its one option `manualPickup.blindAllowed` (default true, "Reserved (blind) pickups" Yes/No) — `blindPickupsAllowed(cfg)` hides console Create Pickup + Grow Add and makes `createBlindPickup` return null (no write); existing Reserved requests stay readable.
+  **Pickup attempts = Reason Policy (owner, 2026-09-25):** `/local/settings/pickup` shows ONE "Pickup attempts" row
+  (both modes) whose **Reason policy** button → `/local/settings/masters/service_order/reason-master?tab=reason-policy`
+  (`SubMasterPage` reads `?tab=<slug>`); no attempts input — the cap lives on the rule, staging-style: When =
+  Always | **Before attempt N** (form: `Attempt` 1–5, default 3, shown via FieldDef `showWhen`; the row stores
+  `when: 'Before attempt 3'` + `attempt`). Pickup reasons + rules live in `src/growOrders/reasonPolicy.ts` (mastersTree
+  spreads them in; key `local-masters-service_order-reason-policy-v4`, version shared with `ServiceOrderMasters`).
+  `failPickupRequest` asks `pickupOutcomeFor(code, attempt, maxAttempts?)` (`maxAttempts` only = N for a rule with no
+  number): Re-attempt pickup while attempt < N → the auto re-attempt, else held · Hold for review → stays Pickup Failed
+  + note (and `isHeldForReview` keeps it in Attention Required) · Cancel pickup → Cancelled (`ORDER_CANCELLED`); no
+  matching Active Pickup row → hold; NO_ORDERS and code-less failures bypass it. "Re-attempt now" overrides it. The
+  console PR detail shows "Reason policy: …" beside the attempt count.
 - Pages: `/local/consignments` (Merchant → Pickup Address filter, bulk **Schedule** →
-  `SchedulePickupDialog`, no Create Pickup), `/local/pickup` (+ `/:id`, `LocalPickup/*`),
-  `/local/pending-for-planning` (tabs All · Consignments · Pickups; Plan Collection routes
-  onto trips), `/local/control-tower` (+ `/trips/:id`; `AddToRouteDialog` is shared),
+  `SchedulePickupDialog` — per booking card New pickup request · Add to existing · **Split into separate
+  requests** (one request per shipment, bypasses the merge rule via `createPickupRequest`'s `split` flag; disabled for a one-shipment card); no Create Pickup; **Add** → `/local/consignments/add[/vehicle]` = the
+  SAME `AddOrderPage` with `portal="console"`: an Order Category card (4 Person · Stackable ·
+  Fragile · VIP · Hazmat · Heavy Weight → `consignment.category`, which then drives the row's
+  flags) below VAS, no checkout and no drafts — ops create outright; the Grow form never shows
+  that card; **row click** → `/local/consignments/:id` = `ConsignmentView.tsx`, the staging
+  View Consignment overlay: 62% right drawer, section rail Summary · Order · Piece · Tracking ·
+  SKU · VAS · Load · Attempt · Customer Feedback · Notes, "View Events" widens it and docks an
+  Event Logs timeline; every list is DERIVED in `viewModel.ts` from the order, its pickup
+  requests, its trips and its notes, since no event/load/attempt service exists locally),
+  `/local/pickup` (+ `/:id`, `LocalPickup/*`),
+  `/local/pending-for-planning` (ALWAYS the new page, owner 2026-09-29: pickup module OFF = one All tab, consignments
+  only; ON in manual OR auto mode = the tabs below with pickup requests — gate = `cfg.enabled`, not
+  `pickupPagesVisible`; the staging look only on `-replica`) (tabs **All** (first + default) · First Mile · Last Mile, `?tab=first-mile|last-mile`,
+  old `pickups`/`consignments` slugs alias; per-tab column sets in `LocalPFP/viewColumns.ts` —
+  Last Mile = the measured consignment grid, First Mile = pickup requests ONLY (PR grid on
+  `PR_COLUMN_DEFS`; no Group by since 2026-09-29, a stale `?group=none` is ignored),
+  All = pickup requests + the Last Mile consignments (a first-mile consignment rides on its
+  request, never its own row there), columns common to both row kinds — the ONLY tab with Active Leg, and its Type = row kind
+  only; a pickup overlay's booked orders open their consignment overlay; pickup-request rows get the SAME 16-item menu as `/local/pickup` (`LocalPickup/prSelectionItems.ts` + `prSelectionActions.tsx` dialogs; "Plan pickup request for routing" routes onto trips); consignment rows on First Mile / Last Mile = staging's exact 19 columns + 13 actions (`viewColumns.CONSIGNMENT_TAB_COLUMNS`), a mixed All selection = Plan For Routing · Download CSV · Cancel; the filter line follows the tab's row kind (First Mile = the Pickup page's grammar: window date · Status · Merchant · funnel Type/Pickup Address/Destination Hub/Source; Last Mile = staging's consignment filters + chips; All = date · Merchant · Type · Destination; a tab switch keeps only Merchant + search); only rows that still need planning — PRs Requested with no trip / 3PL, consignments Created · Ready To Ship · Pickup Requested on no trip), `/local/control-tower` (+ `/trips/:id`; `AddToRouteDialog` is shared),
   `/local/inbound` (+ `/scanner`), `/driver` (FarEye Pilot look; login as a seeded driver).
+- `/local/routing` — **Same/Next Day Routing**, an EXACT replica of staging `/v2/view/99999/529`
+  (owner override 2026-09-25, like Add Consignment; research
+  `docs/superpowers/research/2026-09-25-staging-same-next-day-routing.md`) + `/:planId` (Route &
+  Dispatch) + `/vehicles` (Vehicle Config, `/vehicles/:vehicleId` editor). A plan =
+  `src/pages/LocalRouting/routingPlans.ts` (key `local-routing-plans-v1`, reset with demo data)
+  grouping planningStore trips made by `planForRouting`; vehicles = `src/config/vehicleConfig.ts`
+  (per hub; `vehicleTypesFor(hubCode)` for the consignment form). The ONE addition: Create New
+  Routes asks **Plan for: First Mile · Last Mile · Both** while the pickup module is enabled.
+- Masters → Service & Order: `/local/settings/masters/service_order` (+ `/:subId`) =
+  `LocalSettings/ServiceOrderMasters.tsx` re-mounting the frozen `nueva/pages.tsx` Category /
+  SubMaster pages through `nueva/mastersEnv.ts` (base path, fixed category, `persist`) on
+  mastersTree's sample rows; add/edit/delete/enable persist per sub-master in localStorage
+  (`local-masters-service_order-<subId>-v1`); form fields map to columns by label or `rowKey`.
+  Never the live `liveMasterConfigs` / `masters/serviceOrder` (they call `/staging`).
+- Settings (staging Base Modules, captured in
+  `docs/superpowers/research/2026-09-24-staging-general-and-consignment-settings.md`):
+  `/local/settings/general` (`GeneralSettings.tsx` → `src/config/generalSettings.ts`, stored only)
+  and `/local/settings/consignment-order` (`ConsignmentOrderSettings.tsx` →
+  `src/config/consignmentModule.ts`; vocabulary in `consignmentModuleUniverse.ts`, shared with
+  `nueva/ModuleDetail`). Once saved, its Table Configuration sets `/local/consignments`' default
+  columns + sequence (a stored ⚙ choice wins) and its Date Filter the list's date preset/field;
+  user types, modify-till and On Page Filters are stored only.
 - Invariants: a `Planned`/fleet-`Assigned` PR always has a `tripId`; a PR on a 3PL carrier
   has none and leaves the PFP queue; a PR is never `Planned` without a trip in the seed.
 - Seed: exactly one intended Duplicate pair (PR-000112/113); one trip per status; every parcel PR
@@ -276,7 +537,8 @@ bend one to its own shape.
   surfaces the bulk actions; row click opens a read-only VIEW page and Edit is
   its own page.
 - Page shell is always: `PageHeader` → `Panel`/cards. Card padding `px-5`, body text
-  13px, card titles 15px bold, table headers 12px bold `text-ink-3`. Row hover =
+  13px, card titles 15px bold, table headers 13px bold `text-ink` (the DataTable header; SimpleTable
+  matches it — audited 2026-09-25: no half-pixel sizes anywhere, captions 12px `text-ink-3`, chips 11px). Row hover =
   `hover:bg-warm-50`; card hover = border-warm-300 + shadow-ds-1. Element positioning,
   spacing and type scale must not change from page to page.
 

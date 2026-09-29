@@ -58,7 +58,7 @@ export function LocalTabs({ tabs, active, onChange, right }: {
             <button key={t.id} type="button" role="tab" aria-selected={on} className="lc-tab"
               onClick={() => onChange(t.id)}>
               {Icon && <span className="lc-tab-icon"><Icon size={15} /></span>}
-              {t.count === undefined ? t.label : `${t.label} (${t.count})`}
+              {t.count === undefined ? t.label : `${t.label}: ${t.count}`}
             </button>
           )
         })}
@@ -337,7 +337,7 @@ export function FilterMultiSelect({ values, placeholder, options, onChange, widt
               const g = groupOf?.(o)
               return (
                 <div key={o}>
-                  {g && g !== groupOf?.(shown[i - 1] ?? '') && <p className="lc-pop-group">{g}</p>}
+                  {g && (i === 0 || g !== groupOf?.(shown[i - 1])) && <p className="lc-pop-group">{g}</p>}
                   <button type="button" role="option" aria-selected={false} className="pfp-pop-option" onClick={() => toggle(o)}>
                     <input type="checkbox" readOnly checked={values.includes(o)} tabIndex={-1} />
                     <span>{text(o)}</span>

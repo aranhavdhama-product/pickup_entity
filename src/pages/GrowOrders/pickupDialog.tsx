@@ -413,6 +413,8 @@ export function PickupDialog({ stores, merchants, onClose, onDone }: {
         expectedWeightKg: weightOk ? weightNum : null,
         vehicleType: null, vehicleUnit: null, ftlServiceType: null, shipTo: null, note: '',
       })
+      /* Settings → Pickup module → Manual → "Reserved (blind) pickups" = No forbids this account from booking one at all */
+      if (!pr) { toast.error('Reserved pickups are turned off for this account.'); return }
       toast.success(`Pickup Request ${pr.number} created · ${piecesNum} shipment${piecesNum === 1 ? '' : 's'} expected`)
       onDone(pr)
       return
@@ -435,10 +437,13 @@ export function PickupDialog({ stores, merchants, onClose, onDone }: {
       shipTo: (filled.find((a) => a.id === mapped(l)[0]) ?? filled[0])?.party ?? null,
       note: [reservation, mapping && `Deliver to: ${mapping}`].filter(Boolean).join(' · '),
     }))
-    toast.success(prs.length === 1
-      ? `Pickup Request ${prs[0].number} created · ${ftlService} · ${lines[0].units} × ${lines[0].vehicleType}`
-      : `Pickup Requests ${prs.map((p) => p.number).join(', ')} created · ${ftlService}`)
-    onDone(prs[0])
+    /* Settings → Pickup module → Manual → "Reserved (blind) pickups" = No forbids this account from booking one at all */
+    if (prs.some((p) => !p)) { toast.error('Reserved pickups are turned off for this account.'); return }
+    const created = prs as GrowPickupRequest[]
+    toast.success(created.length === 1
+      ? `Pickup Request ${created[0].number} created · ${ftlService} · ${lines[0].units} × ${lines[0].vehicleType}`
+      : `Pickup Requests ${created.map((p) => p.number).join(', ')} created · ${ftlService}`)
+    onDone(created[0])
   }
 
   const addressLabels = shipTos.map((_, i) => `Address ${i + 1}`)

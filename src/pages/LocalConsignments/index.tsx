@@ -19,34 +19,37 @@
  * a draft is not yet a consignment), which is why it carries the status tabs.
  */
 import { useMemo, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
-  AlertTriangle, CalendarClock, Download, Handshake, Package, PackageCheck, Pencil,
-  Printer, RotateCcw, Route as RouteIcon, ShieldAlert, Truck, Undo2, X,
+  AlertTriangle, BadgeCheck, CalendarClock, Download, Handshake, Package, PackageCheck, Pencil,
+  PackageSearch, Printer, RotateCcw, Route as RouteIcon, ShieldAlert, Truck, Undo2, X,
 } from 'lucide-react'
 import {
   AddUpload, DataTable, EmptyState,
-  PageSize, Pagination, Panel, StatusPill, Tabs,
+  PageSize, Pagination, Panel,
   type SelectionAction,
 } from '../../nueva/components'
 import {
-  ClearFilters, DateRange, FilterLine, FilterSelect, FunnelFilters, IconBtn, LocalPage, LocalTabs, SearchBox,
+  ClearFilters, DateRange, FilterLine, FilterMultiSelect, FilterSelect, FunnelFilters, IconBtn, LocalPage, LocalTabs, SearchBox,
 } from '../../local/chrome'
 import { Download as DownloadGlyph } from '../LocalPFP/icons'
+import { STATE_OPTIONS, matchesState, stateGroupOf } from '../LocalPFP/stateVocabulary'
 import { toast } from '../../nueva/toast'
 import { useGrowOrders, growOrderActions } from '../../growOrders/store'
-import { isOpenPr } from '../../growOrders/tabs'
+import { isOpenPr, isPickupEligible } from '../../growOrders/tabs'
+import type { GrowOrder } from '../../growOrders/types'
 import {
-  csvOf, downloadCsv, stateTone, toConsignmentRow, type LocalConsignmentRow,
+  csvOf, downloadCsv, executionOverlay, toConsignmentRow, type LocalConsignmentRow,
 } from '../LocalPFP/adapter'
 import { planningActions, usePlanning } from '../LocalPFP/planningStore'
 import { merchantsOf } from '../LocalPFP/merchants'
 import { usePickupModuleConfig } from '../../config/pickupModule'
+import type { ConsignmentDateField } from '../../config/consignmentModuleUniverse'
+import { consignmentModuleSaved, dateRangeWindow, readConsignmentModuleConfig } from '../../config/consignmentModule'
 import { SchedulePickupDialog, type ScheduleResult } from './SchedulePickupDialog'
-import { consignmentColumns } from './columns'
+import { useConsignmentColumns } from './columns'
 import { BulkUploadDialog } from '../GrowOrders/bulkUploadDialog'
-import { Section } from '../LocalPFP/overlayBits'
-import { dash, stamp } from '../LocalPFP/overlayFormat'
+import ConsignmentView from './ConsignmentView'
 
 /* ------------------------------------------------------------------ tabs --- */
 
@@ -57,17 +60,24 @@ import { dash, stamp } from '../LocalPFP/overlayFormat'
  */
 const hasValidationError = (r: LocalConsignmentRow) => !!r.exception
 
-const TABS: { label: string; test: (r: LocalConsignmentRow) => boolean }[] = [
-  { label: 'Data Validation Issues', test: hasValidationError },
-  { label: 'Active', test: (r) => !hasValidationError(r) && r.state !== 'Delivered' && r.state !== 'Cancelled' },
-  { label: 'Closed', test: (r) => !hasValidationError(r) && (r.state === 'Delivered' || r.state === 'Cancelled') },
-  { label: 'Exception', test: (r) => !hasValidationError(r) && String(r.state) === 'Undelivered' },
-  { label: 'Returns', test: (r) => !hasValidationError(r) && (r.orderTypeLabel === 'Reverse' || r.secondaryState.includes('RTO')) },
-  { label: 'All', test: (r) => !hasValidationError(r) },
+/* `slug` = the `?tab=` value, the same six Grow's Shipments page uses (`OrdersListPage`), so a
+   link lands on the same tab on both portals; no / unknown slug → Active */
+const TABS: { slug: string; label: string; test: (r: LocalConsignmentRow) => boolean }[] = [
+  { slug: 'data-validation-issues', label: 'Data Validation Issues', test: hasValidationError },
+  { slug: 'active', label: 'Active', test: (r) => !hasValidationError(r) && r.state !== 'Delivered' && r.state !== 'Cancelled' },
+  { slug: 'closed', label: 'Closed', test: (r) => !hasValidationError(r) && (r.state === 'Delivered' || r.state === 'Cancelled') },
+  { slug: 'exception', label: 'Exception', test: (r) => !hasValidationError(r) && String(r.state) === 'Undelivered' },
+  { slug: 'returns', label: 'Returns', test: (r) => !hasValidationError(r) && (r.orderTypeLabel === 'Reverse' || r.secondaryState.includes('RTO')) },
+  { slug: 'all', label: 'All', test: (r) => !hasValidationError(r) },
 ]
+const TAB_SLUG_ALIAS: Record<string, string> = { error: 'data-validation-issues', undelivered: 'exception' }
+const tabIndexOf = (slug: string | null): number => {
+  const s = slug ? TAB_SLUG_ALIAS[slug] ?? slug : ''
+  const i = TABS.findIndex((t) => t.slug === s)
+  return i === -1 ? 1 : i
+}
 const TAB_ICONS = [ShieldAlert, RouteIcon, Handshake, AlertTriangle, Undo2, Package]
 
-const DRAWER_TABS = ['Details', 'SKU / Package', 'Tracking', 'Notes']
 
 /** The secondary state of a consignment inside an open pickup request. */
 const PICKUP_SCHEDULED = 'Pickup Scheduled'
@@ -76,26 +86,49 @@ const uniq = (xs: string[]) => [...new Set(xs.filter(Boolean))].sort()
 
 /* ------------------------------------------------------------- the page ---- */
 
+/**
+ * The day the date filter reads, per Settings → Date Filter → Default Date Field.
+ * Delivery/Pickup Date reads the row's ship-by day (its pickup/delivery day locally).
+ * TODO(fareye-consignment-module-config-v1): no local `last_updated_at` — it falls back to Created Date.
+ */
+function dayOf(r: LocalConsignmentRow, field: ConsignmentDateField | undefined): string {
+  switch (field) {
+    case 'ship_by_date':
+    case 'ship_to_delivery_date': return r.shipByDate.slice(0, 10)
+    case 'dispatch_date': return r.dispatchDate.slice(0, 10)
+    default: return r.order.createdAt.slice(0, 10)
+  }
+}
+
 export default function LocalConsignments() {
   const nav = useNavigate()
   const { id: drawerId } = useParams()
   const db = useGrowOrders()
   const plan = usePlanning()
   /* module off = the page as it was: no Schedule action, no Pickup Address filter */
-  const pickupOn = usePickupModuleConfig().enabled
+  const pickupCfg = usePickupModuleConfig()
+  const pickupOn = pickupCfg.enabled
+  /* owner, 2026-09-24: auto mode books at creation — ops schedule nothing by hand */
+  const manualPickup = pickupOn && pickupCfg.mode === 'manual'
 
-  const [tab, setTab] = useState(1)
+  const [params, setParams] = useSearchParams()
+  const tab = tabIndexOf(params.get('tab'))
+  const setTab = (i: number) => setParams((prev) => { const n = new URLSearchParams(prev); n.set('tab', TABS[i].slug); return n }, { replace: true })
   const [q, setQ] = useState('')
-  const [state, setState] = useState('')
+  const [stateSel, setStateSel] = useState<string[]>([])
   const [merchant, setMerchant] = useState('')
   /** a store code of the selected merchant ('' = every address) */
   const [pickupAddress, setPickupAddress] = useState('')
-  const [from, setFrom] = useState('')
-  const [to, setTo] = useState('')
+  /* Settings → Consignment Order → Date Filter, once saved there (fareye-consignment-module-config-v1) */
+  const [dateCfg] = useState(() => (consignmentModuleSaved() ? readConsignmentModuleConfig() : null))
+  const [from, setFrom] = useState(() => (dateCfg ? dateRangeWindow(dateCfg.selectedDateRange).from : ''))
+  const [to, setTo] = useState(() => (dateCfg ? dateRangeWindow(dateCfg.selectedDateRange).to : ''))
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   /** the Schedule dialog: the ticked ids, and the table's own clear() */
   const [scheduling, setScheduling] = useState<{ ids: string[]; clear: () => void } | null>(null)
+  /** Add to existing pickup (owner, 2026-09-25 — was the Pickup page's Eligible tab action) */
+  const [joining, setJoining] = useState<{ orders: GrowOrder[]; clear: () => void } | null>(null)
   /** the last booking, as links — the toast is text-only */
   const [booked, setBooked] = useState<ScheduleResult[] | null>(null)
   const [uploading, setUploading] = useState(false)
@@ -111,12 +144,12 @@ export default function LocalConsignments() {
       secondaryState: plan.secondaryState[o.id] ?? (openPrIds.has(o.pickupRequestId ?? '') ? PICKUP_SCHEDULED : undefined),
       schedule: plan.scheduleOverrides[o.id],
       exception: plan.exceptions[o.id],
+      ...executionOverlay(o, plan.trips),
     }))
     .sort((a, b) => (a.order.createdAt < b.order.createdAt ? 1 : -1)), [db, plan, openPrIds])
 
   const inTab = useMemo(() => all.filter(TABS[tab].test), [all, tab])
   const tabCounts = useMemo(() => TABS.map((t) => all.filter(t.test).length), [all])
-  const states = useMemo(() => uniq(all.map((r) => String(r.state))), [all])
   const merchants = useMemo(() => uniq(all.map((r) => r.merchant)), [all])
   /* the selected merchant's stores: its locations in the store list, plus any
      origin its rows carry (a store with no business name is named by its code) */
@@ -136,27 +169,27 @@ export default function LocalConsignments() {
     { key: 'Carrier', label: 'Carrier', options: uniq(all.map((r) => r.carrier)) },
     { key: 'Service Type', label: 'Service Type', options: uniq(all.map((r) => r.serviceType)) },
     { key: 'Destination', label: 'Destination', options: uniq(all.map((r) => r.destination)) },
-    { key: 'Secondary State', label: 'Secondary State', options: uniq(all.map((r) => r.secondaryState)) },
+    { key: 'Active Leg', label: 'Active Leg', options: uniq(all.map((r) => r.activeLeg)) },
     { key: 'Tag', label: 'Tag', options: uniq(all.flatMap((r) => r.tag.split(', '))) },
   ], [all])
 
-  const filtersOn = !!(q || state || merchant || addressFilter || from || to
+  const filtersOn = !!(q || stateSel.length || merchant || addressFilter || from || to
     || Object.values(more).some((v) => v.length))
 
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase()
     return inTab.filter((r) => {
-      if (state && String(r.state) !== state) return false
+      if (!matchesState(stateSel, String(r.state), r.secondaryState)) return false
       if (merchant && r.merchant !== merchant) return false
       if (addressFilter && r.shipFromCode !== addressFilter) return false
-      const day = r.order.createdAt.slice(0, 10)
+      const day = dayOf(r, dateCfg?.dateAppliedOn)
       if (from && day < from) return false
       if (to && day > to) return false
       if (more.Type?.length && !more.Type.includes(r.taskType)) return false
       if (more.Carrier?.length && !more.Carrier.includes(r.carrier)) return false
       if (more['Service Type']?.length && !more['Service Type'].includes(r.serviceType)) return false
       if (more.Destination?.length && !more.Destination.includes(r.destination)) return false
-      if (more['Secondary State']?.length && !more['Secondary State'].includes(r.secondaryState)) return false
+      if (more['Active Leg']?.length && !more['Active Leg'].includes(r.activeLeg)) return false
       if (more.Tag?.length && !more.Tag.some((t) => r.tag.includes(t))) return false
       if (needle) {
         const hay = `${r.consignmentNumber} ${r.referenceNumber} ${r.shipToName} ${r.merchant} ${r.address}`.toLowerCase()
@@ -164,16 +197,17 @@ export default function LocalConsignments() {
       }
       return true
     })
-  }, [inTab, q, state, merchant, addressFilter, from, to, more])
+  }, [inTab, q, stateSel, merchant, addressFilter, from, to, more, dateCfg])
 
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize))
   const safePage = Math.min(page, totalPages)
   const paged = rows.slice((safePage - 1) * pageSize, safePage * pageSize)
-  const clearAll = () => { setQ(''); setState(''); setMerchant(''); setPickupAddress(''); setFrom(''); setTo(''); setMore({}); setPage(1) }
+  const clearAll = () => { setQ(''); setStateSel([]); setMerchant(''); setPickupAddress(''); setFrom(''); setTo(''); setMore({}); setPage(1) }
 
   /* ---------------------------------------------------------- the columns -- */
 
-  const columns = consignmentColumns
+  /* staging's default 18 + the ⚙ chooser; persists per browser */
+  const { columns, chooser } = useConsignmentColumns('local-consignments-columns-v2')
 
   /* ----------------------------------------------------------- the actions - */
 
@@ -187,14 +221,16 @@ export default function LocalConsignments() {
     const ids = sel.map((r) => r.orderId)
     const closable = sel.every((r) => ['Created', 'At Facility', 'Ready To Ship'].includes(String(r.state)))
     const done = (msg: string) => { clear(); toast.success(msg) }
+    const markable = sel.length > 0 && sel.every((r) => String(r.state) === 'Created'
+      && !r.order.isDraft && r.order.paymentStatus === 'Paid' && !r.order.error)
     return [
       {
         label: 'Modify Shipment Details',
         icon: <Pencil size={14} />,
         disabled: sel.length !== 1,
         onClick: sel.length === 1
-          /* reopens the order in the merchant's own Add Order flow */
-          ? () => nav(`/grow/orders/add?draft=${sel[0].orderId}`)
+          /* reopens the order in the new consignment form */
+          ? () => nav(`/local/consignments/new?draft=${sel[0].orderId}`)
           : undefined,
       },
       /* TWO different schedules, two different statuses:
@@ -203,7 +239,22 @@ export default function LocalConsignments() {
            Pickup Request module.
          - Schedule Routing = the console's own delivery schedule, as before;
            the row reads Secondary State "Scheduled". */
-      ...(pickupOn ? [{ label: 'Schedule Pickup', icon: <Truck size={14} />, onClick: () => setScheduling({ ids, clear }) }] : []),
+      /* FarEye `consignment::marked-ready-for-ship`: Created → Ready To Ship. With an
+         auto-pickup trigger on that event, the store raises the request here too. */
+      { label: 'Mark Ready To Ship', icon: <BadgeCheck size={14} />,
+        disabled: !markable,
+        onClick: markable ? () => {
+          const marked = growOrderActions.markReadyToShip(ids)
+          for (const id of marked) planningActions.addNote(id, 'Marked Ready To Ship')
+          done(`${marked.length} consignment${marked.length === 1 ? '' : 's'} marked Ready To Ship.`)
+        } : undefined },
+      ...(manualPickup ? [{ label: 'Schedule Pickup', icon: <Truck size={14} />, onClick: () => setScheduling({ ids, clear }) }] : []),
+      /* only shipments still waiting for a pickup can join an open request */
+      ...(manualPickup ? (() => {
+        const joinable = sel.map((r) => r.order).filter(isPickupEligible)
+        return [{ label: 'Add to existing pickup request', icon: <PackageSearch size={14} />, disabled: joinable.length === 0,
+          onClick: joinable.length ? () => setJoining({ orders: joinable, clear }) : undefined }]
+      })() : []),
       { label: 'Schedule Routing', icon: <CalendarClock size={14} />, onClick: () => {
         const startAt = `${new Date().toISOString().slice(0, 10)}T09:00`
         planningActions.schedule(ids, { startAt, endAt: `${startAt.slice(0, 10)}T18:00`, reason: 'Scheduled from Consignment Order' })
@@ -250,18 +301,23 @@ export default function LocalConsignments() {
       <LocalTabs
         tabs={TABS.map((t, i) => ({ id: String(i), label: t.label, count: tabCounts[i], icon: TAB_ICONS[i] }))}
         active={String(tab)} onChange={(id) => { setTab(Number(id)); setPage(1) }}
-        right={<AddUpload onAdd={() => nav('/grow/orders/add')} onUpload={() => setUploading(true)} />} />
+        /* owner, 2026-09-29: Add opens the NEW consignment form (v2) straight away — no menu */
+        right={<AddUpload onAdd={() => nav('/local/consignments/new')} onUpload={() => setUploading(true)} />} />
 
       <FilterLine
         right={<>
           <SearchBox value={q} onChange={(v) => { setQ(v); setPage(1) }} placeholder="Search shipments" />
+          {chooser}
           <IconBtn title="Download all (CSV)"
             onClick={() => { downloadCsv('consignments.csv', csvOf(rows)); toast.success(`${rows.length} rows exported.`) }}>
             <DownloadGlyph size={16} />
           </IconBtn>
         </>}>
         <DateRange start={from} end={to} onStart={(v) => { setFrom(v); setPage(1) }} onEnd={(v) => { setTo(v); setPage(1) }} />
-        <FilterSelect value={state} placeholder="State" options={states} width={150} onChange={(v) => { setState(v); setPage(1) }} />
+        {/* the ONE State/Secondary State popup — same list as Pending for Planning */}
+        <FilterMultiSelect values={stateSel} placeholder="State/Secondary State" width={200}
+          options={STATE_OPTIONS} groupOf={stateGroupOf}
+          onChange={(v) => { setStateSel(v); setPage(1) }} />
         <FilterSelect value={merchant} placeholder="Merchant" options={merchants} width={170} onChange={(v) => { setMerchant(v); setPickupAddress(''); setPage(1) }} />
         {pickupOn && (
           /* inert until a merchant is picked, and says why */
@@ -313,7 +369,7 @@ export default function LocalConsignments() {
         )}
       </div>
 
-      {scheduling && pickupOn && (
+      {scheduling && manualPickup && (
         <SchedulePickupDialog
           orderIds={scheduling.ids}
           onClose={() => setScheduling(null)}
@@ -330,6 +386,16 @@ export default function LocalConsignments() {
           }} />
       )}
 
+      {joining && manualPickup && (
+        <SchedulePickupDialog orderIds={joining.orders.map((o) => o.id)} prefer="existing" title="Add to existing pickup request"
+          onClose={() => setJoining(null)}
+          onDone={(results, failed) => {
+            joining.clear(); setJoining(null)
+            if (results.length) toast.success(`Added to ${results.map((r) => r.number).join(', ')}`)
+            if (failed.length) toast.error(`${failed.join(', ')} can no longer take shipments — nothing added there.`)
+          }} />
+      )}
+
       {uploading && (
         <BulkUploadDialog
           stores={db.stores}
@@ -337,138 +403,9 @@ export default function LocalConsignments() {
           onCreated={(n: number) => { setUploading(false); toast.success(`${n} shipments created.`) }} />
       )}
 
-      {drawerId && <ConsignmentDrawer row={drawerRow} onClose={() => nav('/local/consignments')} />}
+      {drawerId && <ConsignmentView row={drawerRow} onClose={() => nav('/local/consignments')} />}
     </LocalPage>
   )
 }
 
 /* ----------------------------------------------------------- the drawer ---- */
-
-function ConsignmentDrawer({ row, onClose }: { row: LocalConsignmentRow | null; onClose: () => void }) {
-  const [tab, setTab] = useState(0)
-  const plan = usePlanning()
-
-  if (!row) {
-    return (
-      <>
-        <div className="fixed inset-0 z-[60] bg-warm-900/40" onClick={onClose} />
-        <aside className="fixed inset-y-0 right-0 z-[61] flex w-[62%] min-w-[720px] flex-col bg-surface shadow-ds-overlay">
-          <header className="flex items-center gap-3 border-b border-line px-4 py-4">
-            <span className="text-[16px] font-bold text-ink">Shipment</span>
-            <button onClick={onClose} className="ml-auto text-ink-3 hover:text-ink"><X size={18} /></button>
-          </header>
-          <div className="p-6"><EmptyState title="This shipment no longer exists." /></div>
-        </aside>
-      </>
-    )
-  }
-
-  const o = row.order
-  const notes = plan.notes[row.orderId] ?? []
-
-  return (
-    <>
-      <div className="fixed inset-0 z-[60] bg-warm-900/40" onClick={onClose} />
-      <aside className="fixed inset-y-0 right-0 z-[61] flex w-[62%] min-w-[720px] flex-col bg-surface shadow-ds-overlay"
-        role="dialog" aria-label={`Consignment ${row.consignmentNumber}`}>
-        <header className="flex items-center gap-3 border-b border-line px-4 py-4">
-          <span className="font-mono text-[16px] font-bold text-ink">{row.consignmentNumber}</span>
-          <StatusPill label={String(row.state)} tone={stateTone(String(row.state))} />
-          {row.exception && <StatusPill label={row.exception} tone="danger" />}
-          <button onClick={onClose} className="ml-auto text-ink-3 hover:text-ink"><X size={18} /></button>
-        </header>
-
-        <div className="px-4"><Tabs tabs={DRAWER_TABS} active={tab} onChange={setTab} /></div>
-
-        <div className="flex-1 overflow-auto p-4">
-          <div className="flex flex-col gap-3">
-            {DRAWER_TABS[tab] === 'Details' && (
-              <>
-                <Section title="Shipment" pairs={[
-                  ['Consignment Number', row.consignmentNumber],
-                  ['Reference Number', row.referenceNumber],
-                  ['Order Number', row.orderNumber],
-                  ['Type', row.taskType],
-                  ['State', String(row.state)],
-                  ['Secondary State', dash(row.secondaryState)],
-                  ['Exception', dash(row.exception)],
-                  ['Merchant', row.merchant],
-                  ['Carrier', dash(row.carrier)],
-                  ['Service Type', dash(row.serviceType)],
-                  ['Created At', stamp(o.createdAt)],
-                  ['Ageing', `${row.ageingDays} days`],
-                ]} />
-                <Section title="Ship From" pairs={[
-                  ['Location', row.origin],
-                  ['Code', dash(row.shipFromCode)],
-                  ['Pickup Window', row.pickupWindow ? `${stamp(row.pickupWindow.start)} → ${stamp(row.pickupWindow.end)}` : '—'],
-                  ['Booked Under', o.pickupRequestId && row.pickupRequestNumber
-                    ? <Link to={`/local/pickup/${o.pickupRequestId}`} className="font-mono text-brand-500 hover:underline">{row.pickupRequestNumber}</Link>
-                    : '—'],
-                  ['Picked In', o.pickedInRequestId && row.pickedInNumber
-                    ? <Link to={`/local/pickup/${o.pickedInRequestId}`} className="font-mono text-brand-500 hover:underline">{row.pickedInNumber}</Link>
-                    : '—'],
-                ]} />
-                <Section title="Ship To" pairs={[
-                  ['Name', dash(row.shipToName)],
-                  ['Address', dash(row.address)],
-                  ['City', dash(row.shipToCity)],
-                  ['Pin Code', dash(row.shipToPincode)],
-                  ['Destination Hub', dash(row.destination)],
-                  ['Delivery Window', row.deliveryWindow ? `${stamp(row.deliveryWindow.start)} → ${stamp(row.deliveryWindow.end)}` : '—'],
-                ]} />
-              </>
-            )}
-
-            {DRAWER_TABS[tab] === 'SKU / Package' && (
-              <Section title="Package" pairs={[
-                ['Kind', o.pkg.kind],
-                ['Pieces', String(row.pieces)],
-                ['Weight', `${row.weightKg} kg`],
-                ['Volume', `${row.volumeMm3.toLocaleString()} mm³`],
-                ['Pallet Spaces', String(row.palletSpaces ?? 1)],
-                ['Dimensions', `${o.pkg.lengthCm} × ${o.pkg.widthCm} × ${o.pkg.heightCm} cm`],
-                ['Description', dash(o.pkg.description)],
-                ['Declared Value', `${o.currency} ${o.pkg.declaredValue.toLocaleString()}`],
-              ]} />
-            )}
-
-            {DRAWER_TABS[tab] === 'Tracking' && (
-              row.shipments.length === 0
-                ? <EmptyState title="No packages tracked yet" />
-                : (
-                  <Panel title={`Packages (${row.shipments.length})`}>
-                    <div className="px-5 pb-4">
-                      {row.shipments.map((s) => (
-                        <div key={s.id} className="flex items-center gap-3 border-b border-line py-2 last:border-0 text-[13px]">
-                          <span className="font-mono font-bold text-ink">{s.trackingNumber}</span>
-                          <span className="ml-auto text-ink-3">{s.outcome ?? 'In progress'}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </Panel>
-                )
-            )}
-
-            {DRAWER_TABS[tab] === 'Notes' && (
-              notes.length === 0
-                ? <EmptyState title="No notes" hint="Notes added from the planning pages appear here." />
-                : (
-                  <Panel title={`Notes (${notes.length})`}>
-                    <div className="px-5 pb-4">
-                      {notes.map((n, i) => (
-                        <div key={i} className="border-b border-line py-2 last:border-0">
-                          <p className="text-[13px] text-ink">{n.text}</p>
-                          <p className="text-[11.5px] text-ink-3">{stamp(n.at)}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </Panel>
-                )
-            )}
-          </div>
-        </div>
-      </aside>
-    </>
-  )
-}
