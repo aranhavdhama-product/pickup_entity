@@ -2303,7 +2303,6 @@ export default function AddConsignmentV2({ portal = 'console' }: {
   }
   /** a package's own fields — type · quantity · L × W × H · weight (+ tracking / description / pallet / id in place) */
   const packageFields = (p: Parcel, i: number, below?: ReactNode, adder?: ReactNode) => {
-    const vol = p.l * p.w * p.h
     const isCustom = packageValue(p, packageTypes) === CUSTOM_PACKAGE
     const r = revealEntries([
       !hid('pkgTracking') && ['pkgTracking', <F key="tr" fieldKey="pkgTracking" label={lbl('pkgTracking')} value={p.trackingNumber ?? ''} disabled={!!fromOverage && i === 0}
@@ -2324,7 +2323,7 @@ export default function AddConsignmentV2({ portal = 'console' }: {
           <FNum label="Quantity" required integer min={1} blankZero placeholder="eg, 1" value={p.quantity} error={err(!(p.quantity > 0))}
             onChange={(q) => setParcel(i, { quantity: q })} />
           {/* a preset's size IS its master row — typed only for a Custom package */}
-          <SFld fieldKey="pkgDimensions" label="Dimensions (cm)" helper={vol ? `${round2(vol)} cm³ each${isCustom ? '' : ' · from the package type'}` : undefined}>
+          <SFld fieldKey="pkgDimensions" label="Dimensions (cm)" helper={isCustom ? undefined : 'From the package type'}>
             {isCustom ? <DimsBox l={p.l} w={p.w} h={p.h} onChange={(d) => setParcel(i, d)} /> : <ReadBox value={`${p.l} × ${p.w} × ${p.h}`} />}
           </SFld>
           <FNum fieldKey="pkgWeight" label="Weight (kg)" required placeholder="eg, 10" blankZero value={p.weight} error={err(!(p.weight > 0))}
