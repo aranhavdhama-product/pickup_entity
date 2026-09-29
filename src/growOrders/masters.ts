@@ -57,6 +57,12 @@ export interface Merchant {
    *  - 'po'   — must link the order to one of the merchant's purchase orders.
    */
   postpaidTerms?: 'none' | 'po'
+  /**
+   * Compliance documents this merchant must attach to every order (e.g. LiteExpress's
+   * Certificate of Movement) — absent/empty means the Add Order form shows no
+   * Documents section at all. Only ever set on the sample merchants below.
+   */
+  requiredDocuments?: { code: string; label: string }[]
 }
 
 export type LocationType = 'MERCHANT_LOCATION' | 'CUSTOMER_LOCATION' | 'PUDO' | 'HUB' | 'PARCEL_LOCKER'
@@ -127,6 +133,11 @@ export const SAMPLE_MERCHANTS: Merchant[] = [
   { code: '2GO_PH', name: '2GO Philippines', party: null },
   { code: 'POSTPAID_INVOICE', name: 'Postpaid Retailer (Invoice)', party: null, postpaidTerms: 'none' },
   { code: 'POSTPAID_PO', name: 'Postpaid Retailer (PO Linked)', party: null, postpaidTerms: 'po' },
+  { code: 'LITE_EXPRESS', name: 'LiteExpress', party: null, requiredDocuments: [
+    { code: 'certOfMovement', label: 'Certificate of Movement' },
+    { code: 'invoice', label: 'Commercial Invoice' },
+    { code: 'packingList', label: 'Packing List' },
+  ] },
 ]
 
 export const SAMPLE_LOCATIONS: MasterLocation[] = STORES.map((s) => ({

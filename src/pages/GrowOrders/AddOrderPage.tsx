@@ -352,6 +352,36 @@ function FNum({ label, required, className = '', helper, ...p }: ComponentProps<
   return <Fld label={label} required={required} error={!!p.error} helper={helper} className={className}><NumBox {...p} /></Fld>
 }
 
+/**
+ * One merchant-configured document — a picked file's NAME only (this is a
+ * client-only prototype; nothing actually uploads). No file = the dashed
+ * "Upload" affordance; a picked file shows its name with a way to clear it.
+ */
+function DocUploadRow({ label, required, file, error, onChange }: {
+  label: string; required?: boolean; file: string | null; error?: boolean; onChange: (name: string | null) => void
+}) {
+  const inputRef = useRef<HTMLInputElement>(null)
+  return (
+    <Fld label={label} required={required} error={error}>
+      <input ref={inputRef} type="file" className="hidden" onChange={(e) => onChange(e.target.files?.[0]?.name ?? null)} />
+      {file ? (
+        <div className="flex h-8 items-center gap-2 rounded-md border border-line bg-warm-25 px-3 text-[13px] text-ink">
+          <FileCheck size={14} className="shrink-0 text-success-fg" />
+          <span className="min-w-0 flex-1 truncate">{file}</span>
+          <button type="button" onClick={() => onChange(null)} aria-label={`Remove ${label}`}
+            className="shrink-0 text-warm-400 transition-colors hover:text-brand-500"><X size={14} /></button>
+        </div>
+      ) : (
+        <button type="button" onClick={() => inputRef.current?.click()}
+          className={`flex h-8 w-full items-center justify-center gap-2 rounded-md border border-dashed text-[12.5px] font-bold transition-colors
+            ${error ? 'border-brand-500 text-brand-500' : 'border-warm-300 text-brand-500 hover:border-brand-500 hover:bg-brand-50/40'}`}>
+          <Plus size={13} /> Upload
+        </button>
+      )}
+    </Fld>
+  )
+}
+
 /** A party's window — ONE range control (the console address-window grammar) over 'YYYY-MM-DDTHH:mm' start / end. */
 function WindowRange({ label, start, end, onChange }: {
   label: string; start: string; end: string; onChange: (w: { windowStart: string; windowEnd: string }) => void
@@ -725,6 +755,11 @@ export default function AddOrderPage() {
   const cardOk = selectedCard !== '' || (addingCard && !!newCard.number.trim() && !!newCard.name.trim() && !!newCard.expiry.trim() && !!newCard.cvv.trim())
   const [selectedPo, setSelectedPo] = useState('')
 
+  /* ---- Documents: merchant-configured uploads (e.g. LiteExpress's Certificate of
+     Movement) — keyed by the doc's code, holding just the picked file's name (this
+     is a client-only prototype; nothing actually uploads). ---- */
+  const [docs, setDocs] = useState<Record<string, string | null>>({})
+
   /* ---- FTL: Dedicate Truck on → Vehicle Details ---- */
   const isFtl = !fromOverage && !!c.dedicateTruck
   /* Ship To is optional on a dedicated-truck booking (the merchant may not know or
@@ -809,7 +844,8 @@ export default function AddOrderPage() {
   const paymentReq = merchant?.postpaidTerms === 'none' ? []
     : merchant?.postpaidTerms === 'po' ? [!!selectedPo]
     : [!!c.paymentMode, c.paymentMode !== 'Card' || cardOk]
-  const allReq = [...consignmentReq, ...fromReq, ...toReq, ...rtoReq, ...pieceReq, ...skuReq, ...carrierReq, ...paymentReq]
+  const docsReq = (merchant?.requiredDocuments ?? []).map((d) => !!docs[d.code])
+  const allReq = [...consignmentReq, ...fromReq, ...toReq, ...rtoReq, ...pieceReq, ...skuReq, ...carrierReq, ...paymentReq, ...docsReq]
   const filledCount = allReq.filter(Boolean).length
   const canSubmit = filledCount === allReq.length
   const missingCount = allReq.length - filledCount
@@ -962,12 +998,13 @@ export default function AddOrderPage() {
   /* ---- the sections, one order regardless of order complexity ---- */
   const sections = ['sec-consignment', 'sec-ship-from-rto', 'sec-ship-to',
     isFtl ? 'sec-vehicle' : 'sec-package', ...(isFtl ? [] : ['sec-services']),
+    ...((merchant?.requiredDocuments?.length ?? 0) > 0 ? ['sec-documents'] : []),
     ...(merchant?.postpaidTerms === 'none' ? [] : ['sec-payment'])]
   const doneOf: Record<string, boolean> = {
     'sec-consignment': done(consignmentReq),
     'sec-ship-from-rto': done(fromReq) && done(rtoReq), 'sec-ship-to': done(toReq),
     'sec-package': done(pieceReq) && done(skuReq), 'sec-vehicle': done(pieceReq),
-    'sec-services': done(carrierReq), 'sec-payment': done(paymentReq),
+    'sec-services': done(carrierReq), 'sec-documents': done(docsReq), 'sec-payment': done(paymentReq),
   }
 
   const proceed = () => {
@@ -1408,6 +1445,23 @@ export default function AddOrderPage() {
     </SectionCard>
   )
 
+  /* Merchant-configured compliance documents (e.g. LiteExpress's Certificate of
+     Movement) — the section itself is excluded from `sections` above when the
+     merchant has none configured. */
+  const documentsSection = (merchant?.requiredDocuments?.length ?? 0) > 0 && (
+    <SectionCard id="sec-documents" title="Documents" done={doneOf['sec-documents']}
+      icon={<FileCheck size={15} className={ICON} />}
+      caption={`${merchant?.name ?? 'This merchant'} requires these documents on every shipment.`}>
+      <Grid>
+        {merchant?.requiredDocuments?.map((d) => (
+          <DocUploadRow key={d.code} label={d.label} required file={docs[d.code] ?? null}
+            error={showErrors && !docs[d.code]}
+            onChange={(name) => setDocs((x) => ({ ...x, [d.code]: name }))} />
+        ))}
+      </Grid>
+    </SectionCard>
+  )
+
   /* Invoice-billed postpaid merchants skip the Payment section entirely (excluded from
      `sections` above) — nothing to collect at order time. PO-linked postpaid merchants get
      the PO picker instead of the COD/Card/Wallet/Gateway method picker everyone else sees;
@@ -1544,7 +1598,8 @@ export default function AddOrderPage() {
   const byId: Record<string, ReactNode> = {
     'sec-consignment': consignmentSection, 'sec-ship-from-rto': shipFromRtoRow,
     'sec-ship-to': shipToOpen ? shipToSection : shipToPlaceholder, 'sec-package': packageSection,
-    'sec-vehicle': vehicleSection, 'sec-services': servicesSection, 'sec-payment': paymentSection,
+    'sec-vehicle': vehicleSection, 'sec-services': servicesSection, 'sec-documents': documentsSection,
+    'sec-payment': paymentSection,
   }
   const pct = Math.round((filledCount / allReq.length) * 100)
 
