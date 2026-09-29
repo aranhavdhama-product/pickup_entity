@@ -68,11 +68,13 @@ import RequestsPage from './pages/GrowPortal/RequestsPage'
 import ConsignmentsPage from './pages/GrowPortal/ConsignmentsPage'
 import GrowOrdersLayout from './pages/GrowOrders/GrowOrdersLayout'
 import OrdersListPage from './pages/GrowOrders/OrdersListPage'
+import AddOrderPage from './pages/GrowOrders/AddOrderPage'
 import LocalAddConsignment from './pages/LocalConsignments/AddConsignment'
 import LocalAddConsignmentV2 from './pages/LocalConsignments/AddConsignmentV2'
 import OrderViewPage from './pages/GrowOrders/OrderViewPage'
 import CheckoutPage from './pages/GrowOrders/CheckoutPage'
 import PickupRequestsPage from './pages/GrowOrders/PickupRequestsPage'
+import PickupRequestPage from './pages/GrowOrders/PickupRequestPage'
 /* Batch A — Grow analytics & tools pages */
 import GrowDashboardPage from './pages/GrowOrders/DashboardPage'
 import GrowTrackingPage from './pages/GrowOrders/TrackingPage'
@@ -167,13 +169,12 @@ export default function AppRoutes() {
       <Route path="/driver" element={<DriverApp />} />
       <Route path="/grow/orders" element={<GrowOrdersLayout />}>
         <Route index element={<OrdersListPage />} />
-        <Route path="add" element={<LocalAddConsignmentV2 portal="merchant" />} />
-        <Route path="add/vehicle" element={<LocalAddConsignmentV2 portal="merchant" />} />
+        <Route path="add" element={<AddOrderPage />} />
+        <Route path="add/vehicle" element={<AddOrderPage />} />
         <Route path="checkout" element={<CheckoutPage />} />
         {/* before :id — "pickups" must not be read as an order id */}
         <Route path="pickups" element={<PickupRequestsPage />} />
-        {/* the request = a slide-over over the list (owner, 2026-09-25) */}
-        <Route path="pickups/:id" element={<PickupRequestsPage />} />
+        <Route path="pickups/:id" element={<PickupRequestPage />} />
         {/* Batch A — analytics & tools pages (literals before :id) */}
         <Route path="dashboard" element={<GrowDashboardPage />} />
         <Route path="tracking" element={<GrowTrackingPage />} />
