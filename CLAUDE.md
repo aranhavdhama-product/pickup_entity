@@ -437,9 +437,9 @@ effects (a cancelled/rescheduled PR leaving its trip) flow through `onPickupRequ
   Event Logs timeline; every list is DERIVED in `viewModel.ts` from the order, its pickup
   requests, its trips and its notes, since no event/load/attempt service exists locally),
   `/local/pickup` (+ `/:id`, `LocalPickup/*`),
-  `/local/pending-for-planning` (ALWAYS the new page, owner 2026-09-29: pickup module OFF = no tabs, consignments
+  `/local/pending-for-planning` (ALWAYS the new page, owner 2026-09-29: pickup module OFF = one All tab, consignments
   only; ON in manual OR auto mode = the tabs below with pickup requests — gate = `cfg.enabled`, not
-  `pickupPagesVisible`; the staging look only on `-replica`) (tabs First Mile · Last Mile · All, `?tab=first-mile|last-mile`,
+  `pickupPagesVisible`; the staging look only on `-replica`) (tabs **All** (first + default) · First Mile · Last Mile, `?tab=first-mile|last-mile`,
   old `pickups`/`consignments` slugs alias; per-tab column sets in `LocalPFP/viewColumns.ts` —
   Last Mile = the measured consignment grid, First Mile = Group by Pickup request (PR grid on
   `PR_COLUMN_DEFS`) | None (`?group=none`, first-mile consignments + Pickup Request column),

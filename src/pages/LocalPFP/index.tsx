@@ -364,10 +364,11 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
 
   /* ---- the tab: narrows the queue before any filter runs ---- */
   /* owner, 2026-09-24: with the pickup module OFF the page has no tabs at all — only the consignments */
-  const tabs = pickupsOn ? TABS : []
+  /* owner, 2026-09-29: All always opens first; with the module off it is the ONLY tab (every consignment) */
+  const tabs = pickupsOn ? TABS : TABS.filter((t) => t.key === 'all')
   /* an unknown value reads as All. With the module off there are no tabs: the
      queue holds only consignments, all of them, on the staging column set. */
-  const tab: TabKey = parseTab(params.get('tab'))
+  const tab: TabKey = pickupsOn ? parseTab(params.get('tab')) : 'all'
   /* First Mile's Group by (`?group=none`; default Pickup request) */
   const group: GroupBy = parseGroup(params.get('group'))
   const view: ColumnView = fixture || !pickupsOn ? 'consignment' : viewOf(tab, group)

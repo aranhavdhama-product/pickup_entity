@@ -27,10 +27,11 @@ import { COLUMNS, T, type StagingColumn } from './stagingTokens'
 /* ------------------------------------------------------------- the tabs --- */
 
 /** First Mile · Last Mile · All — All last (owner). */
+/* owner, 2026-09-29: All FIRST — it is also the default (parseTab) */
 export const TABS = [
+  { key: 'all', label: 'All' },
   { key: 'first-mile', label: 'First Mile' },
   { key: 'last-mile', label: 'Last Mile' },
-  { key: 'all', label: 'All' },
 ] as const
 export type TabKey = typeof TABS[number]['key']
 
