@@ -40,6 +40,7 @@ import {
 } from 'lucide-react'
 import { blankParty, CURRENCY } from '../../growOrders/seed'
 import { growOrderActions, orderById, pickupRequestById, useGrowOrders } from '../../growOrders/store'
+import { finalizeOrder } from '../../growOrders/checkout'
 import type { Party, StoreLocation } from '../../growOrders/types'
 import {
   currentMerchant, ownPackageTypes, packageTypesForMerchant, useMasters, useMerchantCode,
@@ -974,12 +975,23 @@ export default function AddOrderPage() {
       return
     }
     persistTypedSender()
-    sessionStorage.setItem(DRAFT_KEY, JSON.stringify(buildDraft()))
-    setDraftSidecar({
-      pickupId: fromPr?.id ?? null,
-      overage: fromOverage ? { prId: fromOverage.pr.id, overageId: fromOverage.scan.id } : null,
-    })
-    nav('/grow/orders/checkout')
+    const draft = buildDraft()
+    const pickupId = fromPr?.id ?? null
+    const overage = fromOverage ? { prId: fromOverage.pr.id, overageId: fromOverage.scan.id } : null
+    /* Payment Gateway is the one mode that isn't settled yet — it still needs its
+       own "next page" to redirect to and capture payment. Every other mode is
+       already fully chosen here, so submitting creates the order right away; the
+       Shipment Summary rail already shows what a separate checkout review would. */
+    if (c.paymentMode === 'Payment Gateway (ANZ)') {
+      sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft))
+      setDraftSidecar({ pickupId, overage })
+      nav('/grow/orders/checkout')
+      return
+    }
+    const { redirectTo, message } = finalizeOrder(draft, { pickupId, overage, merchantCode: merchant?.code ?? null })
+    clearDraftKeys()
+    toast.success(message)
+    nav(redirectTo)
   }
   const saveForLater = () => {
     persistTypedSender()
