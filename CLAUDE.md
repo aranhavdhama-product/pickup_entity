@@ -113,9 +113,10 @@ Product changes layered on the replica (deliberate departures from the live port
   page's grammar and vocabulary (spec §12): `FilterLine` (date range · State/Secondary State
   grouped `FilterMultiSelect` · Origin `FilterSelect` · funnel: Facility, Type, Carrier, Service
   Type, Exception, Tag · Clear Filters; right: search · ⚙ `ColumnChooser` · download) → the
-  console's six `LocalTabs` below it with counts (`?tab=` slug; error → Data Validation Issues,
-  Undelivered → Exception, reverse/RTO → Returns, Delivered/Cancelled → Closed, rest → Active,
-  All = no error; DRAFTS always Active; unknown slugs → Active) with **Add ▾** (Add consignment /
+  `LocalTabs` below it with counts (`?tab=` slug; five tabs, All first — a departure from the
+  console's six: All = no error, Drafts, Errors (was Data Validation Issues), Active (everything
+  not draft/error/closed, including what used to be split into Exception/Returns), Closed
+  (Delivered/Cancelled); unknown slugs → Active) with **Add ▾** (Add consignment /
   Add FTL consignment) + upload `IconButton` on the strip's right → `DataTable` with
   `selectionActions` (Modify Shipment Details · Schedule Pickup → `BookPickupDialog` · Initiate
   RTO · Print Label · Download CSV · Cancel Shipment) → Pagination/PageSize. Rows =

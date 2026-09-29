@@ -3,17 +3,17 @@
  *
  * Built from the SAME components as the console's `/local/consignments`
  * (spec §15): `LocalPage` → `FilterLine` (Date range · State / Secondary State ·
- * Origin · funnel · Clear Filters · search · ⚙ columns · download) → the
- * console's six status tabs (`LocalTabs`, below the filter line via the shared
- * `.lc-page` order rule, `?tab=` in the URL, "Add ▾ | upload" on the strip's
- * right) → Nueva `DataTable` with `selectionActions` → `Pagination` /
- * `PageSize` → a drawer (`?order=<id>`) in the console drawer's markup.
+ * Origin · funnel · Clear Filters · search · ⚙ columns · download) → tabs
+ * (`LocalTabs`, below the filter line via the shared `.lc-page` order rule,
+ * `?tab=` in the URL, "Add ▾ | upload" on the strip's right) → Nueva
+ * `DataTable` with `selectionActions` → `Pagination` / `PageSize` → a drawer
+ * (`?order=<id>`) in the console drawer's markup.
  *
- * Tabs follow the console's rules exactly: a row carrying an error sits ONLY in
- * Data Validation Issues; Undelivered → Exception; reverse / RTO → Returns;
- * Delivered / Cancelled → Closed; the rest → Active; All = every row without an
- * error. The one Grow addition, DRAFTS (State `Draft`, Secondary State `Save for
- * later`), always belongs to Active (owner).
+ * Five tabs, All first (a Grow departure from the console's six — see TABS
+ * below): All = every row without an error; Drafts (State `Draft`, Secondary
+ * State `Save for later`) and Errors (a validation error) each get their own
+ * tab; Delivered / Cancelled → Closed; everything else → Active, including
+ * what used to be split into Exception and Returns.
  *
  * Rows come from the SHARED adapter (`shipmentRows.ts` → `toConsignmentRow`),
  * so a shipment reads the same State / Secondary State / Exception here and on
@@ -24,8 +24,8 @@ import { useMasters } from '../../growOrders/masters'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  AlertTriangle, ChevronDown, Download, Handshake, Package, Pencil, Printer, RotateCcw,
-  Route as RouteIcon, ShieldAlert, Truck, Undo2, Upload, X,
+  ChevronDown, Download, FileEdit, Handshake, Package, Pencil, Printer, RotateCcw,
+  Route as RouteIcon, ShieldAlert, Truck, Upload, X,
 } from 'lucide-react'
 import { useGrowOrders, growOrderActions } from '../../growOrders/store'
 import { usePickupModuleConfig } from '../../config/pickupModule'
@@ -57,21 +57,23 @@ import { useShipmentColumns } from './shipmentTable'
 const hasValidationError = (r: ShipmentRow) => !r.draft && !!r.exception
 const CLOSED_STATES = ['Delivered', 'Cancelled']
 
-/** The console's six tabs (`LocalConsignments`), same rules; drafts are Active. */
+/**
+ * Five tabs, All first: Drafts and Errors each get their own tab (Errors was
+ * "Data Validation Issues"); Exception and Returns are no longer split out —
+ * those rows fall into Active with everything else non-error, non-closed.
+ */
 const TABS: { slug: string; label: string; icon: typeof Package; test: (r: ShipmentRow) => boolean }[] = [
-  { slug: 'data-validation-issues', label: 'Data Validation Issues', icon: ShieldAlert, test: hasValidationError },
-  { slug: 'active', label: 'Active', icon: RouteIcon,
-    test: (r) => r.draft || (!hasValidationError(r) && !CLOSED_STATES.includes(r.state)) },
-  { slug: 'closed', label: 'Closed', icon: Handshake, test: (r) => !hasValidationError(r) && CLOSED_STATES.includes(r.state) },
-  { slug: 'exception', label: 'Exception', icon: AlertTriangle, test: (r) => !hasValidationError(r) && r.state === 'Undelivered' },
-  { slug: 'returns', label: 'Returns', icon: Undo2,
-    test: (r) => !hasValidationError(r) && (r.orderTypeLabel === 'Reverse' || r.secondaryState.includes('RTO')) },
   { slug: 'all', label: 'All', icon: Package, test: (r) => !hasValidationError(r) },
+  { slug: 'drafts', label: 'Drafts', icon: FileEdit, test: (r) => r.draft },
+  { slug: 'errors', label: 'Errors', icon: ShieldAlert, test: hasValidationError },
+  { slug: 'active', label: 'Active', icon: RouteIcon,
+    test: (r) => !r.draft && !hasValidationError(r) && !CLOSED_STATES.includes(r.state) },
+  { slug: 'closed', label: 'Closed', icon: Handshake, test: (r) => !hasValidationError(r) && CLOSED_STATES.includes(r.state) },
 ]
-/** Unknown / legacy slugs (`?tab=ready`, `?tab=drafts`…) land on Active. */
+/** Unknown / legacy slugs (`?tab=exception`, `?tab=returns`…) land on Active. */
 const tabIndexOf = (slug: string | null) => {
   const i = TABS.findIndex((t) => t.slug === slug)
-  return i < 0 ? 1 : i
+  return i < 0 ? TABS.findIndex((t) => t.slug === 'active') : i
 }
 
 const DRAWER_TABS = ['Details', 'SKU / Package', 'Tracking', 'Notes']
