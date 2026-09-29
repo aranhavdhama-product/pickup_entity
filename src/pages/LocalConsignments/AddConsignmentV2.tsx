@@ -2808,9 +2808,17 @@ export default function AddConsignmentV2({ portal = 'console' }: {
         </p>
       </div>
       </div>
-      {simple
-        ? <span className="text-[13px] text-ink-3">The simplified form is fixed — switch to the regular form to customise it</span>
-        : <Button variant="outline" icon={<SlidersHorizontal size={14} />} onClick={startEditing}>Edit consignment form</Button>}
+      <div className="flex flex-wrap items-center gap-4">
+        {/* owner, 2026-09-29: the old (staging-replica) form stays one click away — not while modifying a live order,
+            whose old-form save would reset it */}
+        {!liveEdit && (
+          <Link to={`/local/consignments/add${isFtl ? '/vehicle' : ''}`} onClick={() => clearDraftKeys()}
+            className="text-[13px] font-bold text-brand-500 hover:text-brand-600">Open the old form</Link>
+        )}
+        {simple
+          ? <span className="text-[13px] text-ink-3">The simplified form is fixed — switch to the regular form to customise it</span>
+          : <Button variant="outline" icon={<SlidersHorizontal size={14} />} onClick={startEditing}>Edit consignment form</Button>}
+      </div>
     </div>
   )
 

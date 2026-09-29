@@ -255,7 +255,7 @@ Product changes layered on the replica (deliberate departures from the live port
   `Parcel.quantity` = packages of this spec, `ParcelItem.quantity` = units per package.
 - **Add Consignment v2** (owner, 2026-09-29): `/local/consignments/new` (+ `/new/vehicle`) =
   `LocalConsignments/AddConsignmentV2.tsx`, a COPY of `AddOrderPage` (the staging replica at `/add` stays
-  untouched); the list's **Add** opens it directly (owner, 2026-09-29; no menu — `/add` stays reachable by URL only), and
+  untouched); the list's **Add** opens it directly (owner, 2026-09-29; no menu — the old `/add` form is reached from the new form's header link "Open the old form", hidden while modifying a live order), and
   **Modify Shipment Details** opens `/new?draft=<id>`: a LIVE order prefills from `draft.draftFromOrder` when it has no
   stored form state and **Save changes** writes onto it through `growOrderActions.modifyOrder` (status, payment, pickup
   request, ready-to-ship kept — never saveDraft + markPaid). Header = PageHeader's back chevron + title + the one-line
