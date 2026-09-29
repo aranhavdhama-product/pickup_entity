@@ -438,9 +438,13 @@ function PartyFields({ party, set, nameLabel, windowLabel, requireContact, locke
         {locationCode}
         {!hid('addrCompanyName') && text('businessName', 'Company Name', { placeholder: 'eg, Random Company' })}
         {text('name', nameLabel, { required: true, placeholder: 'eg, John Doe' })}
-        <PhoneField label="Contact Number" required={requireContact} code={party.countryCode ?? ''} number={party.contactNumber}
-          disabled={locked} error={err(party.contactNumber, !!requireContact)}
-          onCode={(v) => set({ countryCode: v })} onNumber={(v) => set({ contactNumber: v })} />
+        {/* spans 2 grid columns — a single column left too little room for the
+            country code plus a full number to show without truncating */}
+        <div className="sm:col-span-2">
+          <PhoneField label="Contact Number" required={requireContact} code={party.countryCode ?? ''} number={party.contactNumber}
+            disabled={locked} error={err(party.contactNumber, !!requireContact)}
+            onCode={(v) => set({ countryCode: v })} onNumber={(v) => set({ contactNumber: v })} />
+        </div>
         {!hid('addrEmail') && text('email', 'Email', { type: 'email', placeholder: 'eg, johndoe@xyz.com' })}
       </Grid>
       <SubHead label="Address Details" />
@@ -1005,7 +1009,7 @@ export default function AddOrderPage() {
   /* Service Type here only classifies the FTL booking (drives the vehicle catalogue) —
      parcel service/carrier is chosen in the Services section, with its own TAT and rate. */
   const serviceTypeField = isFtl && !hid('serviceType') && (
-    <F label={lbl('serviceType')} value={ftlService} options={opts(FTL_SERVICE_CODES)} onChange={pickFtlService} />
+    <F label={lbl('serviceType')} className="sm:col-start-2" value={ftlService} options={opts(FTL_SERVICE_CODES)} onChange={pickFtlService} />
   )
   const dedicateToggle = (
     <ChipToggle icon={Truck} label={lbl('dedicateTruck')} checked={isFtl} onChange={setDedicateTruck} disabled={!!fromOverage} />
@@ -1034,10 +1038,12 @@ export default function AddOrderPage() {
           never appears above the toggle that triggers it), Instructions last. */}
       <SubHead label="Handling & Instructions" />
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        {!hid('dedicateTruck') && <div className="pt-[26px]">{dedicateToggle}</div>}
+        {/* each pinned to its own column so toggling Dedicate Truck (which brings
+            Service Type in or out) never shifts Instructions sideways */}
+        {!hid('dedicateTruck') && <div className="pt-[26px] sm:col-start-1">{dedicateToggle}</div>}
         {serviceTypeField}
         {(!hid('specialInstructions') || !hid('deliveryInstructions')) && (
-          <Fld label="Instructions" info>
+          <Fld label="Instructions" info className="sm:col-start-3">
             <MultiSelect value={instructionTags} options={INSTRUCTION_OPTIONS} creatable
               placeholder="Pick common instructions or type your own" onChange={setInstructionTagsAndSync} />
           </Fld>
