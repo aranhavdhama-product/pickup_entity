@@ -18,6 +18,8 @@ import { createLocalConfigStore, asRecord, type LocalConfigStore } from '../../c
 import { DAY_NAMES, HOLIDAY_DATES_SUB, HOLIDAY_MASTER_KEY_VERSION, HOLIDAY_POLICY_SUB, parseWeeklyOffs, toYmd, weeklyOffsLabel } from '../../growOrders/operatingCalendar'
 
 export const SERVICE_ORDER_BASE = '/local/settings/masters'
+/** the signed-in ops user the audit trail names (the local app has no session; staging's login here is dms_admin) */
+export const LOCAL_ACTOR = 'dms_admin'
 const CAT_ID = 'service_order'
 
 type Stored = { rows: MasterRow[] | null }   // null = not edited yet → the sample rows
@@ -118,6 +120,7 @@ export default function ServiceOrderMasters({ page }: { page: 'category' | 'sub'
     base: SERVICE_ORDER_BASE,
     backTo: '/local/settings',
     catId: CAT_ID,
+    actor: LOCAL_ACTOR,
     persist: {
       load: (subId) => storeFor(subId).read().rows,
       save: (subId, rows) => storeFor(subId).write({ rows }),

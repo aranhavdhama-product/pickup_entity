@@ -11,10 +11,12 @@ import {
 } from './components'
 import { MasterFormBody } from './MasterForm'
 import { MastersEnvContext, type MasterRow } from './mastersEnv'
+import { AuditTrailSlideOver } from './AuditTrailSlideOver'
+import { diffRows, recordAudit, recordLabelOf, type AuditAction } from './auditTrail'
 import { DATASTORES } from './masterDataIO'
 import {
   Upload, Download, RefreshCw, MapPinned, ChevronDown, ChevronLeft, ChevronRight,
-  ChevronsUpDown, Pencil, Trash2, X, Info, Plus, Clock,
+  ChevronsUpDown, Pencil, Trash2, X, Info, Plus, Clock, History,
 } from 'lucide-react'
 
 /* every master shows search + at least 2 common filters */
@@ -388,8 +390,25 @@ function HubToHubForm({ onSubmit }: { onSubmit: () => void }) {
 
 /* ---------------- Standardized table panel ---------------- */
 function MasterTablePanel({ sub, onOpenForm }: { sub: SubMaster; onOpenForm: OpenForm }) {
-  const { persist } = useContext(MastersEnvContext)
+  const { persist, actor } = useContext(MastersEnvContext)
   const [rows, setRows] = useState<MasterRow[]>(() => persist?.load(sub.id) ?? sub.rows ?? [])
+  /* SED-8163 audit trail — every write below records one immutable entry per record */
+  const who = actor ?? 'console.user'
+  /* `?logs=all` / `?logs=<rowId>` deep-links a trail (the settings search + demo captures use it) */
+  const [logsParam] = useSearchParams()
+  const [logs, setLogs] = useState<{ recordId: string | null; label: string } | null>(() => {
+    const want = logsParam.get('logs')
+    if (!want) return null
+    if (want === 'all') return { recordId: null, label: '' }
+    const row = (persist?.load(sub.id) ?? sub.rows ?? []).find((r) => r.id === want)
+    return row ? { recordId: row.id, label: recordLabelOf(sub, row) } : null
+  })
+  const audit = (action: AuditAction, before: MasterRow | null, after: MasterRow | null, note?: string) =>
+    recordAudit({
+      masterId: sub.id, masterName: sub.name, recordId: (after ?? before)?.id ?? null,
+      recordLabel: recordLabelOf(sub, after ?? before), action, source: action.startsWith('bulk') ? 'bulk' : 'ui', user: who,
+      changes: action === 'deleted' ? [] : diffRows(before, after, cols), before, after, note,
+    })
   // write-through when mounted with a persist (local app); the first render is the loaded state
   const loadedRows = useRef(rows)
   useEffect(() => { if (persist && rows !== loadedRows.current) persist.save(sub.id, rows) }, [persist, rows, sub.id])
@@ -425,7 +444,13 @@ function MasterTablePanel({ sub, onOpenForm }: { sub: SubMaster; onOpenForm: Ope
     onOpenForm({
       form: form.kind === 'page' ? form : { ...form, kind: 'page' }, title: `${mode} ${form.pageTitle ?? sub.name}`,
       initial: row && persist ? persist.toValues(sub, row) : undefined,
-      onSave: persist ? (values) => persist.upsert(sub, values, row?.id) : undefined,
+      onSave: persist ? (values) => {
+        const before = row ?? null
+        persist.upsert(sub, values, row?.id)
+        const after = persist.load(sub.id) ?? []
+        const saved = row ? after.find((r) => r.id === row.id) ?? null : after.find((r) => !rows.some((b) => b.id === r.id)) ?? null
+        audit(row ? 'modified' : 'created', before, saved)
+      } : undefined,
     })
   }
   const openAdd = () => openForm('Add')
@@ -435,16 +460,19 @@ function MasterTablePanel({ sub, onOpenForm }: { sub: SubMaster; onOpenForm: Ope
 
   const deleteRows = (list: any[]) => {
     const ids = new Set(list.map((r) => r.id))
+    list.forEach((r) => audit('deleted', r, null))
     setRows((rs) => rs.filter((r) => !ids.has(r.id)))
     setSelected(new Set()); setConfirm(null)
   }
   const toggleStatus = (list: any[]) => {
     const ids = new Set(list.map((r) => r.id))
+    list.forEach((r) => audit('status', r, { ...r, status: isActive(r) ? 'Inactive' : 'Active' }))
     setRows((rs) => rs.map((r) => ids.has(r.id) ? { ...r, status: isActive(r) ? 'Inactive' : 'Active' } : r))
     setSelected(new Set())
   }
   const setStatusValue = (list: any[], value: string) => {
     const ids = new Set(list.map((r) => r.id))
+    list.forEach((r) => audit('status', r, { ...r, status: value }))
     setRows((rs) => rs.map((r) => ids.has(r.id) ? { ...r, status: value } : r))
     setSelected(new Set())
   }
@@ -481,6 +509,12 @@ function MasterTablePanel({ sub, onOpenForm }: { sub: SubMaster; onOpenForm: Ope
               <RefreshCw size={15} />Enable / Disable
             </button>
           )}
+          <Tooltip text="Logs" side="bottom">
+            <button onClick={() => setLogs({ recordId: null, label: '' })} aria-label={`${sub.name} audit trail`}
+              className="shrink-0 h-8 w-9 inline-flex items-center justify-center rounded-[10px] border border-warm-100 bg-surface text-ink hover:bg-warm-50">
+              <History size={16} />
+            </button>
+          </Tooltip>
           <Tooltip text="Export" side="bottom">
             <button onClick={() => exportRows([])}
               className="shrink-0 h-8 w-9 inline-flex items-center justify-center rounded-[10px] border border-warm-100 bg-surface text-ink hover:bg-warm-50">
@@ -558,6 +592,8 @@ function MasterTablePanel({ sub, onOpenForm }: { sub: SubMaster; onOpenForm: Ope
                           )}
                           <button onClick={() => openEdit(row)} title="Edit"
                             className="h-7 w-7 inline-flex items-center justify-center rounded-md text-ink-3 hover:bg-warm-100 hover:text-ink"><Pencil size={14} /></button>
+                          <button onClick={() => setLogs({ recordId: row.id, label: recordLabelOf(sub, row) })} title="Logs"
+                            className="h-7 w-7 inline-flex items-center justify-center rounded-md text-ink-3 hover:bg-warm-100 hover:text-ink"><History size={14} /></button>
                         </div>
                       ) : (
                         <div className="flex items-center gap-0.5">
@@ -565,6 +601,8 @@ function MasterTablePanel({ sub, onOpenForm }: { sub: SubMaster; onOpenForm: Ope
                             className="h-7 w-7 inline-flex items-center justify-center rounded-md text-ink-3 hover:bg-warm-100 hover:text-ink"><Pencil size={14} /></button>
                           <button onClick={() => setConfirm({ rows: [row], label: `"${row[cols[0]?.key]}"` })} title="Delete"
                             className="h-7 w-7 inline-flex items-center justify-center rounded-md text-ink-3 hover:bg-danger-bg hover:text-st-danger"><Trash2 size={14} /></button>
+                          <button onClick={() => setLogs({ recordId: row.id, label: recordLabelOf(sub, row) })} title="Logs"
+                            className="h-7 w-7 inline-flex items-center justify-center rounded-md text-ink-3 hover:bg-warm-100 hover:text-ink"><History size={14} /></button>
                           {!sub.editDeleteOnly && <KebabMenu items={[
                             ...(sub.id === 'branch' ? [{ label: 'Manage Geofences' }] : []),
                             { label: isActive(row) ? 'Deactivate' : 'Re-activate', onClick: () => toggleStatus([row]) },
@@ -637,7 +675,12 @@ function MasterTablePanel({ sub, onOpenForm }: { sub: SubMaster; onOpenForm: Ope
       })()}
 
       {/* Upload via Excel (Add / Update) */}
-      <UploadDataModal open={!!upload} mode={upload ?? undefined} onClose={() => setUpload(null)} masterName={sub.name} />
+      <UploadDataModal open={!!upload} mode={upload ?? undefined} onClose={() => setUpload(null)} masterName={sub.name}
+        onComplete={(r) => audit(r.mode === 'update' ? 'bulk-update' : 'bulk-import', null, null,
+          `${r.files.join(', ')} · ${r.created} created · ${r.updated} updated · ${r.failed} failed`)} />
+
+      {/* Logs → the record's (or the master's) audit trail */}
+      {logs && <AuditTrailSlideOver sub={sub} recordId={logs.recordId} recordLabel={logs.label} onClose={() => setLogs(null)} />}
     </div>
   )
 }

@@ -71,6 +71,23 @@ Beyond Masters, every sub-nav item is a live page hooked to real staging APIs
 **Do not restyle the Masters pages** (`pages.tsx`, `MasterForm.tsx`, `mastersTree.ts`)
 — their UI is the reference handed to the FarEye developers.
 
+### Masters audit trail — SED-8163 (2026-09-25)
+
+Every master row's Action cluster has a **Logs** (`History`) icon and every master's toolbar a
+**Logs** icon beside Export; both open `nueva/AuditTrailSlideOver.tsx` (Nueva `SlideOver`: search ·
+Action · User · From / To · Clear Filters, the timeline latest-first with changed fields only,
+"Compare all fields" = the full before / after snapshot, PageSize + Pagination, Export CSV). Data =
+`nueva/auditTrail.ts`, an APPEND-ONLY localStorage store (`local-masters-audit-v1`, no React, no
+fetch, no `src/auth`): `recordAudit()` is the only write; seed history is DERIVED from a master's
+sample rows (never stored); "Reset demo data" clears it. Recording lives in ONE place,
+`pages.tsx` `MasterTablePanel` (add / edit through the persist → `diffRows`, delete, every status
+change, bulk upload via `UploadDataModal`'s additive `onComplete`); the actor is
+`MastersEnv.actor` (local app `dms_admin`, console default `console.user`). Additive to the frozen
+Masters pages — the icons reuse the existing 28 px action-button style. `?logs=all` / `?logs=<rowId>` on a
+master URL opens a trail on load (deep link; used for the Figma captures). Design note:
+`docs/superpowers/research/2026-09-25-masters-audit-trail.md`; Figma (code-to-canvas captures of the three
+states, 2026-09-25): https://www.figma.com/design/YASssnzV7Da9tBNaAciWQ1.
+
 ### Masters replica (original scope):
 
 - `components.tsx` — design-system primitives (Button, Input, Select, Toggle, Checkbox,
@@ -130,7 +147,7 @@ Product changes layered on the replica (deliberate departures from the live port
   relevant to them … based on the add consignment form"): staging's ten sections do NOT render;
   the body is the merchant order form read back (`merchantConsignmentSections.tsx`, one scroll,
   rail = anchors with scroll-spy) — Status (state chip · master tracking no. · carrier · pickup
-  request link) · Pickup from · Deliver to (+ Returns) · Order details · Packages (package cards
+  request link) · Consignment details · Ship From · Ship To (+ Return To Origin) · Packages (package cards
   with their SKUs — HSN, origin, qty) · Value-added services · Service Type (the form's
   `RateCard` + Shipping/Tax/Total; the checkout's frozen `charges`, else "Estimated"; FTL vehicle
   lines). Built from the form's `MSection`/`MGrid`; a field/section with no data is not rendered
@@ -189,8 +206,8 @@ Product changes layered on the replica (deliberate departures from the live port
   (older wording, still the data model) follows the Citylink
   tenant's live step (2026-09-23): a required **Service Type** first (`FTL_SERVICE_TYPES` in
   `draft.ts` — the vehicle catalogues; the demo keeps EXACTLY 10 service types (owner,
-  2026-09-25; `SERVICE_TYPES`): LTL only Standard · Express · White Glove Delivery · CEP Inland ·
-  Inland LTL · Sea LCL · Air Freight LCL, FTL only Inland FTL · Sea FCL · RORO FTL; retired names
+  2026-09-25; `SERVICE_TYPES`): Standard · Express · White Glove Delivery · CEP Inland · Inland LTL ·
+  Sea LCL · Air Freight LCL · Inland FTL · Sea FCL · RORO FTL (no LTL/FTL restriction since 2026-09-29); retired names
   map via `RETIRED_SERVICE_TYPES` on load), which decides the **Vehicle Type** catalogue;
   then a LIST of vehicles (`FtlVehicle` — type, actual load, `addressIdx` = which of the step-1
   delivery addresses it serves; "+ Add vehicle" below the cards). Next is blocked until every
@@ -215,20 +232,56 @@ Product changes layered on the replica (deliberate departures from the live port
   `/grow/orders/add[/vehicle]` = `MerchantOrderForm.tsx` (spec
   `docs/superpowers/specs/2026-09-25-grow-merchant-order-form-design.md`): the same fields minus the
   carrier/ops ones (Merchant = the header ⇄, Carrier, Order Category, Location Codes, Consignment
-  Number, Tags, Pallet Space, Total Loading Time, Task/Routing Type, lat/long), one page — Pickup
-  from · Deliver to (+ returns) · Order details · Packages (`packageEditor.tsx`) · Handling & extras
+  Number, Tags, Pallet Space, Total Loading Time, Task/Routing Type, lat/long), one page — Consignment
+  details · Ship From · Ship To (+ Return To Origin) · Package & SKU (`packageEditor.tsx`) · Instructions & extras
   · **Service Type LAST** (`serviceCards.tsx`: Shared | Full vehicle segment, one rate card per
-  service for the OD pair, vehicle cards with count steppers from Vehicle Config at the Ship From
-  hub) — beside a sticky Order summary rail (`orderSummaryRail.tsx`). Selected card = 2px brand
+  service for the OD pair — every service in both modes since 2026-09-29, vehicle cards with count steppers
+  from Vehicle Config at the Ship From hub) — beside a sticky Order summary rail (`orderSummaryRail.tsx`). Selected card = 2px brand
   border, no fill; segments/choices neutral (border-ink + bg-warm-50). Pricing = ONE module
   `src/growOrders/rates.ts` (`quoteLane`/`quoteService`, ESTIMATED; ₱ card for PH, $ card for the
   Chicago/US network; zone same city · region · nationwide), also used by the Rate Calculator and
   OrderViewPage; checkout freezes `draft.rate` + `draft.currency`. Settings that drive it:
   `fe-consignment-form-behavior` (`hidden`, `identifier`, and `required` — written by the new
   **Form Fields** tab on `/local/settings/consignment-order`; hides reach both forms, Required is
-  Grow-only), Form Builder relabels, the local Service Type master rows (Active + Load type),
+  Grow-only), Form Builder relabels, the local Service Type master rows (Active),
   SKU/Package/Location masters, Vehicle Config, the pickup module's window rules.
   `Parcel.quantity` = packages of this spec, `ParcelItem.quantity` = units per package.
+- **Add Consignment v2** (owner, 2026-09-29): `/local/consignments/new` (+ `/new/vehicle`) =
+  `LocalConsignments/AddConsignmentV2.tsx`, a COPY of `AddOrderPage` (the staging replica at `/add` stays
+  untouched); the list's **Add ▾** (`AddUpload`'s additive `addMenu`) offers "Add consignment v2" first. Same
+  `OrderDraft`; one tier; ordered by dependency for the least scroll (the file's doc comment is the spec):
+  Consignment details → Ship From → Ship To (saved-address pickers read back as cards, Add / Edit in a popup,
+  "Save this address" to the store list or the address book) + **Shipment legs** (`shipmentLegs.ts`: the
+  owner's 14-case table → 8 movement types `PICKUP_LINEHAUL_DELIVERY · LINEHAUL_DELIVERY · LINEHAUL ·
+  PICKUP_LINEHAUL · PICK_AND_DEL · PICKUP_HUB_DELIVERY · PICKUP · DELIVERY`, stored as
+  `consignment.movementType` + `skipFirstMileInbound` / `skipLastMile` / `directPickAndDeliver`; shown in words;
+  a pickup request is booked only when the route has a Pickup leg) → Package & SKU (Items = SKU + quantity,
+  master or typed SKU — a typed code is kept on Enter / Tab / leaving the field; or Packages, Add Package at the
+  bottom; Handling = two rows: Order Category chips, then Barcode on every box · Delivered in parts · Clearance ·
+  Tags) → **Service & instructions** (one card: Service Type · Load type · Vehicle Type · Total Loading Time, then
+  Special Instructions + VAS per package or SKU, `VasLine.packageId`) → **Carriers last** (names only). Label Format
+  sits in Consignment details; RTO = one toggle "RTO address same as Ship From address".
+  Consignment Type drives the ends (Reverse swaps them, Transfer = hub → hub, RTO / payment only where they
+  apply, Exchange requires its order no., Service = goods optional). Consignment Number has no fallback.
+  **How goods are entered** is ONE builder setting (`fe-consignment-form-v2-goods`, no per-order selector):
+  SKU-based (default) · SKUs, then packages (SKU list with a Package column, then the boxes) · Packages with
+  their SKUs; Add SKU sits under its SKUs, Add Package under all packages. **Handling** is its own card (Order
+  Category chips — each hideable — · Barcode · In parts · Clearance · Tags) between Package & SKU and **Service &
+  instructions**. Service Type is required (locked); Vehicle Type is optional. The footer carries the tier switch
+  (**Switch to Simplified**, `console-consignment-form-v2-tier`): the original Simplified tier restyled — 3-column
+  Consignment (window on the Ship By Date) · address cards · one Package & SKU table · Carriers; not customisable.
+  **Form builder** ("Edit consignment form"): the live form is the preview — rename · Required · More (waits
+  behind "More information", revealed IN PLACE) · hide, an eye for the hidden ones; locks = registry mandatory +
+  SKU / package weight + L × W × H + Service Type; v2-only keys Lift, Vehicle Type (optional), the VAS section and
+  each Handling category; a block / card whose fields are all hidden leaves no gap; card captions live behind an ⓘ
+  (local `FormCard` + `InfoTip`); row-adders are compact `+ Add SKU` links;
+  address fields are customised inside the address popup. Rules live in `fe-consignment-form-v2-rules` over the shared config —
+  never changes `/add`, Grow or the list. Errors only after an Add Order attempt. OWNER EXCEPTION to the
+  type-scale rule, this form only: local SFld (13px ink labels) and a 24px row gap.
+- **Service Type has no Load type** (owner, 2026-09-29): `draft.loadTypeOf` returns `'both'` for every
+  service, so Shared / Full vehicle is the booking's free choice on every form (the old form's Load type is no
+  longer locked; Grow's service cards list every service in both modes); the Load type column / filter / form
+  field are gone from both Service Type masters.
 `?step=1|2` (+`&type=FTL`) on Create Order prefills sample parties + a package and scrolls to
 Packages (1) / Service Type (2) (QA shortcut). Never reintroduce a Grow-only look: new Grow UI uses the shared console components.
 - **Money & account pages** (2026-09-25, research `docs/superpowers/research/2026-09-25-grow-portal-pages.md` §4–§9;

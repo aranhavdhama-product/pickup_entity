@@ -1182,6 +1182,8 @@ export function MultiSelectDropdown({
 /* ---------------- Upload data modal (Bulk Upload / Update + per-master Upload via Excel) ---------------- */
 type UploadProps = {
   open: boolean; onClose: () => void; masterName?: string; masterOptions?: string[]; mode?: 'add' | 'update'
+  /** additive: the computed outcome, once per upload — the masters audit trail records it */
+  onComplete?: (r: { mode: 'add' | 'update'; files: string[]; created: number; updated: number; failed: number }) => void
 }
 
 /** Local date, not UTC — an evening export must not be stamped with tomorrow's date. */
@@ -1336,7 +1338,7 @@ export function UploadDataModal(props: UploadProps) {
   return <UploadDataBody {...props} />
 }
 
-function UploadDataBody({ onClose, masterName, masterOptions, mode }: UploadProps) {
+function UploadDataBody({ onClose, masterName, masterOptions, mode, onComplete }: UploadProps) {
   const names = masterOptions ?? []
   const [picked, setPicked] = useState<string[]>(names)
   const [files, setFiles] = useState<File[]>([])
@@ -1418,6 +1420,7 @@ function UploadDataBody({ onClose, masterName, masterOptions, mode }: UploadProp
 
     setFiles([])
     setResult({ outcomes, created, updated, failed })
+    onComplete?.({ mode: mode ?? 'add', files: files.map((f) => f.name), created, updated, failed })
     setBusy(false)
   }
 
@@ -1577,23 +1580,39 @@ export function Tooltip({ text, children, side = 'top' }: { text: string; childr
 }
 
 /* Add | Upload — primary orange-filled segmented button. Upload opens an Add/Update menu. */
-export function AddUpload({ label = 'Add', icon, onAdd, onUpload }: {
+export function AddUpload({ label = 'Add', icon, onAdd, onUpload, addMenu }: {
   label?: string; icon?: ReactNode; onAdd: () => void; onUpload: (mode: 'add' | 'update') => void
+  /** additive: when given, Add opens this menu (Add ▾) instead of calling onAdd directly */
+  addMenu?: { label: string; hint?: string; onClick: () => void }[]
 }) {
   const [menu, setMenu] = useState(false)
+  const [adds, setAdds] = useState(false)
   useEffect(() => {
-    if (!menu) return
-    const h = (e: MouseEvent) => { if (!(e.target as HTMLElement).closest('[data-addupload]')) setMenu(false) }
+    if (!menu && !adds) return
+    const h = (e: MouseEvent) => { if (!(e.target as HTMLElement).closest('[data-addupload]')) { setMenu(false); setAdds(false) } }
     window.addEventListener('click', h)
     return () => window.removeEventListener('click', h)
-  }, [menu])
+  }, [menu, adds])
   return (
     <div className="shrink-0 relative inline-flex items-stretch rounded-lg bg-brand-500" data-addupload>
-      <button onClick={onAdd} className="inline-flex items-center gap-1.5 px-3.5 h-8 rounded-l-lg text-[14px] font-bold text-white hover:bg-brand-600 transition-colors">
-        {icon ?? <Plus size={16} />}{label}
+      <button onClick={addMenu ? (e) => { e.stopPropagation(); setMenu(false); setAdds((v) => !v) } : onAdd}
+        aria-haspopup={addMenu ? 'menu' : undefined} aria-expanded={addMenu ? adds : undefined}
+        className="inline-flex items-center gap-1.5 px-3.5 h-8 rounded-l-lg text-[14px] font-bold text-white hover:bg-brand-600 transition-colors">
+        {icon ?? <Plus size={16} />}{label}{addMenu && <ChevronDown size={14} className="-mr-1" />}
       </button>
+      {adds && addMenu && (
+        <div role="menu" className="absolute right-0 top-full mt-2 z-40 min-w-[240px] bg-surface border border-line rounded-lg shadow-ds-overlay py-1.5">
+          {addMenu.map((m) => (
+            <button key={m.label} role="menuitem" onClick={() => { setAdds(false); m.onClick() }}
+              className="w-full text-left px-3 py-2 hover:bg-warm-50">
+              <span className="block text-[13px] text-ink">{m.label}</span>
+              {m.hint && <span className="block text-[12px] text-ink-3">{m.hint}</span>}
+            </button>
+          ))}
+        </div>
+      )}
       <span className="w-px bg-white/30 self-stretch" />
-      <button onClick={(e) => { e.stopPropagation(); setMenu((v) => !v) }} aria-label="Upload via Excel"
+      <button onClick={(e) => { e.stopPropagation(); setAdds(false); setMenu((v) => !v) }} aria-label="Upload via Excel"
         className="peer inline-flex items-center justify-center w-9 h-8 rounded-r-lg text-white hover:bg-brand-600 transition-colors">
         <Upload size={16} />
       </button>

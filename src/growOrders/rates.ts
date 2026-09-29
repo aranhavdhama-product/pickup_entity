@@ -18,7 +18,7 @@
  */
 import type { Party } from './types'
 import {
-  ADDITIONAL_SERVICES, FTL_SERVICE_TYPES, SERVICE_TYPES, VEHICLE_SPECS, VOL_FACTOR, defaultLoadType, loadTypeOf, parseLoadType,
+  ADDITIONAL_SERVICES, FTL_SERVICE_TYPES, SERVICE_TYPES, VEHICLE_SPECS, VOL_FACTOR, loadTypeOf,
   vehiclesOf, withTax, type FtlVehicle, type LoadType, type Parcel,
 } from './draft'
 import { inboundHubFor, INBOUND_HUBS } from './hubs'
@@ -161,7 +161,7 @@ const SERVICE_MASTER_KEY = 'local-masters-service_order-service-type-v4'
 
 /**
  * The services a merchant may book — the local Service Type master's ACTIVE rows, in master
- * order (their Load type decides Shared / Full vehicle); before the master was ever edited
+ * order (every one offers Shared AND Full vehicle since 2026-09-29); before the master was ever edited
  * (`rows: null`) or when nothing is saved, the portal's `SERVICE_TYPES` with the name-rule
  * load types.
  */
@@ -178,7 +178,8 @@ export function bookableServices(): ServiceOption[] {
         if (!code || seen.has(code)) continue
         seen.add(code)
         const name = String(r.name ?? code).trim() || code
-        out.push({ code, name, loadType: parseLoadType(r.loadType) ?? defaultLoadType(name) })
+        /* owner, 2026-09-29: no Load type on the master — every service offers both modes */
+        out.push({ code, name, loadType: loadTypeOf(code) })
       }
       return out
     }

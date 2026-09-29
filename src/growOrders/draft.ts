@@ -79,6 +79,8 @@ export interface VasLine {
   level: 'SKU' | 'PACKAGE' | 'CONSIGNMENT'
   /** SKU level only — the SKU code (or typed name) of the line it applies to */
   skuCode: string
+  /** PACKAGE level (v2 form, 2026-09-29) — the package it applies to; absent = every package */
+  packageId?: string
   service: string
   serviceTimeMin: number
   remark: string
@@ -120,8 +122,7 @@ export interface ConsignmentFields {
   schedulingConfirmation?: boolean
   /**
    * "Dedicated truck (FTL / FCL)" — a whole vehicle for this consignment. On a parcel consignment
-   * it follows the Service Type's master Load type (LTL only → false, FTL only → true, LTL & FTL →
-   * the user's choice); `shipmentType` stays
+   * it is the booking's own Load type choice (since 2026-09-29 every service allows both); `shipmentType` stays
    * 'Parcel'. The optional Vehicle Type is stored (`vehicles[]` / `vehicleType`) whatever this
    * says. Always on for the FTL variant.
    */
@@ -142,6 +143,14 @@ export interface ConsignmentFields {
   rto?: Party | null
   vas?: VasLine[]
   carrier?: string
+  /** v2 Add Consignment (2026-09-29): how it moves — one of LocalConsignments/shipmentLegs MOVEMENT_TYPES */
+  movementType?: string
+  /** the Ship From customer's hub stop switched off ("Skip FM inbound") */
+  skipFirstMileInbound?: boolean
+  /** the Ship To customer's hub stop switched off ("Skip LM") */
+  skipLastMile?: boolean
+  /** customer → another hub's facility, one vehicle picks and delivers (case 7) */
+  directPickAndDeliver?: boolean
   packages?: ConsignmentPackage[]
 }
 
@@ -406,36 +415,21 @@ export function parseLoadType(v: unknown): LoadType | null {
   return null
 }
 
-/** the local Service & Order master's Service Type rows (ServiceOrderMasters' store key) */
-/* keep in step with ServiceOrderMasters' key (service-type: v4) */
-const LOCAL_SERVICE_TYPE_MASTER_KEY = 'local-masters-service_order-service-type-v4'
 /**
- * Load-type overrides saved on the local Service Type master, by code AND name. A row saved
- * before the field existed has no `loadType` and falls through to SERVICE_TYPE_META.
+ * The load type of one service code. Owner, 2026-09-29: "from service master remove LTL / FTL — it can be
+ * freely chosen" — the Service Type master no longer carries a Load type, so EVERY service allows both a
+ * shared (LTL / LCL) and a full vehicle (FTL / FCL); the booking's own Load type decides. (The name rule
+ * and the old master overrides are kept only as history — they no longer narrow anything.)
  */
-function loadTypeOverrides(): Map<string, LoadType> {
-  const out = new Map<string, LoadType>()
-  try {
-    const rows = (JSON.parse(localStorage.getItem(LOCAL_SERVICE_TYPE_MASTER_KEY) ?? 'null') as { rows?: unknown } | null)?.rows
-    if (!Array.isArray(rows)) return out
-    for (const r of rows as Record<string, unknown>[]) {
-      const lt = r && typeof r === 'object' ? parseLoadType(r.loadType) : null
-      if (!lt) continue
-      for (const k of [r.code, r.name]) if (k) out.set(String(k), lt)
-    }
-  } catch { /* private mode / malformed — defaults */ }
-  return out
-}
-/** The load type of one service code — the master's override, else the name-rule default. */
-export function loadTypeOf(code: string, overrides = loadTypeOverrides()): LoadType {
-  return overrides.get(code) ?? SERVICE_TYPE_META[code]?.loadType ?? defaultLoadType(code)
+export function loadTypeOf(_code: string, _overrides?: Map<string, LoadType>): LoadType {
+  void _code; void _overrides
+  return 'both'
 }
 /** Does this load type allow a dedicated truck (FTL) / a shared parcel booking (LTL)? */
 export const loadTypeAllows = (lt: LoadType, dedicated: boolean) => lt === 'both' || lt === (dedicated ? 'ftl' : 'ltl')
 /** The subset of `codes` a booking may pick — dedicated truck: FTL only + both; else LTL only + both. */
 export function servicesForLoad(codes: readonly string[], dedicated: boolean): string[] {
-  const o = loadTypeOverrides()
-  return codes.filter((c) => loadTypeAllows(loadTypeOf(c, o), dedicated))
+  return codes.filter((c) => loadTypeAllows(loadTypeOf(c), dedicated))
 }
 
 /** Checkout adds this on top of every quote. */

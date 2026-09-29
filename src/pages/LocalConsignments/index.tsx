@@ -301,7 +301,12 @@ export default function LocalConsignments() {
       <LocalTabs
         tabs={TABS.map((t, i) => ({ id: String(i), label: t.label, count: tabCounts[i], icon: TAB_ICONS[i] }))}
         active={String(tab)} onChange={(id) => { setTab(Number(id)); setPage(1) }}
-        right={<AddUpload onAdd={() => nav('/local/consignments/add')} onUpload={() => setUploading(true)} />} />
+        right={<AddUpload onAdd={() => nav('/local/consignments/new')} onUpload={() => setUploading(true)}
+          /* owner, 2026-09-29: the logical form (v2) first; the staging-replica form stays one click away */
+          addMenu={[
+            { label: 'Add consignment v2', hint: 'Logical order, least scroll', onClick: () => nav('/local/consignments/new') },
+            { label: 'Add consignment', hint: 'The staging form', onClick: () => nav('/local/consignments/add') },
+          ]} />} />
 
       <FilterLine
         right={<>

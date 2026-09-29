@@ -6,8 +6,8 @@
  * The console's Add Consignment (`AddOrderPage`, staging-exact) is the CARRIER's form. This
  * one asks the same fields minus Merchant (the signed-in merchant — header ⇄ — is recorded
  * silently), Carrier (the carrier allocates) and Order Category (ops), in a merchant layout:
- * one page, sections top to bottom — Pickup from · Deliver to (+ returns) · Order details ·
- * Packages · Handling & extras · Service Type (LAST: its cards and rates derive from the
+ * one page, sections top to bottom (owner, 2026-09-29: the console form's order and words) — Consignment details ·
+ * Ship From · Ship To (+ Return To Origin) · Package & SKU · Instructions & extras · Service Type (LAST: its cards and rates derive from the
  * origin → destination pair and the packages above) — beside a sticky Order summary rail.
  *
  * Same writes as before: an `OrderDraft` (parcel and full-vehicle shapes as AddOrderPage's
@@ -96,17 +96,17 @@ function AddressFields({ party, set, kind, hid, need, err }: {
   )
   return (
     <MGrid>
-      {f('name', kind === 'to' ? 'Receiver name' : 'Contact name', true, 'Full name')}
-      {f('contactNumber', 'Phone', contactReq, 'e.g. 9171234567')}
+      {f('name', kind === 'to' ? 'Customer Name' : 'Sender Name', true, 'Full name')}
+      {f('contactNumber', 'Contact Number', contactReq, 'e.g. 9171234567')}
       {!hid('addrEmail') && f('email', 'Email', need('addrEmail'), 'name@example.com')}
-      {!hid('addrCompanyName') && f('businessName', 'Company', need('addrCompanyName'), 'Optional')}
-      {f('line1', 'Address line 1', true, 'House / building, street', 'sm:col-span-2')}
-      {!hid('addrLines23') && f('line2', 'Address line 2', need('addrLines23'), 'Barangay / area', 'sm:col-span-2')}
+      {!hid('addrCompanyName') && f('businessName', 'Company Name', need('addrCompanyName'), 'Optional')}
+      {f('line1', 'Address Line 1', true, 'House / building, street', 'sm:col-span-2')}
+      {!hid('addrLines23') && f('line2', 'Address Line 2', need('addrLines23'), 'Barangay / area', 'sm:col-span-2')}
       {!hid('addrLandmark') && f('landmark', 'Landmark', need('addrLandmark'), 'Optional')}
-      {!hid('addrSuburb') && f('county', 'Suburb / county', need('addrSuburb'), 'Optional')}
+      {!hid('addrSuburb') && f('county', 'Suburb / County', need('addrSuburb'), 'Optional')}
       {f('city', 'City', true)}
-      {f('state', 'State / province', true)}
-      {f('postalCode', 'Postal code', kind === 'rto')}
+      {f('state', 'State', true)}
+      {f('postalCode', 'Postal Code', kind === 'rto')}
       {f('country', 'Country', true)}
       {kind === 'to' && !hid('addrFloorLift') && f('floorNumber', 'Floor number', need('addrFloorLift'), 'e.g. 3')}
     </MGrid>
@@ -155,7 +155,7 @@ export default function MerchantOrderForm() {
   const lbl = (key: string) => fieldLabel(key, fieldCfg)
   const need = (key: string) => !hid(key) && (!!byKeyMandatory(key) || (behavior.required ?? []).includes(key))
 
-  /* ---- Pickup from ---- */
+  /* ---- Ship From ---- */
   const firstSender = (): Party => saved?.sender ?? overageStore?.party
     ?? (pr ? pr.shipFrom ?? stores.find((s) => s.code === pr.storeCode)?.party ?? blankParty() : stores[0]?.party ?? blankParty())
   const storeOf = (p: Party) => stores.find((s) => s.party.name === p.name && s.party.line1 === p.line1)
@@ -176,7 +176,7 @@ export default function MerchantOrderForm() {
   const [saveSender, setSaveSender] = useState(false)
   const fromList = senderStore !== OTHER_ADDRESS
 
-  /* ---- Deliver to (+ extra drops) + returns ---- */
+  /* ---- Ship To (+ extra drops) + Return To Origin ---- */
   const [receiver, setReceiver] = useState<Party>(() => saved?.receiver
     ?? (pr ? pr.shipTo ?? blankParty() : jump ? { ...blankParty(), ...db.orders[2]?.receiver } : blankParty()))
   const [drops, setDrops] = useState<Party[]>(() => saved?.drops ?? [])
@@ -247,8 +247,8 @@ export default function MerchantOrderForm() {
   const weightOk = parcels.length > 0 && parcels.every(packageReady)
   const ready = laneOk && weightOk
   const missing = [
-    ...(laneReady(sender) ? [] : ['a pickup address']),
-    ...(allDrops.every(laneReady) ? [] : ['a delivery address (street + city)']),
+    ...(laneReady(sender) ? [] : ['a Ship From address']),
+    ...(allDrops.every(laneReady) ? [] : ['a Ship To address (street + city)']),
     ...(weightOk ? [] : ['a weight or size for every package']),
   ]
 
@@ -378,7 +378,8 @@ export default function MerchantOrderForm() {
       ...(c.vas ?? []).map((v) => !!v.service && (v.level !== 'SKU' || !!v.skuCode))],
     'sec-service': [!!mode, !!quote, ftlOk],
   }
-  const order = ['sec-from', 'sec-to', 'sec-order', 'sec-packages', 'sec-handling', 'sec-service']
+  /* owner, 2026-09-29: consignment data first, then Ship From → Ship To (the console form's order) */
+  const order = ['sec-order', 'sec-from', 'sec-to', 'sec-packages', 'sec-handling', 'sec-service']
   const problems = order.reduce((n, id) => n + doneOf[id].filter((x) => !x).length, 0)
   const done = (id: string) => doneOf[id].every(Boolean)
   const err = (bad: boolean, msg = 'Required.') => (showErrors && bad ? msg : false)
@@ -492,10 +493,10 @@ export default function MerchantOrderForm() {
     return `${d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} · ${w.startAt.slice(11, 16)}–${w.endAt.slice(11, 16)}`
   }
   const fromSection = (
-    <MSection id="sec-from" title="Pickup from" done={done('sec-from')}
+    <MSection id="sec-from" title="Ship From" done={done('sec-from')}
       caption="Where the carrier collects the order. Your registered address and saved locations are listed first.">
       <MGrid cols={2}>
-        <MField label="Pickup address" required>
+        <MField label="Location Code" required>
           <MenuSelect value={senderStore} options={pickup.options.map((o) => o.value)} searchable={pickup.options.length > 6}
             labels={(v) => pickup.options.find((o) => o.value === v)?.label ?? v} onChange={pickSender} />
         </MField>
@@ -554,7 +555,7 @@ export default function MerchantOrderForm() {
   )
 
   const toSection = (
-    <MSection id="sec-to" title="Deliver to" done={done('sec-to')} caption="Who receives the order. Search your address book or type a new address.">
+    <MSection id="sec-to" title="Ship To" done={done('sec-to')} caption="Who receives the consignment. Search your address book or type a new address.">
       <MGrid cols={2}>
         <MField label="Address book">
           <Autocomplete value={bookQ} onChange={setBookQ} hits={bookHits} placeholder="Search by name, phone, address or company"
@@ -594,10 +595,11 @@ export default function MerchantOrderForm() {
       ))}
       <AddBelow label="Add another delivery address" onClick={() => setDrops((ds) => [...ds, blankParty()])} />
       <div className="mt-5 border-t border-line pt-4">
-        <p className="text-[13px] font-bold text-ink">If it can't be delivered, return it to</p>
+        <p className="text-[13px] font-bold text-ink">Return To Origin (RTO)</p>
+        <p className="mt-0.5 text-[12px] text-ink-3">Where it goes back if it can't be delivered.</p>
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2" role="radiogroup">
-          <ChoiceCard label="My pickup address" sub="Returns come back where they were collected" checked={c.rtoMode !== RTO_OTHER} onClick={() => setC({ rtoMode: RTO_SAME })} />
-          <ChoiceCard label="A different address" sub="A returns desk or warehouse" checked={c.rtoMode === RTO_OTHER} onClick={() => setC({ rtoMode: RTO_OTHER })} />
+          <ChoiceCard label="Same As Ship From" sub="Returns come back where they were collected" checked={c.rtoMode !== RTO_OTHER} onClick={() => setC({ rtoMode: RTO_SAME })} />
+          <ChoiceCard label="Use Different Address" sub="A returns desk or warehouse" checked={c.rtoMode === RTO_OTHER} onClick={() => setC({ rtoMode: RTO_OTHER })} />
         </div>
         {c.rtoMode === RTO_OTHER && (
           <div className="mt-4"><AddressFields party={rto} set={(p) => setRto((x) => ({ ...x, ...p }))} kind="rto" hid={hid} need={need} err={err} /></div>
@@ -607,7 +609,7 @@ export default function MerchantOrderForm() {
   )
 
   const orderSection = (
-    <MSection id="sec-order" title="Order details" done={done('sec-order')} caption="Your own references for this order.">
+    <MSection id="sec-order" title="Consignment details" done={done('sec-order')} caption="How this consignment is identified, its type and when it ships.">
       <MGrid>
         {idPref !== 'referenceNumber' && (
           <MField label={lbl('orderNumber')} required error={err(!filled(effectiveOrder))}
@@ -644,7 +646,7 @@ export default function MerchantOrderForm() {
           </MField>
         )}
         {!hid('labelFormat') && (
-          <MField label="Label file type" required={need('labelFormat')} error={err(need('labelFormat') && !filled(c.labelFormat))}
+          <MField label="Label Format" required={need('labelFormat')} error={err(need('labelFormat') && !filled(c.labelFormat))}
             hint="PDF for office printers, ZPL for thermal label printers">
             <MenuSelect value={c.labelFormat ?? ''} placeholder="PDF" options={LABEL_FORMATS} onChange={(v) => setC({ labelFormat: v })} />
           </MField>
@@ -750,9 +752,9 @@ export default function MerchantOrderForm() {
       )}
       <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="flex min-w-0 flex-col gap-5">
+          {orderSection}
           {fromSection}
           {toSection}
-          {orderSection}
           {packagesSection}
           {handlingSection}
           {serviceSection}

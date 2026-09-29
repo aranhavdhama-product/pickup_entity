@@ -63,13 +63,13 @@ export function OrderSummaryRail({
           <h2 className="text-[15px] font-bold text-ink">Order summary</h2>
         </div>
         <div className="px-5 pb-2">
-          <Block icon={<MapPin size={15} />} label="Pickup" onEdit={() => onJump('sec-from')}>
+          <Block icon={<MapPin size={15} />} label="Ship From" onEdit={() => onJump('sec-from')}>
             {hasFrom ? where(sender) : <span className="text-ink-3">Not chosen yet</span>}
           </Block>
-          <Block icon={<MapPin size={15} />} label={to.length > 1 ? `Delivery · ${to.length} addresses` : 'Delivery'} onEdit={() => onJump('sec-to')}>
+          <Block icon={<MapPin size={15} />} label={to.length > 1 ? `Ship To · ${to.length} addresses` : 'Ship To'} onEdit={() => onJump('sec-to')}>
             {to.length ? to.map((r, i) => <p key={i} className="truncate">{where(r)}</p>) : <span className="text-ink-3">Not entered yet</span>}
           </Block>
-          <Block icon={<Package size={15} />} label="Packages" onEdit={() => onJump('sec-packages')}>
+          <Block icon={<Package size={15} />} label="Package & SKU" onEdit={() => onJump('sec-packages')}>
             {boxes > 0 && chargeableKg > 0
               ? <>{boxes} box{boxes === 1 ? '' : 'es'} · billed on {chargeableKg.toLocaleString()} kg</>
               : <span className="text-ink-3">Add a weight to see rates</span>}

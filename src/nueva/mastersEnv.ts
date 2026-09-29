@@ -16,5 +16,9 @@ export type MastersPersist = {
   /** form values → insert (no rowId) or update the stored row */
   upsert: (sub: SubMaster, values: MasterRow, rowId?: string) => void
 }
-export type MastersEnv = { base: string; backTo?: string; catId?: string; persist?: MastersPersist }
+export type MastersEnv = {
+  base: string; backTo?: string; catId?: string; persist?: MastersPersist
+  /** who the audit trail names for this session's changes (default `console.user`) */
+  actor?: string
+}
 export const MastersEnvContext = createContext<MastersEnv>({ base: '/console/settings/masters' })

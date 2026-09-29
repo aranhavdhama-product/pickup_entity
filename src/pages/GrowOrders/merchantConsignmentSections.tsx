@@ -6,7 +6,7 @@
  * (`MSection` cards, `MGrid` field grid, the `RateCard` service card), so the two screens read as one product:
  *
  *   Status (strip: state · master tracking number · carrier · pickup request)
- *   · Pickup from · Deliver to (+ Returns) · Order details · Packages
+ *   · Consignment details · Ship From · Ship To (+ Return To Origin) · Packages
  *   · Value-added services · Service Type (card + charges; vehicles for FTL)
  *
  * A section, field or row with no data is not rendered at all — no "No …
@@ -111,11 +111,31 @@ export function merchantReadSections(row: ShipmentRow, o: GrowOrder): ReadSectio
     ),
   })
 
+  /* --------------------------------------------------- order details ---- */
+  const amount = c.orderAmount ?? (o.codAmount || null)
+  const instructions = c.specialInstructions || o.remarks
+  out.push({
+    id: 'order', label: 'Consignment details', icon: ClipboardList,
+    node: (
+      <MSection id="read-order" title="Consignment details">
+        {fields([
+          ['Order Number', row.orderNumber], ['Reference Number', row.referenceNumber !== row.orderNumber ? row.referenceNumber : ''],
+          ['Consignment Type', c.consignmentType || row.orderTypeLabel], ['Ship By Date', c.shipByDate || row.shipByDate],
+          ['Payment Mode', c.paymentMode || o.paymentMode], ['Order Amount', amount != null ? money(amount, cur) : ''],
+          ['Payment Status', o.paymentStatus], ['Label Format', c.labelFormat],
+          ['Barcode labels on boxes', yes(c.scannable)], ['Can be delivered in parts', yes(c.splittable)],
+          ['Scheduling Confirmation Required', yes(c.schedulingConfirmation)], ['Clearance Required', yes(c.clearanceRequired)],
+          ['Special instructions', instructions, true],
+        ])}
+      </MSection>
+    ),
+  })
+
   /* ----------------------------------------------------- pickup from ---- */
   out.push({
-    id: 'pickup', label: 'Pickup from', icon: MapPin,
+    id: 'pickup', label: 'Ship From', icon: MapPin,
     node: (
-      <MSection id="read-pickup" title="Pickup from">
+      <MSection id="read-pickup" title="Ship From">
         <div className="flex flex-col gap-4">
           {partyBlock(o.sender)}
           {fields([['Pickup window', windowText(row.pickupWindow?.start ?? o.sender.windowStart, row.pickupWindow?.end ?? o.sender.windowEnd), true]])}
@@ -128,9 +148,9 @@ export function merchantReadSections(row: ShipmentRow, o: GrowOrder): ReadSectio
   const drops = [o.receiver, ...o.drops]
   const rto = c.rtoMode === 'Use Different Address' && c.rto ? c.rto : null
   out.push({
-    id: 'deliver', label: 'Deliver to', icon: Home,
+    id: 'deliver', label: 'Ship To', icon: Home,
     node: (
-      <MSection id="read-deliver" title="Deliver to">
+      <MSection id="read-deliver" title="Ship To">
         <div className="flex flex-col gap-5">
           {drops.map((d, i) => (
             partyBlock(d, drops.length > 1 ? `Delivery address ${i + 1}` : undefined, i)
@@ -138,8 +158,8 @@ export function merchantReadSections(row: ShipmentRow, o: GrowOrder): ReadSectio
           {fields([['Delivery window', windowText(row.deliveryWindow?.start ?? o.receiver.windowStart, row.deliveryWindow?.end ?? o.receiver.windowEnd), true]])}
           {(rto || c.rtoMode) && (
             <div className="border-t border-line pt-4">
-              {rto ? partyBlock(rto, 'Returns (RTO) · Different address')
-                : fields([['Returns (RTO)', c.rtoMode === 'Same As Ship From' ? 'Same as pickup address' : c.rtoMode]])}
+              {rto ? partyBlock(rto, 'Return To Origin (RTO) · Different address')
+                : fields([['Return To Origin (RTO)', c.rtoMode || 'Same As Ship From']])}
             </div>
           )}
         </div>
@@ -147,25 +167,6 @@ export function merchantReadSections(row: ShipmentRow, o: GrowOrder): ReadSectio
     ),
   })
 
-  /* --------------------------------------------------- order details ---- */
-  const amount = c.orderAmount ?? (o.codAmount || null)
-  const instructions = c.specialInstructions || o.remarks
-  out.push({
-    id: 'order', label: 'Order details', icon: ClipboardList,
-    node: (
-      <MSection id="read-order" title="Order details">
-        {fields([
-          ['Order Number', row.orderNumber], ['Reference Number', row.referenceNumber !== row.orderNumber ? row.referenceNumber : ''],
-          ['Consignment Type', c.consignmentType || row.orderTypeLabel], ['Ship By Date', c.shipByDate || row.shipByDate],
-          ['Payment Mode', c.paymentMode || o.paymentMode], ['Order Amount', amount != null ? money(amount, cur) : ''],
-          ['Payment Status', o.paymentStatus], ['Label file type', c.labelFormat],
-          ['Barcode labels on boxes', yes(c.scannable)], ['Can be delivered in parts', yes(c.splittable)],
-          ['Scheduling Confirmation Required', yes(c.schedulingConfirmation)], ['Clearance Required', yes(c.clearanceRequired)],
-          ['Special instructions', instructions, true],
-        ])}
-      </MSection>
-    ),
-  })
 
   /* -------------------------------------------------------- packages ---- */
   const parcels = parcelsOf(o)

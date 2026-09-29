@@ -70,6 +70,7 @@ import GrowOrdersLayout from './pages/GrowOrders/GrowOrdersLayout'
 import OrdersListPage from './pages/GrowOrders/OrdersListPage'
 import MerchantOrderForm from './pages/GrowOrders/MerchantOrderForm'
 import LocalAddConsignment from './pages/LocalConsignments/AddConsignment'
+import LocalAddConsignmentV2 from './pages/LocalConsignments/AddConsignmentV2'
 import OrderViewPage from './pages/GrowOrders/OrderViewPage'
 import CheckoutPage from './pages/GrowOrders/CheckoutPage'
 import PickupRequestsPage from './pages/GrowOrders/PickupRequestsPage'
@@ -135,6 +136,8 @@ export default function AppRoutes() {
         <Route path="/local/consignments" element={<LocalConsignments />} />
         <Route path="/local/consignments/add" element={<LocalAddConsignment />} />
         <Route path="/local/consignments/add/vehicle" element={<LocalAddConsignment />} />
+        <Route path="/local/consignments/new" element={<LocalAddConsignmentV2 />} />
+        <Route path="/local/consignments/new/vehicle" element={<LocalAddConsignmentV2 />} />
         <Route path="/local/consignments/:id" element={<LocalConsignments />} />
         {/* first-mile pickup: requests → trips (Control Tower) → handover (Inbound) */}
         <Route path="/local/pickup" element={<LocalPickup />} />

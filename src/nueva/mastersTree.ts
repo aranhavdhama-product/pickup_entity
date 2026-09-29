@@ -5,7 +5,7 @@ import {
   GitBranch, ArrowLeftRight, Container, CalendarClock, Package, FileInput,
   Wrench, MessageSquareWarning, SlidersHorizontal, Hash, Grid3x3, Ruler, Bike, Tag, Barcode, CalendarOff, type LucideIcon,
 } from 'lucide-react'
-import { defaultLoadType, LOAD_TYPE_LABELS, SERVICE_TYPES } from '../growOrders/draft'
+import { SERVICE_TYPES } from '../growOrders/draft'
 import { SAMPLE_SKU_CATALOGUE } from '../growOrders/sampleSkus'
 import {
   PICKUP_OUTCOME_OPTIONS, PICKUP_POLICY_ROWS, PICKUP_REASON_CODES, PICKUP_REASON_LABELS, PICKUP_REASON_ROWS, PICKUP_WHEN_OPTIONS,
@@ -416,8 +416,6 @@ const loadType: SubMaster = {
 }
 
 /* ================= CATEGORY 3: Service & Order ================= */
-/** Service Type "Load type" options — labels of draft.ts LoadType (the form parses them back) */
-const LOAD_TYPE_OPTIONS = [LOAD_TYPE_LABELS.ltl, LOAD_TYPE_LABELS.ftl, LOAD_TYPE_LABELS.both]
 /* the demo's 10 service types (owner, 2026-09-25) — draft.ts SERVICE_TYPES */
 const SERVICE_TYPE_NAMES = SERVICE_TYPES
 const serviceType: SubMaster = {
@@ -432,20 +430,17 @@ const serviceType: SubMaster = {
   filterDefs: [
     { label: 'Service Name', key: 'name', options: SERVICE_TYPE_NAMES },
     { label: 'Code', key: 'code', options: SERVICE_TYPE_NAMES },
-    { label: 'Load type', key: 'loadType', options: LOAD_TYPE_OPTIONS },
     { label: 'Status', key: 'status', options: ['Active', 'Enabled', 'Disabled'] },
   ],
   columns: [
     { key: 'name', label: 'Service Name', sortable: true },
     { key: 'code', label: 'Code', sortable: true },
     { key: 'consignmentTypes', label: 'Consignment Types' },
-    /* prototype field (owner, 2026-09-24) — staging has none; the consignment form narrows Service
-       Type by it (draft.ts SERVICE_TYPE_META defaults, local edits override) */
-    { key: 'loadType', label: 'Load type' },
+    /* owner, 2026-09-29: no Load type — a service is booked shared or full vehicle freely (staging has none either) */
     { key: 'status', label: 'Status', status: true },
   ],
   rows: SERVICE_TYPES.map((c, i) => ({
-    id: `ST${i + 1}`, name: c, code: c, consignmentTypes: '-', status: 'Active', loadType: LOAD_TYPE_LABELS[defaultLoadType(c)],
+    id: `ST${i + 1}`, name: c, code: c, consignmentTypes: '-', status: 'Active',
   })),
   addLabel: 'Add Service Type',
   addForm: {
@@ -459,7 +454,6 @@ const serviceType: SubMaster = {
       { label: 'Service Type Name', rowKey: 'name', type: 'text', required: true, placeholder: 'Type here' },
       { label: 'Service Code', rowKey: 'code', type: 'text', required: true, placeholder: 'Type here' },
       { label: 'Consignment Types', rowKey: 'consignmentTypes', type: 'select', placeholder: 'Select consignment types', options: ['Service', 'Reverse', 'Forward'] },
-      { label: 'Load type', rowKey: 'loadType', type: 'select', placeholder: 'Please select', options: LOAD_TYPE_OPTIONS },
       { label: 'Enable this service type', type: 'checkbox', full: true },
     ] }],
   },

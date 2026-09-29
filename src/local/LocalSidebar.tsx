@@ -23,6 +23,7 @@ import { shellRowClass } from './shellClasses'
 import { growOrderActions } from '../growOrders/store'
 import { planningActions } from '../pages/LocalPFP/planningStore'
 import { routingPlanActions } from '../pages/LocalRouting/routingPlans'
+import { resetAudit } from '../nueva/auditTrail'
 
 interface LocalNavItem extends ShellNavItem {
   path: string
@@ -76,6 +77,7 @@ function resetDemoData() {
   planningActions.reset()
   /* plans reference trip ids, which a reseed hands out again — drop them too */
   routingPlanActions.reset()
+  resetAudit()   // the masters audit trail is demo history too
   window.location.reload()
 }
 
