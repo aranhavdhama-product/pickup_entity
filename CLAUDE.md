@@ -110,9 +110,9 @@ reload shows the same data. Runs with no session.
 
 Product changes layered on the replica (deliberate departures from the live portal):
 - **Consignment Order page** (`/grow/orders`, nav "Consignments") — the `/local/consignments`
-  page's grammar and vocabulary (spec §12): `FilterLine` (date range · State/Secondary State
-  grouped `FilterMultiSelect` · Origin `FilterSelect` · funnel: Facility, Type, Carrier, Service
-  Type, Exception, Tag · Clear Filters; right: search · ⚙ `ColumnChooser` · download) → the
+  page's grammar and vocabulary (spec §12): `FilterLine` (date range · Status (State/Secondary
+  State) grouped `FilterMultiSelect` · Origin `FilterSelect` · funnel: Type, Service Type,
+  Exception, Tag · Clear Filters; right: search · ⚙ `ColumnChooser` · download) → the
   `LocalTabs` below it with counts (`?tab=` slug; five tabs, All first — a departure from the
   console's six: All = no error, Drafts, Errors (was Data Validation Issues), Active (everything
   not draft/error/closed, including what used to be split into Exception/Returns), Closed

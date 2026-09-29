@@ -2,8 +2,9 @@
  * Consignment Order — the merchant portal's shipments list (`/grow/orders`).
  *
  * Built from the SAME components as the console's `/local/consignments`
- * (spec §15): `LocalPage` → `FilterLine` (Date range · State / Secondary State ·
- * Origin · funnel · Clear Filters · search · ⚙ columns · download) → tabs
+ * (spec §15): `LocalPage` → `FilterLine` (Date range · Status (grouped State /
+ * Secondary State) · Origin · funnel (Type, Service Type, Exception, Tag) ·
+ * Clear Filters · search · ⚙ columns · download) → tabs
  * (`LocalTabs`, below the filter line via the shared `.lc-page` order rule,
  * `?tab=` in the URL, "Add ▾ | upload" on the strip's right) → Nueva
  * `DataTable` with `selectionActions` → `Pagination` / `PageSize` → a drawer
@@ -161,17 +162,14 @@ export default function OrdersListPage() {
     ...[...FAREYE_STATES, DRAFT_STATE].map((v) => ST + v),
     ...[...FAREYE_PICKUP_SECONDARY, 'Out For Delivery', 'RTO Initiated', DRAFT_SECONDARY].map((v) => SEC + v),
   ], [])
-  const facilities = useMemo(() => uniq(all.map((r) => r.destination)), [all])
   /* the merchant's own pickup addresses: the store list, plus any origin a row carries */
   const origins = useMemo(() => uniq([...db.stores.map((s) => s.code), ...all.map((r) => r.shipFromCode ?? '')]), [db.stores, all])
   const advDefs = useMemo(() => [
-    { key: 'Facility', label: 'Facility', options: facilities },
     { key: 'Type', label: 'Type', options: uniq(all.map((r) => r.taskType)) },
-    { key: 'Carrier', label: 'Carrier', options: uniq(all.map((r) => r.carrier)) },
     { key: 'Service Type', label: 'Service Type', options: uniq(all.map((r) => r.serviceType)) },
     { key: 'Exception', label: 'Exception', options: uniq(all.map((r) => r.exception)) },
     { key: 'Tag', label: 'Tag', options: uniq(all.flatMap((r) => r.tags)) },
-  ], [all, facilities])
+  ], [all])
 
   const filtersOn = !!(q || stateSel.length || origin || from || to || Object.values(adv).some((v) => v.length))
   const clearAll = () => { setQ(''); setStateSel([]); setOrigin(''); setFrom(''); setTo(''); setAdv({}); setPage(1) }
@@ -189,8 +187,7 @@ export default function OrdersListPage() {
       const day = r.order.createdAt.slice(0, 10)
       if (f && day < f) return false
       if (t && day > t) return false
-      if (!has('Type', r.taskType) || !has('Carrier', r.carrier) || !has('Service Type', r.serviceType)
-        || !has('Exception', r.exception) || !has('Facility', r.destination)) return false
+      if (!has('Type', r.taskType) || !has('Service Type', r.serviceType) || !has('Exception', r.exception)) return false
       if (adv.Tag?.length && !adv.Tag.some((x) => r.tags.includes(x))) return false
       if (!needle) return true
       return [r.consignmentNumber, r.orderNumber, r.referenceNumber, r.shipToName, r.address, r.order.receiver.contactNumber, r.pickupRequestNumber]
@@ -276,7 +273,7 @@ export default function OrdersListPage() {
           </IconBtn>
         </>}>
         <DateRange start={from} end={to} onStart={(v) => reset(() => setFrom(v))} onEnd={(v) => reset(() => setTo(v))} />
-        <FilterMultiSelect values={stateSel} placeholder="State/Secondary State" width={190} options={stateOptions}
+        <FilterMultiSelect values={stateSel} placeholder="Status" width={190} options={stateOptions}
           labels={(v) => v.slice(v.indexOf(':') + 1)} groupOf={(v) => (v.startsWith(ST) ? 'State' : 'Secondary State')}
           onChange={(v) => reset(() => setStateSel(v))} />
         <FilterSelect value={origin} placeholder="Origin" options={origins} width={170}
