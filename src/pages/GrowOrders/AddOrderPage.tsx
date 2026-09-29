@@ -844,7 +844,7 @@ export default function AddOrderPage() {
   const effectiveRef = effectiveOrder
 
   /* ------------------------------------------------ completion + validation */
-  const consignmentReq = [filled(effectiveOrder), !!c.consignmentType]
+  const consignmentReq = [...(signedIn?.isCsr ? [!!onBehalfOf] : []), filled(effectiveOrder), !!c.consignmentType]
   /* a Location Master row may be sparse and is not the merchant's to retype */
   const fromReq = fromList ? [filled(sender.name), filled(sender.line1)]
     : [sender.name, sender.line1, sender.country, sender.city, sender.state].map(filled)
@@ -863,8 +863,7 @@ export default function AddOrderPage() {
     : merchant?.postpaidTerms === 'po' ? [!!selectedPo]
     : [!!c.paymentMode, c.paymentMode !== 'Card' || cardOk]
   const docsReq = (merchant?.requiredDocuments ?? []).map((d) => !!docs[d.code])
-  const merchantPickReq = signedIn?.isCsr ? [!!onBehalfOf] : []
-  const allReq = [...merchantPickReq, ...consignmentReq, ...fromReq, ...toReq, ...rtoReq, ...pieceReq, ...skuReq, ...carrierReq, ...paymentReq, ...docsReq]
+  const allReq = [...consignmentReq, ...fromReq, ...toReq, ...rtoReq, ...pieceReq, ...skuReq, ...carrierReq, ...paymentReq, ...docsReq]
   const filledCount = allReq.filter(Boolean).length
   const canSubmit = filledCount === allReq.length
   const missingCount = allReq.length - filledCount
@@ -1015,14 +1014,11 @@ export default function AddOrderPage() {
   }
 
   /* ---- the sections, one order regardless of order complexity ---- */
-  const sections = [
-    ...(signedIn?.isCsr ? ['sec-merchant'] : []),
-    'sec-consignment', 'sec-ship-from-rto', 'sec-ship-to',
+  const sections = ['sec-consignment', 'sec-ship-from-rto', 'sec-ship-to',
     isFtl ? 'sec-vehicle' : 'sec-package', ...(isFtl ? [] : ['sec-services']),
     ...((merchant?.requiredDocuments?.length ?? 0) > 0 ? ['sec-documents'] : []),
     ...(merchant?.postpaidTerms === 'none' ? [] : ['sec-payment'])]
   const doneOf: Record<string, boolean> = {
-    'sec-merchant': done(merchantPickReq),
     'sec-consignment': done(consignmentReq),
     'sec-ship-from-rto': done(fromReq) && done(rtoReq), 'sec-ship-to': done(toReq),
     'sec-package': done(pieceReq) && done(skuReq), 'sec-vehicle': done(pieceReq),
@@ -1074,26 +1070,21 @@ export default function AddOrderPage() {
     <ChipToggle icon={Truck} label={lbl('dedicateTruck')} checked={isFtl} onChange={setDedicateTruck} disabled={!!fromOverage} />
   )
 
-  /* CSR-only — a tenant-level user has no merchant of their own, so this picks
-     which of their mapped merchants everything below (addresses, package
-     presets, payment terms, documents) is scoped to. */
-  const merchantSection = signedIn?.isCsr && (
-    <SectionCard id="sec-merchant" title="Create Order For" done={doneOf['sec-merchant']}
-      icon={<User size={15} className={ICON} />}
-      caption={`Signed in as ${signedIn.name} — pick which mapped merchant this order is for.`}>
-      <div className="max-w-sm">
-        <F label="Merchant" required searchable value={onBehalfOf} onChange={setOnBehalfOf}
-          options={behalfMerchants.map((m) => ({ value: m.code, label: m.name }))}
-          placeholder="Select a merchant" error={showErrors && !onBehalfOf ? 'Required field.' : undefined} />
-      </div>
-    </SectionCard>
-  )
-
   const consignmentSection = (
     <SectionCard id="sec-consignment" title="Consignment Details" done={doneOf['sec-consignment']}
       icon={<ClipboardList size={15} className={ICON} />}
-      caption="Provide the consignment details to ensure accurate processing, routing, and billing of the shipment.">
+      caption={signedIn?.isCsr
+        ? `Signed in as ${signedIn.name} — pick which mapped merchant this order is for, then provide the consignment details.`
+        : 'Provide the consignment details to ensure accurate processing, routing, and billing of the shipment.'}>
       <Grid>
+        {/* CSR-only — a tenant-level user has no merchant of their own, so this
+            picks which of their mapped merchants everything below (addresses,
+            package presets, payment terms, documents) is scoped to. */}
+        {signedIn?.isCsr && (
+          <F label="Merchant" required searchable value={onBehalfOf} onChange={setOnBehalfOf}
+            options={behalfMerchants.map((m) => ({ value: m.code, label: m.name }))}
+            placeholder="Select a merchant" error={showErrors && !onBehalfOf ? 'Required field.' : undefined} />
+        )}
         <F label={lbl('orderNumber')} required value={c.orderNumber ?? ''} placeholder="eg, ABC0001"
           error={reqErr(filled(effectiveOrder))} onChange={(v) => setC({ orderNumber: v })} />
         <F label={lbl('consignmentType')} required value={c.consignmentType ?? 'Forward'} options={opts(CONSIGNMENT_TYPES)}
@@ -1119,7 +1110,7 @@ export default function AddOrderPage() {
         {(!hid('specialInstructions') || !hid('deliveryInstructions')) && (
           <Fld label="Instructions" info className="sm:col-start-3">
             <MultiSelect value={instructionTags} options={INSTRUCTION_OPTIONS} creatable
-              placeholder="Pick common instructions or type your own" onChange={setInstructionTagsAndSync} />
+              placeholder="Add an instruction for the ops team" onChange={setInstructionTagsAndSync} />
           </Fld>
         )}
       </div>
@@ -1633,7 +1624,6 @@ export default function AddOrderPage() {
   )
 
   const byId: Record<string, ReactNode> = {
-    'sec-merchant': merchantSection,
     'sec-consignment': consignmentSection, 'sec-ship-from-rto': shipFromRtoRow,
     'sec-ship-to': shipToOpen ? shipToSection : shipToPlaceholder, 'sec-package': packageSection,
     'sec-vehicle': vehicleSection, 'sec-services': servicesSection, 'sec-documents': documentsSection,
