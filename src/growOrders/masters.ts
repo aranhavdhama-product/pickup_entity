@@ -48,6 +48,15 @@ export interface Merchant {
    * no address line at all.
    */
   party: Party | null
+  /**
+   * Billing terms — absent (undefined) means prepaid (the Payment widget's
+   * normal COD/Card/Wallet/Gateway picker). Only ever set on the sample
+   * merchants below; a live-fetched businessUnit row has no such field, so
+   * every check against it degrades safely to "not postpaid".
+   *  - 'none' — invoiced later, no payment step on the order at all.
+   *  - 'po'   — must link the order to one of the merchant's purchase orders.
+   */
+  postpaidTerms?: 'none' | 'po'
 }
 
 export type LocationType = 'MERCHANT_LOCATION' | 'CUSTOMER_LOCATION' | 'PUDO' | 'HUB' | 'PARCEL_LOCKER'
@@ -116,6 +125,8 @@ export interface Masters {
 
 export const SAMPLE_MERCHANTS: Merchant[] = [
   { code: '2GO_PH', name: '2GO Philippines', party: null },
+  { code: 'POSTPAID_INVOICE', name: 'Postpaid Retailer (Invoice)', party: null, postpaidTerms: 'none' },
+  { code: 'POSTPAID_PO', name: 'Postpaid Retailer (PO Linked)', party: null, postpaidTerms: 'po' },
 ]
 
 export const SAMPLE_LOCATIONS: MasterLocation[] = STORES.map((s) => ({

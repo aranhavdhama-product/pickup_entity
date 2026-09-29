@@ -34,9 +34,9 @@ import { useEffect, useMemo, useRef, useState, type ComponentProps, type Keyboar
 import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  ChevronDown, ChevronRight, CircleDot, CircleMinus, ClipboardList, FileCheck,
+  ChevronDown, ChevronRight, CircleDot, CircleMinus, ClipboardList, CreditCard, FileCheck,
   Package, Package as PackageIcon, Pencil, Plus, ScanBarcode, ScanLine, Truck, Undo2, User,
-  Warehouse, X,
+  Wallet as WalletIcon, Warehouse, X,
 } from 'lucide-react'
 import { blankParty, CURRENCY } from '../../growOrders/seed'
 import { growOrderActions, orderById, pickupRequestById, useGrowOrders } from '../../growOrders/store'
@@ -80,6 +80,17 @@ const PAYMENT_OPTIONS = [
 ]
 /** sample pre-loaded balance — the portal has no wallet API yet (see Wallet in the nav) */
 const WALLET_BALANCE = 1250
+/** sample saved cards — the portal has no card-vault API; a merchant can also add a new one */
+const SAVED_CARDS = [
+  { id: 'card_1', brand: 'Visa', last4: '4242', expiry: '08/27' },
+  { id: 'card_2', brand: 'Mastercard', last4: '5678', expiry: '11/26' },
+]
+/** sample purchase orders for a postpaid (po) merchant — no PO API exists yet */
+const MERCHANT_PURCHASE_ORDERS = [
+  { poNumber: 'PO-10234', totalAmount: 5000, remainingAmount: 1820 },
+  { poNumber: 'PO-10251', totalAmount: 2000, remainingAmount: 2000 },
+  { poNumber: 'PO-10267', totalAmount: 800, remainingAmount: 120 },
+]
 const RTO_MODES = ['Same As Ship From', 'Use Different Address']
 /** common instruction presets — the merchant can also type a custom one */
 const INSTRUCTION_OPTIONS = [
@@ -702,6 +713,13 @@ export default function AddOrderPage() {
     setInstructions(joined.slice(0, 150))
   }
 
+  /* ---- Payment: Card picks a saved card or a freshly-typed one; postpaid (po) links a PO ---- */
+  const [selectedCard, setSelectedCard] = useState('')
+  const [addingCard, setAddingCard] = useState(false)
+  const [newCard, setNewCard] = useState({ number: '', name: '', expiry: '', cvv: '' })
+  const cardOk = selectedCard !== '' || (addingCard && !!newCard.number.trim() && !!newCard.name.trim() && !!newCard.expiry.trim() && !!newCard.cvv.trim())
+  const [selectedPo, setSelectedPo] = useState('')
+
   /* ---- FTL: Dedicate Truck on → Vehicle Details ---- */
   const isFtl = !fromOverage && !!c.dedicateTruck
   /* Ship To is optional on a dedicated-truck booking (the merchant may not know or
@@ -783,7 +801,10 @@ export default function AddOrderPage() {
   const skuReq = isFtl ? [] : skuLines.map(({ it }) => isBlankItem(it) || (filled(it.name) && it.quantity >= 1))
   /* the Services section only exists for LTL — Service Type (FTL) already picks the FTL rate */
   const carrierReq = isFtl ? [] : [!!service]
-  const allReq = [...consignmentReq, ...fromReq, ...toReq, ...rtoReq, ...pieceReq, ...skuReq, ...carrierReq]
+  const paymentReq = merchant?.postpaidTerms === 'none' ? []
+    : merchant?.postpaidTerms === 'po' ? [!!selectedPo]
+    : [!!c.paymentMode, c.paymentMode !== 'Card' || cardOk]
+  const allReq = [...consignmentReq, ...fromReq, ...toReq, ...rtoReq, ...pieceReq, ...skuReq, ...carrierReq, ...paymentReq]
   const filledCount = allReq.filter(Boolean).length
   const canSubmit = filledCount === allReq.length
   const missingCount = allReq.length - filledCount
@@ -935,12 +956,12 @@ export default function AddOrderPage() {
 
   /* ---- the sections, one order regardless of order complexity ---- */
   const sections = ['sec-consignment', 'sec-ship-from-rto', 'sec-ship-to',
-    isFtl ? 'sec-vehicle' : 'sec-package', ...(isFtl ? [] : ['sec-services'])]
+    isFtl ? 'sec-vehicle' : 'sec-package', ...(isFtl ? [] : ['sec-services']), 'sec-payment']
   const doneOf: Record<string, boolean> = {
     'sec-consignment': done(consignmentReq),
     'sec-ship-from-rto': done(fromReq) && done(rtoReq), 'sec-ship-to': done(toReq),
     'sec-package': done(pieceReq) && done(skuReq), 'sec-vehicle': done(pieceReq),
-    'sec-services': done(carrierReq),
+    'sec-services': done(carrierReq), 'sec-payment': done(paymentReq),
   }
 
   const proceed = () => {
@@ -1369,10 +1390,153 @@ export default function AddOrderPage() {
     </SectionCard>
   )
 
+  /* Postpaid merchants never see the COD/Card/Wallet/Gateway picker — either nothing to
+     pay now (billed on invoice) or a purchase order to link instead. Everyone else picks
+     a method and, for Card, a saved card or fresh details; Payment Gateway's own
+     "Continue" jumps straight to checkout instead of waiting on the sticky footer. */
+  const paymentSection = (
+    <SectionCard id="sec-payment" title="Payment" done={doneOf['sec-payment']}
+      icon={<WalletIcon size={15} className={ICON} />}
+      caption={merchant?.postpaidTerms === 'none'
+        ? 'This merchant is billed on invoice — no payment is collected for this order.'
+        : merchant?.postpaidTerms === 'po'
+          ? "Link this order to one of the merchant's purchase orders."
+          : 'Select the payment method and continue.'}>
+      {merchant?.postpaidTerms === 'none' ? (
+        <div className="rounded-md border border-line bg-warm-25 px-3.5 py-3 text-[12.5px] text-ink-3">
+          No payment method is needed — this consignment is invoiced to the merchant on their billing cycle.
+        </div>
+      ) : merchant?.postpaidTerms === 'po' ? (
+        <div className="grid gap-2">
+          {MERCHANT_PURCHASE_ORDERS.map((po) => {
+            const on = selectedPo === po.poNumber
+            const sufficient = po.remainingAmount >= svc.price
+            return (
+              <button key={po.poNumber} type="button" onClick={() => setSelectedPo(po.poNumber)} role="radio" aria-checked={on}
+                className={`flex items-center gap-3 rounded-md border bg-surface px-3.5 py-2.5 text-left transition-colors
+                  ${on ? 'border-brand-500 bg-brand-50/30' : 'border-line text-ink-2 hover:border-warm-300'}`}>
+                {on
+                  ? <CircleDot size={15} className="shrink-0 text-brand-500" />
+                  : <span className="h-[15px] w-[15px] shrink-0 rounded-full border border-warm-300" />}
+                <div className="min-w-0 flex-1">
+                  <span className="block text-[13.5px] font-bold text-ink">{po.poNumber}</span>
+                  <span className="block text-[12px] text-ink-3">
+                    Remaining {money(po.remainingAmount, CURRENCY)} of {money(po.totalAmount, CURRENCY)}
+                  </span>
+                </div>
+                {!sufficient && <span className="shrink-0 text-[11.5px] font-bold text-danger-fg">Insufficient</span>}
+              </button>
+            )
+          })}
+          {showErrors && !selectedPo && <p className="mt-1 text-[12.5px] text-brand-500">Select a purchase order to create the consignment.</p>}
+        </div>
+      ) : (
+        <>
+          <div className="grid gap-2">
+            {PAYMENT_OPTIONS.map((opt) => {
+              const on = c.paymentMode === opt.code
+              return (
+                <button key={opt.code} type="button" onClick={() => setC({ paymentMode: opt.code })} role="radio" aria-checked={on}
+                  className={`flex items-center gap-3 rounded-md border bg-surface px-3.5 py-2.5 text-left transition-colors
+                    ${on ? 'border-brand-500 bg-brand-50/30' : 'border-line text-ink-2 hover:border-warm-300'}`}>
+                  {on
+                    ? <CircleDot size={15} className="shrink-0 text-brand-500" />
+                    : <span className="h-[15px] w-[15px] shrink-0 rounded-full border border-warm-300" />}
+                  <div className="min-w-0 flex-1">
+                    <span className="block text-[13.5px] font-bold text-ink">{opt.label}</span>
+                    <span className="block text-[12px] text-ink-3">{opt.sub}</span>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+
+          {c.paymentMode === 'COD' && (
+            <div className="mt-4 max-w-xs">
+              <FNum label={lbl('orderAmount')} blankZero placeholder="eg, 100.22" value={c.orderAmount ?? 0} onChange={(n) => setC({ orderAmount: n || null })} />
+            </div>
+          )}
+
+          {c.paymentMode === 'Card' && (
+            <div className="mt-4">
+              <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.08em] text-ink-3">Saved cards</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {SAVED_CARDS.map((cd) => {
+                  const on = selectedCard === cd.id
+                  return (
+                    <button key={cd.id} type="button"
+                      onClick={() => { setSelectedCard(cd.id); setAddingCard(false) }} role="radio" aria-checked={on}
+                      className={`flex items-center gap-3 rounded-md border bg-surface px-3.5 py-2.5 text-left transition-colors
+                        ${on ? 'border-brand-500 bg-brand-50/30' : 'border-line text-ink-2 hover:border-warm-300'}`}>
+                      {on
+                        ? <CircleDot size={15} className="shrink-0 text-brand-500" />
+                        : <span className="h-[15px] w-[15px] shrink-0 rounded-full border border-warm-300" />}
+                      <CreditCard size={16} className="shrink-0 text-ink-3" />
+                      <div className="min-w-0 flex-1">
+                        <span className="block text-[13px] font-bold text-ink">{cd.brand} •••• {cd.last4}</span>
+                        <span className="block text-[12px] text-ink-3">Expires {cd.expiry}</span>
+                      </div>
+                    </button>
+                  )
+                })}
+                <button type="button" onClick={() => { setAddingCard(true); setSelectedCard('') }}
+                  className={`flex items-center justify-center gap-2 rounded-md border border-dashed px-3.5 py-2.5 text-[13px] font-bold transition-colors
+                    ${addingCard ? 'border-brand-500 bg-brand-50/30 text-brand-500' : 'border-warm-300 text-brand-500 hover:border-brand-500 hover:bg-brand-50/40'}`}>
+                  <Plus size={14} /> Add new card
+                </button>
+              </div>
+              {addingCard && (
+                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <F label="Card Number" value={newCard.number} placeholder="1234 5678 9012 3456"
+                    onChange={(v) => setNewCard((x) => ({ ...x, number: v }))} />
+                  <F label="Name on Card" value={newCard.name} placeholder="John Doe"
+                    onChange={(v) => setNewCard((x) => ({ ...x, name: v }))} />
+                  <F label="Expiry" value={newCard.expiry} placeholder="MM/YY"
+                    onChange={(v) => setNewCard((x) => ({ ...x, expiry: v }))} />
+                  <F label="CVV" type="password" value={newCard.cvv} placeholder="123"
+                    onChange={(v) => setNewCard((x) => ({ ...x, cvv: v }))} />
+                </div>
+              )}
+              {showErrors && !cardOk && <p className="mt-2 text-[12.5px] text-brand-500">Pick a saved card or add new card details.</p>}
+              <div className="mt-4 max-w-xs">
+                <FNum label={lbl('orderAmount')} blankZero placeholder="eg, 100.22" value={c.orderAmount ?? 0} onChange={(n) => setC({ orderAmount: n || null })} />
+              </div>
+            </div>
+          )}
+
+          {c.paymentMode === 'Wallet' && (
+            <div className="mt-4 rounded-md border border-line bg-warm-25 px-3.5 py-3">
+              <div className="flex items-center justify-between text-[13px]">
+                <span className="text-ink-3">Wallet balance</span>
+                <span className="font-bold text-ink">{money(WALLET_BALANCE, CURRENCY)}</span>
+              </div>
+              {WALLET_BALANCE >= svc.price ? (
+                <p className="mt-1.5 text-[12px] text-success-fg">Sufficient balance to cover this order ({money(svc.price, CURRENCY)}).</p>
+              ) : (
+                <p className="mt-1.5 text-[12px] text-danger-fg">Insufficient balance — top up {money(svc.price - WALLET_BALANCE, CURRENCY)} more to pay with wallet.</p>
+              )}
+            </div>
+          )}
+
+          {c.paymentMode === 'Payment Gateway (ANZ)' && (
+            <div className="mt-4 rounded-md border border-line bg-warm-25 px-3.5 py-3">
+              <p className="text-[12.5px] text-ink-3">You'll be redirected to the ANZ payment gateway to complete payment before the consignment is created.</p>
+              <div className="mt-3">
+                <Button variant="outline" size="sm" onClick={proceed}>Continue &amp; Capture Payment</Button>
+              </div>
+            </div>
+          )}
+
+          {showErrors && !c.paymentMode && <p className="mt-3 text-[12.5px] text-brand-500">Select a payment method to create the consignment.</p>}
+        </>
+      )}
+    </SectionCard>
+  )
+
   const byId: Record<string, ReactNode> = {
     'sec-consignment': consignmentSection, 'sec-ship-from-rto': shipFromRtoRow,
     'sec-ship-to': shipToOpen ? shipToSection : shipToPlaceholder, 'sec-package': packageSection,
-    'sec-vehicle': vehicleSection, 'sec-services': servicesSection,
+    'sec-vehicle': vehicleSection, 'sec-services': servicesSection, 'sec-payment': paymentSection,
   }
   const pct = Math.round((filledCount / allReq.length) * 100)
 
@@ -1431,65 +1595,6 @@ export default function AddOrderPage() {
               </div>
             </div>
           </Panel>
-
-          {/* Payment — a gateway pick redirects to complete payment instead of
-              collecting an amount inline; COD/Card ask for the amount here. */}
-          <div className="mt-5">
-            <Panel title="Payment">
-              <div className="px-5 pb-5">
-                <div className="grid gap-2">
-                  {PAYMENT_OPTIONS.map((opt) => {
-                    const on = c.paymentMode === opt.code
-                    return (
-                      <button key={opt.code} type="button" onClick={() => setC({ paymentMode: opt.code })} role="radio" aria-checked={on}
-                        className={`flex items-center gap-3 rounded-md border bg-surface px-3.5 py-2.5 text-left transition-colors
-                          ${on ? 'border-brand-500 bg-brand-50/30' : 'border-line text-ink-2 hover:border-warm-300'}`}>
-                        {on
-                          ? <CircleDot size={15} className="shrink-0 text-brand-500" />
-                          : <span className="h-[15px] w-[15px] shrink-0 rounded-full border border-warm-300" />}
-                        <div className="min-w-0 flex-1">
-                          <span className="block text-[13.5px] font-bold text-ink">{opt.label}</span>
-                          <span className="block text-[12px] text-ink-3">{opt.sub}</span>
-                        </div>
-                      </button>
-                    )
-                  })}
-                </div>
-
-                {(c.paymentMode === 'COD' || c.paymentMode === 'Card') && (
-                  <div className="mt-4">
-                    <FNum label={lbl('orderAmount')} blankZero placeholder="eg, 100.22" value={c.orderAmount ?? 0} onChange={(n) => setC({ orderAmount: n || null })} />
-                  </div>
-                )}
-
-                {c.paymentMode === 'Wallet' && (
-                  <div className="mt-4 rounded-md border border-line bg-warm-25 px-3.5 py-3">
-                    <div className="flex items-center justify-between text-[13px]">
-                      <span className="text-ink-3">Wallet balance</span>
-                      <span className="font-bold text-ink">{money(WALLET_BALANCE, CURRENCY)}</span>
-                    </div>
-                    {WALLET_BALANCE >= svc.price ? (
-                      <p className="mt-1.5 text-[12px] text-success-fg">Sufficient balance to cover this order ({money(svc.price, CURRENCY)}).</p>
-                    ) : (
-                      <p className="mt-1.5 text-[12px] text-danger-fg">Insufficient balance — top up {money(svc.price - WALLET_BALANCE, CURRENCY)} more to pay with wallet.</p>
-                    )}
-                  </div>
-                )}
-
-                {c.paymentMode === 'Payment Gateway (ANZ)' && (
-                  <div className="mt-4 rounded-md border border-line bg-warm-25 px-3.5 py-3">
-                    <p className="text-[12.5px] text-ink-3">You'll be redirected to the ANZ payment gateway to complete payment before the consignment is created.</p>
-                    <div className="mt-3">
-                      <Button variant="outline" size="sm"
-                        onClick={() => toast.info('Opening the ANZ payment gateway — not part of this prototype')}>
-                        Continue to ANZ Payment Gateway
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </Panel>
-          </div>
         </div>
       </div>
 
