@@ -43,7 +43,7 @@ import {
   resolveConfig, saveStoredConfig, toStoredConfig,
   type ColumnPreset, type ResolvedColumn, type ResolvedFilter,
 } from './columnConfig'
-import { pickupPagesVisible, usePickupModuleConfig } from '../../config/pickupModule'
+import { usePickupModuleConfig } from '../../config/pickupModule'
 import { CONSIGNMENT_TAB_KEYS } from './viewColumns'
 
 /** the registry keys of the consignment tabs' 19 columns */
@@ -56,7 +56,8 @@ const TABS = ['Date Filter', 'Table Configuration', 'On Page Filters']
 export default function TableSettings() {
   const nav = useNavigate()
   const initial = useMemo(() => resolveConfig(), [])
-  const pickupTabs = pickupPagesVisible(usePickupModuleConfig())
+  /* the PFP tabs show whenever the pickup module is on (manual or auto) */
+  const pickupTabs = usePickupModuleConfig().enabled
 
   const [tab, setTab] = useState(1)
   /* with the pickup tabs on, the 19 staging columns are ON unless the user

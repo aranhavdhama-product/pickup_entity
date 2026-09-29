@@ -37,7 +37,7 @@ import { PrActionDialogs } from '../LocalPickup/prSelectionActions'
 import { prSelectionItems, type PrDialog, type PrSelectionItem } from '../LocalPickup/prSelectionItems'
 import { STATUS_FILTER_OPTIONS, matchesStatus } from '../LocalPickup/prModel'
 import { cancelReasonLabel } from '../../growOrders/pickupReasons'
-import { pickupPagesVisible, usePickupModuleConfig } from '../../config/pickupModule'
+import { usePickupModuleConfig } from '../../config/pickupModule'
 import {
   CATEGORY_FLAGS, csvOf, downloadCsv, isPendingForPlanning, isPendingPickup, isPickupRow,
   pickupScheduleTargetOf, toConsignmentRow, toPickupRow,
@@ -272,16 +272,14 @@ const PFP_BASE: Record<PfpVariant, string> = {
 }
 
 export default function LocalPendingForPlanning({ variant: variantProp }: { variant?: PfpVariant } = {}) {
-  /* Module off = the page as it was before pickups joined it: no Pickups tab,
-     and no pickup rows anywhere in the queue (so no pickup actions either). */
-  /* module off OR auto mode = no tabs, no pickup rows, the staging-faithful look */
+  /* owner, 2026-09-29: ONE Pending for Planning, always the NEW page. Pickup module OFF = no tabs and no
+     pickup rows (only the consignments); module ON — manual OR auto (an auto-raised request still needs
+     planning) — = the First Mile · Last Mile · All tabs, All mixing pickup requests and consignments.
+     The explicit `variant` prop (the -replica route, kept for the pixel-diff tooling) still forces the
+     staging look. The base path follows the ROUTE. */
   const pickupCfg = usePickupModuleConfig()
-  const pickupsOn = pickupPagesVisible(pickupCfg)
-  /* owner, 2026-09-24: ONE Pending for Planning. With the pickup module OFF the
-     route shows the staging-faithful page (the replica look); with it ON, the new
-     page with the tabs. The explicit `variant` prop (the -replica route, kept for
-     the pixel-diff tooling) still forces a look. The base path follows the ROUTE. */
-  const variant: PfpVariant = variantProp ?? (pickupsOn ? 'current' : 'replica')
+  const pickupsOn = pickupCfg.enabled
+  const variant: PfpVariant = variantProp ?? 'current'
   const replica = variant === 'replica'
   const basePath = PFP_BASE[variantProp ?? 'current']
   const nav = useNavigate()
