@@ -681,11 +681,20 @@ function revealEntries(entries: RevealEntry[], inMore: (k: string) => boolean, o
   return { nodes, waiting, waitingFilled }
 }
 /** The reveal toggle under a section's fields; hidden while editing (everything is shown then). */
-function RevealToggle({ open, onToggle, waiting, waitingFilled = 0, label = 'information', className = '' }: {
+function RevealToggle({ open, onToggle, waiting, waitingFilled = 0, label = 'information', className = '', iconOnly = false }: {
   open: boolean; onToggle: () => void; waiting: number; waitingFilled?: number; label?: string; className?: string
+  /** a chevron only, the words in its tooltip (a package's details — owner, 2026-09-29) */
+  iconOnly?: boolean
 }) {
   const b = useContext(BuilderCtx)
   if (b?.editing || waiting === 0) return null
+  const words = open ? `Less ${label}` : `More ${label} · ${waiting} field${waiting === 1 ? '' : 's'}${waitingFilled ? `, ${waitingFilled} filled` : ''}`
+  if (iconOnly) return (
+    <button type="button" onClick={onToggle} aria-expanded={open} title={words} aria-label={words}
+      className={`inline-flex h-7 w-7 items-center justify-center rounded-md text-brand-500 hover:bg-warm-100 ${className}`}>
+      {open ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+    </button>
+  )
   return (
     <div className={className}>
       <button type="button" onClick={onToggle} aria-expanded={open}
@@ -959,9 +968,10 @@ const saveGoodsSetting = (v: GoodsSetting) => { try { localStorage.setItem(GOODS
  * the staging replica at /add), one tier only.
  */
 /** Grow (merchant portal): the carrier's / ops' fields never render — the merchant is the header ⇄, the carrier
-    allocates the carrier, ops set the Order Category, tags, loading time, vehicle, coordinates and pallet space. */
-const MERCHANT_OFF = new Set(['merchant', 'consignmentNumber', 'tags', 'totalLoadingTime', 'dedicateTruck', 'vehicleType',
-  'addrCoordinates', 'pkgPalletSpace', ...GOODS_CATEGORIES.map((g) => catKey(g.name))])
+    allocates the carrier, ops set the loading time, vehicle, coordinates and pallet space. (The load type is Grow's
+    own Handling question; owner 2026-09-29: the Handling categories and tags show on Grow too.) */
+const MERCHANT_OFF = new Set(['merchant', 'consignmentNumber', 'totalLoadingTime', 'dedicateTruck', 'vehicleType',
+  'addrCoordinates', 'pkgPalletSpace'])
 export default function AddConsignmentV2({ portal = 'console' }: {
   /** 'merchant' = the Grow Create Order (`/grow/orders/add`): the same form minus the carrier's and ops' features,
       plus the lane's services with ESTIMATED rates, the pickup module's window and checkout / Save for later */
@@ -1018,8 +1028,13 @@ export default function AddConsignmentV2({ portal = 'console' }: {
     try { localStorage.setItem(FORM_TIER_V2_KEY, t) } catch { /* private mode */ }
     setShowErrors(false)
   }
-  /* Grow reads the ACCOUNT's consignment settings (hides + the Form Fields tab's Required), never this form's builder */
-  const merchantRules = useMemo<FormRulesV2>(() => Object.fromEntries((behavior.required ?? []).map((k) => [k, { required: true }])), [behavior])
+  /* owner, 2026-09-29: a field customised on the console form (hidden · renamed · More · Required) is the same on
+     Grow — the saved builder rules, plus the Form Fields tab's Grow-only Required */
+  const merchantRules = useMemo<FormRulesV2>(() => {
+    const out: FormRulesV2 = { ...savedRules }
+    for (const k of behavior.required ?? []) if (!out[k]?.hidden) out[k] = { ...out[k], required: true }
+    return out
+  }, [savedRules, behavior])
   const rules = merchantMode ? merchantRules : editing ? draftRules : savedRules
   const lockOf = (k: string): FieldLock => (byKeyMandatory(k) ? 'system' : FORM_LOCKED.has(k) ? 'form' : null)
   const baseHidden = (k: string) => !!fieldCfg[k]?.hidden || behavior.hidden.includes(k)
@@ -1177,7 +1192,8 @@ export default function AddConsignmentV2({ portal = 'console' }: {
   const allDrops = [receiver, ...drops]
 
   /* ---- Grow: the load type, the lane's services + ESTIMATED rates (growOrders/rates), the Ship From hub's fleet ---- */
-  const [mode, setMode] = useState<BookingMode | null>(ftlFirst ? 'ftl' : fromOverage || saved || jump ? 'ltl' : null)
+  /* owner, 2026-09-29: Shared unless it is a full-vehicle booking — the service cards show at once */
+  const [mode, setMode] = useState<BookingMode | null>(ftlFirst ? 'ftl' : 'ltl')
   const lm: BookingMode = mode ?? 'ltl'
   const [counts, setCounts] = useState<Record<string, number>>(() => {
     const vs = saved?.shipmentType === 'FTL' ? vehiclesOf(saved)
@@ -1608,7 +1624,7 @@ export default function AddConsignmentV2({ portal = 'console' }: {
   const handlingChipsVisible = GOODS_CATEGORIES.some(({ name }) => !hid(catKey(name)))
   const handlingTogglesVisible = !hid('scannable') || !hid('splittable') || !hid('clearanceRequired') || !hid('tags')
   const handlingVisible = handlingChipsVisible || handlingTogglesVisible
-  const sections = merchantMode ? ['sec-consignment', 'sec-parties', 'sec-packages', 'sec-extras', 'sec-service'] : simple ? ['sec-consignment', 'sec-parties', isFtl ? 'sec-vehicle' : 'sec-packages', 'sec-carrier'] : isFtl
+  const sections = merchantMode ? ['sec-consignment', 'sec-parties', 'sec-packages', 'sec-handling', 'sec-extras', 'sec-service'] : simple ? ['sec-consignment', 'sec-parties', isFtl ? 'sec-vehicle' : 'sec-packages', 'sec-carrier'] : isFtl
     ? ['sec-consignment', 'sec-parties', 'sec-service', 'sec-vehicle', ...(handlingVisible ? ['sec-handling'] : []), 'sec-carrier']
     : ['sec-consignment', 'sec-parties', 'sec-packages', ...(handlingVisible ? ['sec-handling'] : []), 'sec-service', 'sec-carrier']
   const doneOf: Record<string, boolean> = {
@@ -2270,8 +2286,9 @@ export default function AddConsignmentV2({ portal = 'console' }: {
           <span className="flex items-center justify-end gap-1">
             <button type="button" title={open ? 'Hide SKU details' : 'SKU details: category, description, HSN, origin, cost, image, units, volume'}
               aria-label={`SKU ${n + 1} details`} aria-expanded={open} onClick={() => setSkuMore((st) => flip(st, key))}
-              className="inline-flex h-8 items-center gap-0.5 rounded-md px-1 text-[12px] text-brand-500 hover:bg-warm-100">
-              Details{open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+              className="inline-flex h-8 w-7 items-center justify-center rounded-md text-brand-500 hover:bg-warm-100">
+              {/* owner, 2026-09-29: a chevron only — the words are in the tooltip */}
+              {open ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
             </button>
             <button type="button" title="Remove SKU" aria-label={`Remove SKU ${n + 1}`} onClick={() => removeItem(i, k)}
               className="inline-flex h-8 w-7 items-center justify-center rounded-md text-ink-3 hover:bg-warm-100 hover:text-brand-500">
@@ -2285,7 +2302,7 @@ export default function AddConsignmentV2({ portal = 'console' }: {
     )
   }
   /** a package's own fields — type · quantity · L × W × H · weight (+ tracking / description / pallet / id in place) */
-  const packageFields = (p: Parcel, i: number) => {
+  const packageFields = (p: Parcel, i: number, below?: ReactNode, adder?: ReactNode) => {
     const vol = p.l * p.w * p.h
     const isCustom = packageValue(p, packageTypes) === CUSTOM_PACKAGE
     const r = revealEntries([
@@ -2311,7 +2328,14 @@ export default function AddConsignmentV2({ portal = 'console' }: {
             onChange={(w) => setParcel(i, { weight: w, weightMode: 'manual' })} />
           {r.nodes}
         </SGrid>
-        <RevealToggle open={secOpen(`pkg:${i}`)} onToggle={() => toggleSec(`pkg:${i}`)} waiting={r.waiting} waitingFilled={r.waitingFilled} label="package details" className="mt-4" />
+        {below}
+        {/* owner, 2026-09-29: the package's adders on ONE line — Add SKU · More package details */}
+        {(adder || (r.waiting > 0 && !editing)) && (
+          <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2">
+            {adder}
+            <RevealToggle open={secOpen(`pkg:${i}`)} onToggle={() => toggleSec(`pkg:${i}`)} waiting={r.waiting} waitingFilled={r.waitingFilled} label="package details" iconOnly />
+          </div>
+        )}
       </>
     )
   }
@@ -2358,13 +2382,9 @@ export default function AddConsignmentV2({ portal = 'console' }: {
   /* packages with their SKUs: each box, its fields, its SKUs, and Add SKU under them */
   const combinedBlock = (
     <div>
-      {parcels.map((p, i) => packageCard(p, i, <>
-        {packageFields(p, i)}
-        <div className="mt-6 lg:pr-10">
-          {(p.items ?? []).length > 0 && skuTable(false, (p.items ?? []).map((it, k) => skuRow(it, i, k, k, false)))}
-          <div className="mt-2"><AddRowLink label="Add SKU" onClick={() => addItem(i)} /></div>
-        </div>
-      </>))}
+      {parcels.map((p, i) => packageCard(p, i, packageFields(p, i,
+        (p.items ?? []).length > 0 ? <div className="mt-6 lg:pr-10">{skuTable(false, (p.items ?? []).map((it, k) => skuRow(it, i, k, k, false)))}</div> : null,
+        <AddRowLink label="Add SKU" onClick={() => addItem(i)} />)))}
       {addPackageBar}
     </div>
   )
@@ -2577,32 +2597,38 @@ export default function AddConsignmentV2({ portal = 'console' }: {
     </FormCard>
   )
 
-  /* ============================================================ Grow (merchant): Handling & extras · Service Type */
-  const merchantExtrasSection = (
-    <FormCard id="sec-extras" title="Handling & extras" caption="How the boxes travel, the label, a note for the carrier and any extra services.">
-      {handlingTogglesVisible && (
-        <div className={HANDLING_ROW}>
-          {!hid('scannable') && <InlineSwitch label={custom('scannable', 'Scannable', 'Barcode on every box')} title={SWITCH_HINTS.scannable}
-            checked={!!c.scannable} onChange={(v) => setC({ scannable: v })} />}
-          {!hid('splittable') && <InlineSwitch label="Can be delivered in parts" title={SWITCH_HINTS.splittable}
-            checked={!!c.splittable} onChange={(v) => setC({ splittable: v })} />}
-          {!hid('clearanceRequired') && <InlineSwitch label={lbl('clearanceRequired')} title={SWITCH_HINTS.clearanceRequired}
-            checked={!!c.clearanceRequired} onChange={(v) => setC({ clearanceRequired: v })} />}
-        </div>
-      )}
+  /* ============================================================ Grow (merchant): the console's Handling card with the
+     load type asked in it · Service & instructions (label, note, VAS) · Service Type (the lane's cards, LAST) */
+  const loadTypeField = (
+    <div className="grid grid-cols-1 gap-x-6 sm:grid-cols-2 lg:grid-cols-4 lg:pr-10">
+      <F label="Load type" required value={mode === 'ftl' ? 'ftl' : 'ltl'}
+        options={[{ value: 'ltl', label: 'Shared vehicle (LTL / LCL)' }, { value: 'ftl', label: 'Full vehicle (FTL / FCL)' }]}
+        disabled={!!fromOverage || pr?.shipmentType === 'FTL'}
+        helper={mode === 'ftl' ? 'A whole vehicle just for this order' : 'Travels with other shipments'}
+        onChange={(v) => changeMode(v === 'ftl' ? 'ftl' : 'ltl')} />
+    </div>
+  )
+  const merchantHandlingSection = (
+    <FormCard id="sec-handling" title="Handling" caption="How the goods must be handled on the way, and how they travel.">
+      {handlingVisible && handlingSection.props.children}
+      <div className={handlingVisible ? 'mt-6' : ''}>{loadTypeField}</div>
+    </FormCard>
+  )
+  const merchantExtrasSection = !(svcReveal.nodes.length > 0 || svcReveal.waiting > 0 || extrasVisible) ? null : (
+    <FormCard id="sec-extras" title="Service & instructions" caption="The label, anything the carrier should know, and any service on top of the delivery.">
       {(svcReveal.nodes.length > 0 || svcReveal.waiting > 0) && (
-        <div className={handlingTogglesVisible ? 'mt-6' : ''}>
+        <>
           <SGrid>{svcReveal.nodes}</SGrid>
           <RevealToggle open={secOpen('sec-service')} onToggle={() => toggleSec('sec-service')} waiting={svcReveal.waiting} waitingFilled={svcReveal.waitingFilled} className="mt-4" />
-        </div>
+        </>
       )}
       {extrasSection}
     </FormCard>
   )
   const merchantServiceSection = (
     <FormCard id="sec-service" title="Service Type"
-      caption={mode ? 'Services and estimated rates for this route — pick one.' : 'Choose how it travels — the services for that option appear below.'}>
-      <ServiceTypeChooser ready={ready} mode={mode} onMode={changeMode} modeLocked={!!fromOverage || pr?.shipmentType === 'FTL'}
+      caption={`${mode === 'ftl' ? 'Full vehicle' : 'Shared vehicle'} services and estimated rates for this route — pick one. The load type is asked in Handling.`}>
+      <ServiceTypeChooser hideMode ready={ready} mode={mode} onMode={changeMode} modeLocked={!!fromOverage || pr?.shipmentType === 'FTL'}
         quotes={quotes} selected={selected} onSelect={setService} currency={currency} fleet={fleet} counts={counts} onCount={setCount}
         fleetNote={fleetNote} showErrors={showErrors} serviceLocked={serviceHidden} />
       {showErrors && !ready && (
@@ -2714,7 +2740,7 @@ export default function AddConsignmentV2({ portal = 'console' }: {
 
   const byId: Record<string, ReactNode> = merchantMode ? {
     'sec-consignment': consignmentSection, 'sec-parties': partiesSection, 'sec-packages': packagesSection,
-    'sec-extras': merchantExtrasSection, 'sec-service': merchantServiceSection,
+    'sec-handling': merchantHandlingSection, 'sec-extras': merchantExtrasSection, 'sec-service': merchantServiceSection,
   } : simple ? {
     'sec-consignment': simpleConsignment, 'sec-parties': simpleParties, 'sec-packages': simplePackages,
     'sec-vehicle': vehicleSection, 'sec-carrier': carrierSection,

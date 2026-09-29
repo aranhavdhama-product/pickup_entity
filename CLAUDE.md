@@ -232,16 +232,18 @@ Product changes layered on the replica (deliberate departures from the live port
   `/grow/orders/add[/vehicle]` = **the v2 form in merchant mode** (owner, 2026-09-29: "make grow form like this,
   no carrier-specific feature"): `LocalConsignments/AddConsignmentV2.tsx` with `portal="merchant"` — the SAME cards,
   address cards + popup (Save this address), goods entry and fields, minus the carrier/ops ones (`MERCHANT_OFF`:
-  Merchant = the header ⇄, Consignment Number, Tags, Order Category chips, Total Loading Time, Load type / Vehicle
-  Type, lat/long, Pallet Space; no Carriers card, no Shipment legs, no form builder, no Simplified tier, no
-  Transfer type, no hubs as addresses). Cards: Consignment details · Ship From → Ship To (pickup window under Ship
-  From follows the pickup module: off · manual optional · auto-ask required · auto-rule shown) · Package & SKU ·
-  Handling & extras (3 toggles · Label Format · instructions · VAS in the lane's currency) · **Service Type LAST**
-  (`serviceCards.ServiceTypeChooser`: Shared | Full vehicle segment, one rate card per service for the OD pair,
-  vehicle cards with count steppers from Vehicle Config at the Ship From hub; Full vehicle allows extra drops).
-  Hides + Required come from the ACCOUNT settings (`fe-consignment-form-behavior`), never the v2 builder rules.
+  Merchant = the header ⇄, Consignment Number, Total Loading Time, the console's Load type / Vehicle Type, lat/long,
+  Pallet Space; no Carriers card, no Shipment legs, no form builder, no Simplified tier, no Transfer type, no hubs as
+  addresses). Cards: Consignment details · Ship From → Ship To (pickup window under Ship From follows the pickup
+  module: off · manual optional · auto-ask required · auto-rule shown) · Package & SKU · **Handling** (the console's:
+  six category chips · toggles · Tags, + Grow's **Load type** Shared | Full vehicle, default Shared) · **Service &
+  instructions** (Label Format · instructions · VAS in the lane's currency) · **Service Type LAST**
+  (`serviceCards.ServiceTypeChooser hideMode`: the lane's rate cards show at once, vehicle cards with count steppers
+  for Full vehicle, which also allows extra drops). The console form's saved customisation (`fe-consignment-form-v2-rules`:
+  hidden · labels · More · Required) applies to Grow too (owner, 2026-09-29), plus the Form Fields tab's Required.
   Sticky footer = the estimate · Go Back · Save for later · Continue to checkout (DRAFT_KEY → `/grow/orders/checkout`,
-  a session draft is restored on Back). The old `MerchantOrderForm` / `packageEditor` / `orderSummaryRail` are gone. Selected card = 2px brand
+  a session draft is restored on Back). Package card (both portals): Add SKU + a chevron-only "more package details"
+  on one line; a SKU's details toggle is a chevron only (words in the tooltip). The old `MerchantOrderForm` / `packageEditor` / `orderSummaryRail` are gone. Selected card = 2px brand
   border, no fill; segments/choices neutral (border-ink + bg-warm-50). Pricing = ONE module
   `src/growOrders/rates.ts` (`quoteLane`/`quoteService`, ESTIMATED; ₱ card for PH, $ card for the
   Chicago/US network; zone same city · region · nationwide), also used by the Rate Calculator and

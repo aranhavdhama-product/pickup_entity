@@ -56,8 +56,10 @@ export function RateCard({ title, left, right, trailing, selected, onClick, iner
 /** The body of the Grow form's Service Type card (the card itself is the form's own — AddConsignmentV2 merchant mode). */
 export function ServiceTypeChooser({
   ready, mode, onMode, modeLocked, quotes, selected, onSelect, currency, fleet, counts, onCount, fleetNote,
-  showErrors, serviceLocked, children,
+  showErrors, serviceLocked, children, hideMode,
 }: {
+  /** the load type is asked elsewhere (the form's Handling card) — no segment here */
+  hideMode?: boolean
   /** OD pair + a weight exist — until then the cards show without rates and cannot be picked */
   ready: boolean
   /** null = no load type chosen yet: only the two choice cards show */
@@ -97,17 +99,17 @@ export function ServiceTypeChooser({
         </div>
       )}
       <div className="max-w-[1060px]">
-        <Segment<BookingMode> value={(mode ?? '') as BookingMode} onChange={onMode} disabled={modeLocked} options={[
+        {!hideMode && <Segment<BookingMode> value={(mode ?? '') as BookingMode} onChange={onMode} disabled={modeLocked} options={[
           { value: 'ltl', label: 'Shared vehicle (LTL)', sub: 'Your packages travel with other shipments', icon: <Boxes size={18} /> },
           { value: 'ftl', label: 'Full vehicle (FTL)', sub: 'A whole vehicle just for this order', icon: <Truck size={18} /> },
-        ]} />
+        ]} />}
         {!mode ? null : !quotes.length ? (
           <p className="mt-4 text-[13px] text-ink-3">
             No service offers a {mode === 'ftl' ? 'full vehicle' : 'shared vehicle'} on this route. Try the other option.
           </p>
         ) : (
           <>
-            <div className="mt-4 flex flex-col gap-3" role="radiogroup" aria-label="Service Type">
+            <div className={`${hideMode ? '' : 'mt-4 '}flex flex-col gap-3`} role="radiogroup" aria-label="Service Type">
               {shown.map((q) => (
                 <RateCard key={q.code} selected={ready && q.code === selected} inert={!ready} onClick={() => pick(q.code)}
                   title={q.name}
