@@ -255,7 +255,11 @@ Product changes layered on the replica (deliberate departures from the live port
   `Parcel.quantity` = packages of this spec, `ParcelItem.quantity` = units per package.
 - **Add Consignment v2** (owner, 2026-09-29): `/local/consignments/new` (+ `/new/vehicle`) =
   `LocalConsignments/AddConsignmentV2.tsx`, a COPY of `AddOrderPage` (the staging replica at `/add` stays
-  untouched); the list's **Add ▾** (`AddUpload`'s additive `addMenu`) offers "Add consignment v2" first. Same
+  untouched); the list's **Add** opens it directly (owner, 2026-09-29; no menu — `/add` stays reachable by URL only), and
+  **Modify Shipment Details** opens `/new?draft=<id>`: a LIVE order prefills from `draft.draftFromOrder` when it has no
+  stored form state and **Save changes** writes onto it through `growOrderActions.modifyOrder` (status, payment, pickup
+  request, ready-to-ship kept — never saveDraft + markPaid). Header = PageHeader's back chevron + title + the one-line
+  subtitle (both portals). Same
   `OrderDraft`; one tier; ordered by dependency for the least scroll (the file's doc comment is the spec):
   Consignment details → Ship From → Ship To (saved-address pickers read back as cards, Add / Edit in a popup,
   "Save this address" to the store list or the address book) + **Shipment legs** (`shipmentLegs.ts`: the
@@ -441,8 +445,8 @@ effects (a cancelled/rescheduled PR leaving its trip) flow through `onPickupRequ
   only; ON in manual OR auto mode = the tabs below with pickup requests — gate = `cfg.enabled`, not
   `pickupPagesVisible`; the staging look only on `-replica`) (tabs **All** (first + default) · First Mile · Last Mile, `?tab=first-mile|last-mile`,
   old `pickups`/`consignments` slugs alias; per-tab column sets in `LocalPFP/viewColumns.ts` —
-  Last Mile = the measured consignment grid, First Mile = Group by Pickup request (PR grid on
-  `PR_COLUMN_DEFS`) | None (`?group=none`, first-mile consignments + Pickup Request column),
+  Last Mile = the measured consignment grid, First Mile = pickup requests ONLY (PR grid on
+  `PR_COLUMN_DEFS`; no Group by since 2026-09-29, a stale `?group=none` is ignored),
   All = pickup requests + the Last Mile consignments (a first-mile consignment rides on its
   request, never its own row there), columns common to both row kinds — the ONLY tab with Active Leg, and its Type = row kind
   only; a pickup overlay's booked orders open their consignment overlay; pickup-request rows get the SAME 16-item menu as `/local/pickup` (`LocalPickup/prSelectionItems.ts` + `prSelectionActions.tsx` dialogs; "Plan pickup request for routing" routes onto trips); consignment rows on First Mile / Last Mile = staging's exact 19 columns + 13 actions (`viewColumns.CONSIGNMENT_TAB_COLUMNS`), a mixed All selection = Plan For Routing · Download CSV · Cancel; the filter line follows the tab's row kind (First Mile = the Pickup page's grammar: window date · Status · Merchant · funnel Type/Pickup Address/Destination Hub/Source; Last Mile = staging's consignment filters + chips; All = date · Merchant · Type · Destination; a tab switch keeps only Merchant + search); only rows that still need planning — PRs Requested with no trip / 3PL, consignments Created · Ready To Ship · Pickup Requested on no trip), `/local/control-tower` (+ `/trips/:id`; `AddToRouteDialog` is shared),

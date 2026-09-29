@@ -34,7 +34,7 @@ import { createContext, Fragment, useContext, useEffect, useMemo, useRef, useSta
 import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  ChevronDown, ChevronUp, CircleMinus, Eye, EyeOff, Info, Lock, MapPinned, Package, Pencil, Plus, RotateCcw,
+  ChevronDown, ChevronLeft, ChevronUp, CircleMinus, Eye, EyeOff, Info, Lock, MapPinned, Package, Pencil, Plus, RotateCcw,
   ArrowRight, Bookmark, ScanBarcode, UserRound, Warehouse, SlidersHorizontal, Trash2, Truck, X, Crown, Flame, GlassWater, Layers, Users, Weight,
 } from 'lucide-react'
 import { blankParty, CURRENCY } from '../../growOrders/seed'
@@ -58,7 +58,7 @@ import { usePickupLocations, useReceiverBook } from '../GrowOrders/pickupLocatio
 import { hasPickupLeg, LEG_LABEL, MOVEMENT_LABEL, routeOf, type RouteEnd } from './shipmentLegs'
 import {
   ADDITIONAL_SERVICES, DEFAULT_FTL_SERVICE, DRAFT_KEY, FTL_SERVICE_CODES, FTL_SERVICE_TYPES, PARCEL_SERVICES, SERVICE_TYPES, VEHICLE_SPECS,
-  clearDraftKeys, loadTypeOf, ftlQuoteVehicles, ftlServiceType, setDraftSidecar, totalLoadKg, vehiclesFor,
+  clearDraftKeys, draftFromOrder, loadTypeOf, ftlQuoteVehicles, ftlServiceType, setDraftSidecar, totalLoadKg, vehiclesFor,
   vehiclesOf, type ConsignmentFields, type FtlVehicle, type OrderDraft, type Parcel, type ParcelItem, type VasLine,
 } from '../../growOrders/draft'
 import { usePickupModuleConfig } from '../../config/pickupModule'
@@ -998,8 +998,14 @@ export default function AddConsignmentV2({ portal = 'console' }: {
   const jump = Math.min(2, Math.max(0, Number(params.get('step')) || 0))
   const draftId = params.get('draft')
   /* a saved draft; on Grow also what checkout's "Back" left in the session (this form clears it on mount) */
-  const [saved] = useState<OrderDraft | null>(() => (draftId ? orderById(draftId)?.draft ?? null
-    : merchantMode && !params.get('fromOverage') ? readSessionDraft() : null))
+  /* console Modify Shipment Details on a LIVE consignment: prefilled from the order when it has no stored form
+     state, saved back onto it (status / payment / pickup kept) — never a new draft */
+  const [liveEdit] = useState(() => { const o = draftId ? orderById(draftId) : null; return !merchantMode && !!o && !o.isDraft })
+  const [saved] = useState<OrderDraft | null>(() => {
+    const o = draftId ? orderById(draftId) : null
+    if (o) return o.draft ?? (!merchantMode && !o.isDraft ? draftFromOrder(o) : null)
+    return merchantMode && !params.get('fromOverage') ? readSessionDraft() : null
+  })
   const resumeId = draftId ?? saved?.orderId ?? null
   const pr = pickupRequestById(params.get('fromPickup'))
   const [ovPrId = '', ovId = ''] = (params.get('fromOverage') ?? '').split(':')
@@ -1653,6 +1659,13 @@ export default function AddConsignmentV2({ portal = 'console' }: {
       sessionStorage.setItem(DRAFT_KEY, JSON.stringify(buildMerchantDraft()))
       setDraftSidecar({ pickupId: pr?.id ?? null, overage: fromOverage ? { prId: fromOverage.pr.id, overageId: fromOverage.scan.id } : null })
       nav('/grow/orders/checkout')
+      return
+    }
+    if (liveEdit && draftId) {
+      const m = growOrderActions.modifyOrder(draftId, buildDraft())
+      clearDraftKeys()
+      if (m) toast.success(`Consignment ${m.orderNumber} updated`)
+      nav(base)
       return
     }
     const o = growOrderActions.saveDraft(buildDraft(), draftId ?? undefined)
@@ -2748,10 +2761,22 @@ export default function AddConsignmentV2({ portal = 'console' }: {
     'sec-vehicle': vehicleSection, 'sec-service': serviceSection, 'sec-carrier': carrierSection,
   }
 
+  /* owner, 2026-09-29: a back chevron beside the title (PageHeader's back button) + the one-line subtitle */
+  const goBack = () => { clearDraftKeys(); nav(backTo) }
+  const backBtn = (
+    <button type="button" onClick={goBack} aria-label="Go back" title="Go back"
+      className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-line bg-surface text-ink-2 shadow-ds-1 transition-colors hover:bg-warm-100">
+      <ChevronLeft size={16} />
+    </button>
+  )
+  const SUBTITLE = 'Top to bottom — what, where, what is in it, then the services and estimated rates for that route.'
   const builderBar = merchantMode ? (
-    <div className="mb-5">
-      <h1 className="text-[18px] font-bold text-ink">Create Order</h1>
-      <p className="mt-0.5 text-[13px] text-ink-2">Top to bottom — what, where, what is in it, then the services and estimated rates for that route.</p>
+    <div className="mb-5 flex items-start gap-3">
+      {backBtn}
+      <div className="min-w-0">
+        <h1 className="text-[18px] font-bold leading-8 text-ink">Create Order</h1>
+        <p className="text-[13px] text-ink-2">{SUBTITLE}</p>
+      </div>
     </div>
   ) : editing ? (
     <div className="sticky top-0 z-40 mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-line bg-info-bg px-5 py-3 shadow-ds-1">
@@ -2774,11 +2799,14 @@ export default function AddConsignmentV2({ portal = 'console' }: {
     </div>
   ) : (
     <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-      <div>
-        <h1 className="text-[18px] font-bold text-ink">Add Consignment{simple && <span className="ml-2 text-[13px] font-normal text-ink-3">· Simplified</span>}</h1>
-        <p className="mt-0.5 text-[13px] text-ink-2">
-          {changeCount ? `${changeCount} form change${changeCount === 1 ? '' : 's'} in effect on this form` : 'Top to bottom — what, where, what is in it, how it moves, who carries it.'}
+      <div className="flex min-w-0 items-start gap-3">
+      {backBtn}
+      <div className="min-w-0">
+        <h1 className="text-[18px] font-bold leading-8 text-ink">{liveEdit ? 'Modify Consignment' : 'Add Consignment'}{simple && <span className="ml-2 text-[13px] font-normal text-ink-3">· Simplified</span>}</h1>
+        <p className="text-[13px] text-ink-2">
+          {SUBTITLE}{changeCount ? <span className="text-ink-3"> · {changeCount} form change{changeCount === 1 ? '' : 's'} in effect</span> : null}
         </p>
+      </div>
       </div>
       {simple
         ? <span className="text-[13px] text-ink-3">The simplified form is fixed — switch to the regular form to customise it</span>
@@ -2839,10 +2867,10 @@ export default function AddConsignmentV2({ portal = 'console' }: {
           {editing
             ? <span className="text-[13px] text-ink-2">Save or cancel the form changes first</span>
             : showErrors && !canSubmit && <span className="text-[13px] text-danger-fg">{missingCount} required field{missingCount === 1 ? '' : 's'} to fill</span>}
-          <Button variant="ghost" onClick={() => { clearDraftKeys(); nav(backTo) }}>Go Back</Button>
+          <Button variant="ghost" onClick={goBack}>Go Back</Button>
           {/* enabled: a click with gaps shows them (errors appear only after this attempt) */}
           {merchantMode && <Button variant="outline" onClick={saveForLater}>Save for later</Button>}
-          <Button onClick={proceed} disabled={editing}>{merchantMode ? 'Continue to checkout' : 'Add Order'}</Button>
+          <Button onClick={proceed} disabled={editing}>{merchantMode ? 'Continue to checkout' : liveEdit ? 'Save changes' : 'Add Order'}</Button>
         </div>
       </div>
     </div>

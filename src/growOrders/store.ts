@@ -538,6 +538,24 @@ export const growOrderActions = {
     return o
   },
 
+  /**
+   * "Modify Shipment Details" on a LIVE consignment (owner, 2026-09-29): the form's changes land on the order
+   * it edits — its status, payment, pickup request, ready-to-ship flag and lifecycle stay as they are (a draft
+   * save + markPaid would reset it to Order Created and could book a second pickup).
+   */
+  modifyOrder(id: string, draft: OrderDraft): GrowOrder | null {
+    const base = db.orders.find((o) => o.id === id)
+    if (!base) return null
+    const o: GrowOrder = {
+      ...orderFromDraft(draft, base),
+      status: base.status, paymentStatus: base.paymentStatus, isDraft: base.isDraft, readyToShip: base.readyToShip,
+      pickupRequestId: base.pickupRequestId, pickedInRequestId: base.pickedInRequestId, draft: null,
+    }
+    db.orders = db.orders.map((x) => (x.id === id ? o : x))
+    commit()
+    return o
+  },
+
   /** Checkout Proceed — the order becomes paid and lands on Ready for Pickup. */
   markPaid(id: string, patch: Partial<GrowOrder> = {}) {
     growOrderActions.update(id, { paymentStatus: 'Paid', isDraft: false, draft: null, status: 'Order Created', ...patch })

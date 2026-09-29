@@ -47,8 +47,8 @@ import { hiddenStagingColumns } from './columnConfig'
 import { type RowType } from './fieldRegistry'
 import { planningActions, usePlanning } from './planningStore'
 import {
-  COMMON_COLUMNS, CONSIGNMENT_TAB_COLUMNS, GROUP_BY, LINK_COLUMNS, MEASURED_COLUMNS, PILL_COLUMNS, PR_VIEW_COLUMNS, TABS,
-  TYPE_OPTIONS, extraCells, inTab, typeKeyOf, parseGroup, parseTab, viewOf, widthOf,
+  COMMON_COLUMNS, CONSIGNMENT_TAB_COLUMNS, LINK_COLUMNS, MEASURED_COLUMNS, PILL_COLUMNS, PR_VIEW_COLUMNS, TABS,
+  TYPE_OPTIONS, extraCells, inTab, typeKeyOf, parseTab, viewOf, widthOf,
   type ColumnView, type ExtraCtx, type GroupBy, type TabKey,
 } from './viewColumns'
 import {
@@ -369,8 +369,8 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
   /* an unknown value reads as All. With the module off there are no tabs: the
      queue holds only consignments, all of them, on the staging column set. */
   const tab: TabKey = pickupsOn ? parseTab(params.get('tab')) : 'all'
-  /* First Mile's Group by (`?group=none`; default Pickup request) */
-  const group: GroupBy = parseGroup(params.get('group'))
+  /* owner, 2026-09-29: First Mile lists PICKUP REQUESTS only — no Group by (a stale `?group=none` is ignored) */
+  const group: GroupBy = 'pr'
   const view: ColumnView = fixture || !pickupsOn ? 'consignment' : viewOf(tab, group)
   /* owner, 2026-09-25: the filter line follows the tab's ROW KIND — pickup
      requests get the Pickup page's grammar, consignments the staging set, All
@@ -629,7 +629,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
     setParams((p) => {
       const n = new URLSearchParams(p)
       if (next === 'all') n.delete('tab'); else n.set('tab', next)
-      if (nextGroup === 'none') n.set('group', 'none'); else n.delete('group')
+      n.delete('group')
       return n
     }, { replace: true })
     clearSelection()
@@ -642,8 +642,6 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
       setFunnel((f): Record<string, string> => (f.Merchant ? { Merchant: f.Merchant } : {}))
     } else if (typeSel && !all.some((r) => inTab(next, nextGroup, r) && typeKeyOf(r) === typeSel)) setTypeSel('')
   }
-  /* the same reset as a tab change: the rows on screen are a different kind */
-  const switchGroup = (next: GroupBy) => switchTab(tab, next)
 
   /* ---- pickup-request rows: the SAME 16-item menu as the /local/pickup grid
           (owner, 2026-09-25; LocalPickup/prSelectionItems.ts), gated by the
@@ -735,21 +733,6 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
     </select>
   )
 
-  /* Group by — First Mile only (owner, 2026-09-25): Pickup request = one row
-     per booking, None = the first-mile consignments one by one. The replica's
-     own select (`.pfp-select`) at the measured State/Secondary State width.
-     Placement: the replica's filter row has room for it; the current page's
-     filter line is already full (its selects truncate), so there it sits on
-     the right of the tab strip, beside the tab it belongs to.
-     Last Mile has none: its only groupable dimensions are the destination hub
-     (already the funnel's Destination) and the trip (a queued consignment is
-     on none), and a hub row would carry nothing the actions can address. */
-  const groupControl = view === 'pickup' || view === 'firstMileConsignment' ? (
-    <select className="pfp-select" style={{ width: ROLE.stateSelect.width, flexShrink: 0 }} aria-label="Group by"
-      value={group} onChange={(e) => switchGroup(e.target.value as GroupBy)}>
-      {GROUP_BY.map((g) => <option key={g.key} value={g.key}>Group by: {g.label}</option>)}
-    </select>
-  ) : null
 
   const exceptionsControl = (
     <select className="pfp-select" aria-label="Exceptions" value={exception}
@@ -978,7 +961,6 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
             {merchantControl}
             {filterMode === 'consignment' && orderTypeControl}
             {filterMode === 'common' && typeControl}
-            {groupControl}
             {funnelControl}
             <ClearFilters active={filtersOn} onClick={clearAll} />
             {filterMode === 'consignment' && (
@@ -1078,7 +1060,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
           {!fixture && tabs.length > 0 && (
             <LocalTabs
               tabs={tabs.map((t) => ({ id: t.key, label: t.label, count: tabCounts[t.key], icon: TAB_ICON[t.key] }))}
-              active={tab} onChange={(id) => switchTab(id as TabKey)} right={groupControl} />
+              active={tab} onChange={(id) => switchTab(id as TabKey)} />
           )}
 
           {/* ----------------------------------------------- row 2: the strip */}

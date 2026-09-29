@@ -229,8 +229,8 @@ export default function LocalConsignments() {
         icon: <Pencil size={14} />,
         disabled: sel.length !== 1,
         onClick: sel.length === 1
-          /* reopens the order in the merchant's own Add Order flow */
-          ? () => nav(`/local/consignments/add?draft=${sel[0].orderId}`)
+          /* reopens the order in the new consignment form */
+          ? () => nav(`/local/consignments/new?draft=${sel[0].orderId}`)
           : undefined,
       },
       /* TWO different schedules, two different statuses:
@@ -301,12 +301,8 @@ export default function LocalConsignments() {
       <LocalTabs
         tabs={TABS.map((t, i) => ({ id: String(i), label: t.label, count: tabCounts[i], icon: TAB_ICONS[i] }))}
         active={String(tab)} onChange={(id) => { setTab(Number(id)); setPage(1) }}
-        right={<AddUpload onAdd={() => nav('/local/consignments/new')} onUpload={() => setUploading(true)}
-          /* owner, 2026-09-29: the logical form (v2) first; the staging-replica form stays one click away */
-          addMenu={[
-            { label: 'Add consignment v2', hint: 'Logical order, least scroll', onClick: () => nav('/local/consignments/new') },
-            { label: 'Add consignment', hint: 'The staging form', onClick: () => nav('/local/consignments/add') },
-          ]} />} />
+        /* owner, 2026-09-29: Add opens the NEW consignment form (v2) straight away — no menu */
+        right={<AddUpload onAdd={() => nav('/local/consignments/new')} onUpload={() => setUploading(true)} />} />
 
       <FilterLine
         right={<>

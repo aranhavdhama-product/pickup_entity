@@ -1,5 +1,5 @@
 /** Create Order draft handed from the stepper to /checkout via sessionStorage. */
-import type { Party, ShipmentType } from './types'
+import type { GrowOrder, Party, ShipmentType } from './types'
 
 /**
  * One line of contents inside a package. `skuCode` is the SKU master's code, or
@@ -488,4 +488,36 @@ export function ftlQuoteVehicles(vehicles: FtlVehicle[], extraDrops: number, ser
   const drops = Math.max(0, extraDrops) * EXTRA_DROP_RATE
   const extras = ADDITIONAL_SERVICES.filter((s) => services.includes(s.code)).reduce((n, s) => n + s.price, 0)
   return base + drops + extras
+}
+
+/**
+ * An order that has no stored form state (seeded, uploaded or created elsewhere) read back as the form's draft,
+ * so "Modify Shipment Details" opens it filled (owner, 2026-09-29): parties, one package line from the order's
+ * package summary, the service, payment, tags and the consignment fields it carries.
+ */
+export function draftFromOrder(o: GrowOrder): OrderDraft {
+  const cf = o.consignment
+  const count = Math.max(1, o.pkg.count || 1)
+  return {
+    orderId: o.id, storeCode: o.storeCode, sender: o.sender, receiver: o.receiver, drops: o.drops ?? [],
+    shipmentType: o.shipmentType, vehicleType: o.vehicleType ?? '', vehicleUnit: o.vehicleUnit ?? 0, actualLoad: o.actualLoad ?? 0,
+    additionalServices: o.additionalServices ?? [],
+    ...(o.vehicles?.length ? { vehicles: o.vehicles } : {}),
+    ...(o.shipmentType === 'FTL' ? { ftlServiceType: o.serviceType } : {}),
+    parcels: [{
+      cargoType: o.pkg.kind === 'Document' ? 'Document' : 'Parcel', itemInfo: o.pkg.description ?? '', quantity: count,
+      weight: Math.round(((o.pkg.weightKg || 0) / count) * 100) / 100, weightMode: 'manual',
+      l: o.pkg.lengthCm || 0, w: o.pkg.widthCm || 0, h: o.pkg.heightCm || 0, trackingNumber: o.trackingNumber || '',
+    }],
+    authority: 'Leave at the door', instructions: o.remarks ?? '', secure: false,
+    service: o.serviceType, rate: 0, etaDays: 0, currency: o.currency,
+    consignment: {
+      ...cf,
+      orderNumber: cf?.orderNumber || o.orderNumber, referenceNumber: cf?.referenceNumber || o.orderNumber,
+      consignmentType: cf?.consignmentType ?? (o.orderType === 'Reverse Order' ? 'Reverse' : 'Forward'),
+      paymentMode: cf?.paymentMode || o.paymentMode, orderAmount: cf?.orderAmount ?? (o.codAmount || null),
+      tags: cf?.tags ?? o.tags ?? [], carrier: cf?.carrier || o.carrier,
+    },
+    formMode: 'full',
+  }
 }
