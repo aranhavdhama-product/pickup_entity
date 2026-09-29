@@ -44,7 +44,7 @@ import { finalizeOrder } from '../../growOrders/checkout'
 import type { Party, StoreLocation } from '../../growOrders/types'
 import {
   currentMerchant, ownPackageTypes, packageTypesForMerchant, useMasters, useMerchantCode,
-  type PackageType, type SkuItem,
+  type Merchant, type PackageType, type SkuItem,
 } from '../../growOrders/masters'
 import { ORIGIN_COUNTRIES } from '../../data/originCountries'
 import { toast } from '../../nueva/toast'
@@ -357,12 +357,12 @@ function FNum({ label, required, className = '', helper, ...p }: ComponentProps<
  * client-only prototype; nothing actually uploads). No file = the dashed
  * "Upload" affordance; a picked file shows its name with a way to clear it.
  */
-function DocUploadRow({ label, required, file, error, onChange }: {
-  label: string; required?: boolean; file: string | null; error?: boolean; onChange: (name: string | null) => void
+function DocUploadRow({ label, required, description, file, error, onChange }: {
+  label: string; required?: boolean; description?: string; file: string | null; error?: boolean; onChange: (name: string | null) => void
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   return (
-    <Fld label={label} required={required} error={error}>
+    <Fld label={label} required={required} error={error} helper={description}>
       <input ref={inputRef} type="file" className="hidden" onChange={(e) => onChange(e.target.files?.[0]?.name ?? null)} />
       {file ? (
         <div className="flex h-8 items-center gap-2 rounded-md border border-line bg-warm-25 px-3 text-[13px] text-ink">
@@ -661,8 +661,26 @@ export default function AddOrderPage() {
   const nav = useNavigate()
   const db = useGrowOrders()
   const masters = useMasters()
-  const merchant = currentMerchant(masters.merchants, useMerchantCode())
-  const pickup = usePickupLocations(db.stores)
+  /* the signed-in identity — a real merchant, or a CSR (tenant-level user with no
+     merchant of their own) who must pick which mapped merchant this order is FOR */
+  const signedIn = currentMerchant(masters.merchants, useMerchantCode())
+  const [onBehalfOf, setOnBehalfOf] = useState('')
+  /* reset the pick when the signed-in identity itself changes (switching CSRs, or
+     away from one) — adjusted inline during render, not an effect, so it lands
+     before this render paints instead of triggering a second one */
+  const [onBehalfOfFor, setOnBehalfOfFor] = useState(signedIn?.code)
+  if (signedIn?.code !== onBehalfOfFor) {
+    setOnBehalfOfFor(signedIn?.code)
+    setOnBehalfOf('')
+  }
+  const behalfMerchants = useMemo(() => (signedIn?.mappedMerchants ?? [])
+    .map((code) => masters.merchants.find((m) => m.code === code)).filter((m): m is Merchant => !!m),
+    [signedIn, masters.merchants])
+  /* everything below reads `merchant`, never `signedIn` directly — a CSR with no
+     selection yet is exactly the same as no merchant at all (already a state the
+     rest of the form tolerates, e.g. before masters finish loading). */
+  const merchant = signedIn?.isCsr ? (behalfMerchants.find((m) => m.code === onBehalfOf) ?? null) : signedIn
+  const pickup = usePickupLocations(db.stores, signedIn?.isCsr ? (merchant?.code ?? null) : undefined)
   const stores = pickup.stores
   const packageTypes = useMemo(
     () => packageTypesForMerchant(masters.packageTypes, merchant?.code ?? null),
@@ -789,7 +807,7 @@ export default function AddOrderPage() {
   const [service, setService] = useState(saved && saved.shipmentType !== 'FTL' ? saved.service : '')
   const [showErrors, setShowErrors] = useState(false)
 
-  const receiverBook = useReceiverBook(db.orders)
+  const receiverBook = useReceiverBook(db.orders, signedIn?.isCsr ? (merchant?.code ?? null) : undefined)
   const fromList = !!senderStore && senderStore !== OTHER_ADDRESS
   const allDrops = [receiver, ...drops]
 
@@ -845,7 +863,8 @@ export default function AddOrderPage() {
     : merchant?.postpaidTerms === 'po' ? [!!selectedPo]
     : [!!c.paymentMode, c.paymentMode !== 'Card' || cardOk]
   const docsReq = (merchant?.requiredDocuments ?? []).map((d) => !!docs[d.code])
-  const allReq = [...consignmentReq, ...fromReq, ...toReq, ...rtoReq, ...pieceReq, ...skuReq, ...carrierReq, ...paymentReq, ...docsReq]
+  const merchantPickReq = signedIn?.isCsr ? [!!onBehalfOf] : []
+  const allReq = [...merchantPickReq, ...consignmentReq, ...fromReq, ...toReq, ...rtoReq, ...pieceReq, ...skuReq, ...carrierReq, ...paymentReq, ...docsReq]
   const filledCount = allReq.filter(Boolean).length
   const canSubmit = filledCount === allReq.length
   const missingCount = allReq.length - filledCount
@@ -996,11 +1015,14 @@ export default function AddOrderPage() {
   }
 
   /* ---- the sections, one order regardless of order complexity ---- */
-  const sections = ['sec-consignment', 'sec-ship-from-rto', 'sec-ship-to',
+  const sections = [
+    ...(signedIn?.isCsr ? ['sec-merchant'] : []),
+    'sec-consignment', 'sec-ship-from-rto', 'sec-ship-to',
     isFtl ? 'sec-vehicle' : 'sec-package', ...(isFtl ? [] : ['sec-services']),
     ...((merchant?.requiredDocuments?.length ?? 0) > 0 ? ['sec-documents'] : []),
     ...(merchant?.postpaidTerms === 'none' ? [] : ['sec-payment'])]
   const doneOf: Record<string, boolean> = {
+    'sec-merchant': done(merchantPickReq),
     'sec-consignment': done(consignmentReq),
     'sec-ship-from-rto': done(fromReq) && done(rtoReq), 'sec-ship-to': done(toReq),
     'sec-package': done(pieceReq) && done(skuReq), 'sec-vehicle': done(pieceReq),
@@ -1050,6 +1072,21 @@ export default function AddOrderPage() {
   )
   const dedicateToggle = (
     <ChipToggle icon={Truck} label={lbl('dedicateTruck')} checked={isFtl} onChange={setDedicateTruck} disabled={!!fromOverage} />
+  )
+
+  /* CSR-only — a tenant-level user has no merchant of their own, so this picks
+     which of their mapped merchants everything below (addresses, package
+     presets, payment terms, documents) is scoped to. */
+  const merchantSection = signedIn?.isCsr && (
+    <SectionCard id="sec-merchant" title="Create Order For" done={doneOf['sec-merchant']}
+      icon={<User size={15} className={ICON} />}
+      caption={`Signed in as ${signedIn.name} — pick which mapped merchant this order is for.`}>
+      <div className="max-w-sm">
+        <F label="Merchant" required searchable value={onBehalfOf} onChange={setOnBehalfOf}
+          options={behalfMerchants.map((m) => ({ value: m.code, label: m.name }))}
+          placeholder="Select a merchant" error={showErrors && !onBehalfOf ? 'Required field.' : undefined} />
+      </div>
+    </SectionCard>
   )
 
   const consignmentSection = (
@@ -1452,13 +1489,13 @@ export default function AddOrderPage() {
     <SectionCard id="sec-documents" title="Documents" done={doneOf['sec-documents']}
       icon={<FileCheck size={15} className={ICON} />}
       caption={`${merchant?.name ?? 'This merchant'} requires these documents on every shipment.`}>
-      <Grid>
+      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
         {merchant?.requiredDocuments?.map((d) => (
-          <DocUploadRow key={d.code} label={d.label} required file={docs[d.code] ?? null}
+          <DocUploadRow key={d.code} label={d.label} required description={d.description} file={docs[d.code] ?? null}
             error={showErrors && !docs[d.code]}
             onChange={(name) => setDocs((x) => ({ ...x, [d.code]: name }))} />
         ))}
-      </Grid>
+      </div>
     </SectionCard>
   )
 
@@ -1596,6 +1633,7 @@ export default function AddOrderPage() {
   )
 
   const byId: Record<string, ReactNode> = {
+    'sec-merchant': merchantSection,
     'sec-consignment': consignmentSection, 'sec-ship-from-rto': shipFromRtoRow,
     'sec-ship-to': shipToOpen ? shipToSection : shipToPlaceholder, 'sec-package': packageSection,
     'sec-vehicle': vehicleSection, 'sec-services': servicesSection, 'sec-documents': documentsSection,

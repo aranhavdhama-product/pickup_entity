@@ -37,10 +37,20 @@ export interface PickupLocations {
  *  belong to a sample read only — never under a live merchant. */
 const SEED_CODES = new Set(STORES.map((s) => s.code))
 
-export function usePickupLocations(localStores: StoreLocation[]): PickupLocations {
+/**
+ * `merchantCodeOverride` lets a CSR-style caller scope this to the merchant they
+ * picked on the form instead of the signed-in identity — omit it (not `null`) to
+ * keep reading `useMerchantCode()` as before.
+ */
+export function usePickupLocations(localStores: StoreLocation[], merchantCodeOverride?: string | null): PickupLocations {
   const masters = useMasters()
-  const code = useMerchantCode()
-  const merchant = currentMerchant(masters.merchants, code)
+  const signedInCode = useMerchantCode()
+  /* an override of `null` (a CSR who hasn't picked a merchant yet) must NOT fall
+     back to the first merchant the way "who's signed in" always does — it means
+     no merchant at all, so the list below is correctly empty until they pick one. */
+  const merchant = merchantCodeOverride !== undefined
+    ? masters.merchants.find((m) => m.code === merchantCodeOverride) ?? null
+    : currentMerchant(masters.merchants, signedInCode)
 
   return useMemo(() => {
     /* a Location Master row often has no CONTACT name (staging's MC_0021), and a
@@ -119,11 +129,14 @@ export function receiverBook(masters: Masters, merchantCode: string | null, orde
   })
 }
 
-/** The same book, wired to the live masters and the signed-in merchant. */
-export function useReceiverBook(orders: GrowOrder[]): BookEntry[] {
+/**
+ * The same book, wired to the live masters and the signed-in merchant.
+ * `merchantCodeOverride` — see `usePickupLocations` — omit it (not `null`) to
+ * keep reading `useMerchantCode()` as before.
+ */
+export function useReceiverBook(orders: GrowOrder[], merchantCodeOverride?: string | null): BookEntry[] {
   const masters = useMasters()
-  const code = useMerchantCode()
-  const merchant = currentMerchant(masters.merchants, code)
-  return useMemo(() => receiverBook(masters, merchant?.code ?? null, orders),
-    [masters, merchant?.code, orders])
+  const signedInCode = useMerchantCode()
+  const code = merchantCodeOverride !== undefined ? merchantCodeOverride : (currentMerchant(masters.merchants, signedInCode)?.code ?? null)
+  return useMemo(() => receiverBook(masters, code, orders), [masters, code, orders])
 }

@@ -62,7 +62,17 @@ export interface Merchant {
    * Certificate of Movement) — absent/empty means the Add Order form shows no
    * Documents section at all. Only ever set on the sample merchants below.
    */
-  requiredDocuments?: { code: string; label: string }[]
+  requiredDocuments?: { code: string; label: string; description: string }[]
+  /**
+   * A CSR is a tenant-level user, not a merchant of their own — the switcher lists
+   * them alongside real merchants, but signing in as one shows an extra "Create
+   * order for merchant" picker on Add Order, scoped to `mappedMerchants`. Only
+   * ever set on the sample CSR below; a live businessUnit row never has this, so
+   * every check against it degrades safely to "not a CSR".
+   */
+  isCsr?: boolean
+  /** merchant codes this CSR may create orders on behalf of. */
+  mappedMerchants?: string[]
 }
 
 export type LocationType = 'MERCHANT_LOCATION' | 'CUSTOMER_LOCATION' | 'PUDO' | 'HUB' | 'PARCEL_LOCKER'
@@ -134,10 +144,15 @@ export const SAMPLE_MERCHANTS: Merchant[] = [
   { code: 'POSTPAID_INVOICE', name: 'Postpaid Retailer (Invoice)', party: null, postpaidTerms: 'none' },
   { code: 'POSTPAID_PO', name: 'Postpaid Retailer (PO Linked)', party: null, postpaidTerms: 'po' },
   { code: 'LITE_EXPRESS', name: 'LiteExpress', party: null, requiredDocuments: [
-    { code: 'certOfMovement', label: 'Certificate of Movement' },
-    { code: 'invoice', label: 'Commercial Invoice' },
-    { code: 'packingList', label: 'Packing List' },
+    { code: 'certOfMovement', label: 'Certificate of Movement',
+      description: 'A signed certificate authorizing the goods to move between locations. Must show the shipper, consignee, and a description of the goods matching this order.' },
+    { code: 'invoice', label: 'Commercial Invoice',
+      description: 'The itemized sales invoice for the goods being shipped, showing quantities, unit price and total declared value.' },
+    { code: 'packingList', label: 'Packing List',
+      description: 'A list of exactly what is packed in each carton — item, quantity and weight per carton — matching the packages declared below.' },
   ] },
+  { code: 'CSR_MAYA', name: 'Maya (CSR)', party: null, isCsr: true,
+    mappedMerchants: ['2GO_PH', 'LITE_EXPRESS', 'POSTPAID_INVOICE', 'POSTPAID_PO'] },
 ]
 
 export const SAMPLE_LOCATIONS: MasterLocation[] = STORES.map((s) => ({
