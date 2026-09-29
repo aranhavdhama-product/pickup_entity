@@ -1081,8 +1081,6 @@ export default function AddConsignmentV2({ portal = 'console' }: {
     setEditing(false)
     toast.success('Consignment form updated — applies to this form')
   }
-  const changeCount = Object.values(savedRules).filter((r) => r.hidden !== undefined || r.required || r.label || r.more !== undefined).length
-    + (savedGoods !== 'sku' ? 1 : 0)
   /* "More information" per section (and per package): open ones reveal their waiting fields in place */
   const [openSecs, setOpenSecs] = useState<Set<string>>(new Set())
   const secOpen = (id: string) => editing || openSecs.has(id)
@@ -2819,7 +2817,7 @@ export default function AddConsignmentV2({ portal = 'console' }: {
       <ChevronLeft size={16} />
     </button>
   )
-  const SUBTITLE = 'Top to bottom — what, where, what is in it, then the services and estimated rates for that route.'
+  const SUBTITLE = 'Provide the order details to ensure accurate processing, routing, and billing of the shipment.'
   const builderBar = merchantMode ? (
     <div className="mb-5 flex items-start gap-3">
       {backBtn}
@@ -2854,21 +2852,12 @@ export default function AddConsignmentV2({ portal = 'console' }: {
       <div className="min-w-0">
         <h1 className="text-[18px] font-bold leading-8 text-ink">{liveEdit ? 'Modify Consignment' : 'Add Consignment'}{simple && <span className="ml-2 text-[13px] font-normal text-ink-3">· Simplified</span>}</h1>
         <p className="text-[13px] text-ink-2">
-          {SUBTITLE}{changeCount ? <span className="text-ink-3"> · {changeCount} form change{changeCount === 1 ? '' : 's'} in effect</span> : null}
+          {SUBTITLE}
         </p>
       </div>
       </div>
-      <div className="flex flex-wrap items-center gap-4">
-        {/* owner, 2026-09-29: the old (staging-replica) form stays one click away — not while modifying a live order,
-            whose old-form save would reset it */}
-        {!liveEdit && (
-          <Link to={`/local/consignments/add${isFtl ? '/vehicle' : ''}`} onClick={() => clearDraftKeys()}
-            className="text-[13px] font-bold text-brand-500 hover:text-brand-600">Open the old form</Link>
-        )}
-        {simple
-          ? <span className="text-[13px] text-ink-3">The simplified form is fixed — switch to the regular form to customise it</span>
-          : <Button variant="outline" icon={<SlidersHorizontal size={14} />} onClick={startEditing}>Edit consignment form</Button>}
-      </div>
+      {/* owner, 2026-09-29: no old-form link, no change count, no simplified-form note — just the builder entry */}
+      {!simple && <Button variant="outline" icon={<SlidersHorizontal size={14} />} onClick={startEditing}>Edit consignment form</Button>}
     </div>
   )
 

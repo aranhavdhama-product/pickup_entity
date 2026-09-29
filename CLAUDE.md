@@ -255,11 +255,12 @@ Product changes layered on the replica (deliberate departures from the live port
   `Parcel.quantity` = packages of this spec, `ParcelItem.quantity` = units per package.
 - **Add Consignment v2** (owner, 2026-09-29): `/local/consignments/new` (+ `/new/vehicle`) =
   `LocalConsignments/AddConsignmentV2.tsx`, a COPY of `AddOrderPage` (the staging replica at `/add` stays
-  untouched); the list's **Add** opens it directly (owner, 2026-09-29; no menu — the old `/add` form is reached from the new form's header link "Open the old form", hidden while modifying a live order), and
+  untouched); the list's **Add** opens it directly (owner, 2026-09-29; no menu, and no link to the old `/add` form — it stays reachable by URL only), and
   **Modify Shipment Details** opens `/new?draft=<id>`: a LIVE order prefills from `draft.draftFromOrder` when it has no
   stored form state and **Save changes** writes onto it through `growOrderActions.modifyOrder` (status, payment, pickup
-  request, ready-to-ship kept — never saveDraft + markPaid). Header = PageHeader's back chevron + title + the one-line
-  subtitle (both portals). Same
+  request, ready-to-ship kept — never saveDraft + markPaid). Header = PageHeader's back chevron + title + ONE subtitle
+  "Provide the order details to ensure accurate processing, routing, and billing of the shipment." (both portals; no
+  change count, no simplified-form note) + Edit consignment form. Same
   `OrderDraft`; one tier; ordered by dependency for the least scroll (the file's doc comment is the spec):
   Consignment details → Ship From → Ship To (saved-address pickers read back as cards, Add / Edit in a popup,
   "Save this address" to the store list or the address book) + **Shipment legs** — ONE simple line below the two
