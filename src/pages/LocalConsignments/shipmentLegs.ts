@@ -101,3 +101,30 @@ export function routeOf(from: RouteEnd, to: RouteEnd, choice: RouteChoice = {}):
 /** Does the route start with a first-mile pickup (a pickup request is booked only then)? */
 export const hasPickupLeg = (m: MovementType | null | undefined) =>
   m === 'PICKUP_LINEHAUL_DELIVERY' || m === 'PICKUP_HUB_DELIVERY' || m === 'PICKUP_LINEHAUL' || m === 'PICKUP'
+
+/* ------------------------------------------------------------------ legs as a CHOICE (owner, 2026-09-29) ----
+   The form asks the legs instead of inferring them: Via hub + which of First Mile · Line Haul · Last Mile, or
+   Direct (Pick & Drop). The seven leg combinations and Direct are exactly the eight movement types. */
+
+export type LegsMode = 'hub' | 'direct'
+export interface LegChoice { mode: LegsMode; fm: boolean; lh: boolean; lm: boolean }
+
+/** The legs, in travel order, for a choice. */
+export function legsOf(c: LegChoice): LegKind[] {
+  if (c.mode === 'direct') return ['pickAndDeliver']
+  return [c.fm && 'pickup', c.lh && 'linehaul', c.lm && 'delivery'].filter(Boolean) as LegKind[]
+}
+
+/** The movement type a choice is saved as (null = no leg ticked). */
+export function movementOfLegs(c: LegChoice): MovementType | null {
+  return BY_CHAIN[legsOf(c).map((l) => CODE[l]).join('-')] ?? null
+}
+
+/** A saved movement type read back as the choice. */
+export function legsOfMovement(m: MovementType): LegChoice {
+  if (m === 'PICK_AND_DEL') return { mode: 'direct', fm: false, lh: false, lm: false }
+  const chain = (Object.entries(BY_CHAIN).find(([, v]) => v === m)?.[0] ?? '').split('-')
+  return { mode: 'hub', fm: chain.includes('FM'), lh: chain.includes('LH'), lm: chain.includes('LM') }
+}
+
+export const LEG_CODE: Record<LegKind, string> = CODE

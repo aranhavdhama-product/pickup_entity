@@ -262,11 +262,15 @@ Product changes layered on the replica (deliberate departures from the live port
   subtitle (both portals). Same
   `OrderDraft`; one tier; ordered by dependency for the least scroll (the file's doc comment is the spec):
   Consignment details → Ship From → Ship To (saved-address pickers read back as cards, Add / Edit in a popup,
-  "Save this address" to the store list or the address book) + **Shipment legs** (`shipmentLegs.ts`: the
-  owner's 14-case table → 8 movement types `PICKUP_LINEHAUL_DELIVERY · LINEHAUL_DELIVERY · LINEHAUL ·
-  PICKUP_LINEHAUL · PICK_AND_DEL · PICKUP_HUB_DELIVERY · PICKUP · DELIVERY`, stored as
-  `consignment.movementType` + `skipFirstMileInbound` / `skipLastMile` / `directPickAndDeliver`; shown in words;
-  a pickup request is booked only when the route has a Pickup leg) → Package & SKU (Items = SKU + quantity,
+  "Save this address" to the store list or the address book) + **Shipment legs** — ONE simple line below the two
+  addresses (owner, 2026-09-29): pills First Mile · Line Haul · Last Mile · or · **Pick & Del**, and on the right the
+  hubs it passes in words ("Via San Pablo Inbound Hub → …", only KNOWN hubs; the saved value in its tooltip). The legs
+  are a CHOICE (`shipmentLegs.legsOf` / `movementOfLegs` / `legsOfMovement`: the 7 leg combinations + Pick & Del = the
+  8 movement types, stored as `consignment.movementType`); each leg FOLLOWS the chosen address until set by hand (FM /
+  LM: an address = on, a hub = off; LH: the two ends' hubs differ). A leg set by hand narrows that end's picker (FM on
+  = an address, off = a hub) and clears an end of the wrong kind; address cards carry a Merchant / Customer address ·
+  Hub pill; a Transfer locks Line Haul only; soft hints for LH vs the hubs. A pickup request is booked only with First
+  Mile. Grow never shows it → Package & SKU (Items = SKU + quantity,
   master or typed SKU — a typed code is kept on Enter / Tab / leaving the field; or Packages, Add Package at the
   bottom; Handling = two rows: Order Category chips, then Barcode on every box · Delivered in parts · Clearance ·
   Tags) → **Service & instructions** (one card: Service Type · Load type · Vehicle Type · Total Loading Time, then

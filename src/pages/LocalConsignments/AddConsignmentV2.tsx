@@ -30,12 +30,12 @@
  * never change. Errors appear only after an Add Order attempt. Labels 13px ink (owner exception to the type scale).
  * Deep links: `?draft=`, `?fromPickup=`, `?fromOverage=`, `?step=1|2` (packages / carriers).
  */
-import { createContext, Fragment, useContext, useEffect, useMemo, useRef, useState, type ComponentProps, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ComponentProps, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  ChevronDown, ChevronLeft, ChevronUp, CircleMinus, Eye, EyeOff, Info, Lock, MapPinned, Package, Pencil, Plus, RotateCcw,
-  ArrowRight, Bookmark, ScanBarcode, UserRound, Warehouse, SlidersHorizontal, Trash2, Truck, X, Crown, Flame, GlassWater, Layers, Users, Weight,
+  Check, ChevronDown, ChevronLeft, ChevronUp, CircleMinus, Eye, EyeOff, Info, Lock, MapPinned, Package, Pencil, Plus, RotateCcw,
+  Bookmark, ScanBarcode, SlidersHorizontal, Trash2, Truck, X, Crown, Flame, GlassWater, Layers, Users, Weight,
 } from 'lucide-react'
 import { blankParty, CURRENCY } from '../../growOrders/seed'
 import { growOrderActions, orderById, pickupRequestById, useGrowOrders } from '../../growOrders/store'
@@ -55,7 +55,9 @@ import {
 import { money, OTHER_ADDRESS, partyOk, prWindow, storeOptionLabel } from '../GrowOrders/utils'
 import { hubName, inboundHubFor, INBOUND_HUBS } from '../../growOrders/hubs'
 import { usePickupLocations, useReceiverBook } from '../GrowOrders/pickupLocations'
-import { hasPickupLeg, LEG_LABEL, MOVEMENT_LABEL, routeOf, type RouteEnd } from './shipmentLegs'
+import {
+  hasPickupLeg, legsOf, legsOfMovement, movementOfLegs, MOVEMENT_TYPES, type LegChoice, type LegKind, type MovementType, type RouteEnd,
+} from './shipmentLegs'
 import {
   ADDITIONAL_SERVICES, DEFAULT_FTL_SERVICE, DRAFT_KEY, FTL_SERVICE_CODES, FTL_SERVICE_TYPES, PARCEL_SERVICES, SERVICE_TYPES, VEHICLE_SPECS,
   clearDraftKeys, draftFromOrder, loadTypeOf, ftlQuoteVehicles, ftlServiceType, setDraftSidecar, totalLoadKg, vehiclesFor,
@@ -1308,13 +1310,39 @@ export default function AddConsignmentV2({ portal = 'console' }: {
   }
   const fromEnd = endOf(sender, fromList ? senderStore : undefined)
   const toEnd = endOf(receiver)
-  const endsKey = `${fromEnd.kind}:${fromEnd.hub}|${toEnd.kind}:${toEnd.hub}`
-  const [routeSw, setRouteSw] = useState<{ key: string; skipFirstMile?: boolean; skipLastMile?: boolean; direct?: boolean }>(() => ({
-    key: '', skipFirstMile: saved?.consignment?.skipFirstMileInbound, skipLastMile: saved?.consignment?.skipLastMile, direct: saved?.consignment?.directPickAndDeliver,
-  }))
-  const sw = routeSw.key === endsKey || routeSw.key === '' ? routeSw : { key: endsKey }
-  const setSw = (patch: { skipFirstMile?: boolean; skipLastMile?: boolean; direct?: boolean }) => setRouteSw({ ...sw, ...patch, key: endsKey })
-  const route = routeOf(fromEnd, toEnd, sw)
+  /* ---- Shipment legs = the user's CHOICE (owner, 2026-09-29: the "Legs to be created" design): Via hub + First
+     Mile · Line Haul · Last Mile, or Pick & Del (one trip, no hub) — the eight movement types. The legs decide what each end
+     is: First Mile on = Ship From is an address (merchant / customer), off = a hub; Last Mile likewise for Ship To.
+     Line Haul follows the two ends' hubs until someone sets it. A Transfer is Line Haul only. ---- */
+  /* null = follows the chosen address (FM / LM: an address = on, a hub = off; LH: the two hubs differ) until someone sets it */
+  const [legChoice, setLegChoice] = useState<{ mode: LegChoice['mode']; fm: boolean | null; lm: boolean | null; lh: boolean | null }>(() => {
+    const m = saved?.consignment?.movementType
+    if (m && (MOVEMENT_TYPES as readonly string[]).includes(m)) { const l = legsOfMovement(m as MovementType); return { ...l, lh: l.mode === 'hub' ? l.lh : null } }
+    return { mode: 'hub', fm: null, lm: null, lh: null }
+  })
+  const isTransfer = ctype === 'Transfer'
+  const legsDirect = !isTransfer && legChoice.mode === 'direct'
+  const legFm = !isTransfer && !legsDirect && (legChoice.fm ?? fromEnd.kind !== 'facility')
+  const legLm = !isTransfer && !legsDirect && (legChoice.lm ?? toEnd.kind !== 'facility')
+  const originHub = fromEnd.hub
+  const destHub = toEnd.hub
+  const hubsDiffer = !!originHub && !!destHub && originHub !== destHub
+  /* auto: hub → hub always hauls; otherwise only when the two ends are served by different hubs */
+  const lhAuto = !(legFm || legLm) || hubsDiffer
+  const legLh = !legsDirect && (isTransfer || (legChoice.lh ?? lhAuto))
+  const legs: LegChoice = { mode: legsDirect ? 'direct' : 'hub', fm: legFm, lh: legLh, lm: legLm }
+  const legList = legsOf(legs)
+  const movementType = movementOfLegs(legs)
+  /* what each end must be under these legs */
+  const fromIsAddress = legsDirect || legFm
+  const toIsAddress = legsDirect || legLm
+  const hasAddr = (p: Party) => filled(p.name) || filled(p.line1) || filled(p.city)
+  /* a leg SET by hand (or Direct) narrows its end's picker to the matching kind; a following leg leaves both kinds open */
+  const fromRestricted = legsDirect || legChoice.fm !== null
+  const toRestricted = legsDirect || legChoice.lm !== null
+  const fromKindBad = !merchantMode && !isTransfer && fromRestricted && hasAddr(sender) && (fromEnd.kind === 'facility') === fromIsAddress
+  const toKindBad = !merchantMode && !isTransfer && toRestricted && hasAddr(receiver) && (toEnd.kind === 'facility') === toIsAddress
+  const sameHubBothEnds = !legFm && !legLm && !legsDirect && fromEnd.kind === 'facility' && toEnd.kind === 'facility' && fromEnd.hub === toEnd.hub && !!fromEnd.hub
   /* a Transfer moves between two facilities */
   const transferOk = ctype !== 'Transfer' || (fromEnd.kind === 'facility' && toEnd.kind === 'facility')
   const hubVehicles = vehicleTypesFor(masters.vehicleTypes, shipFromHub)
@@ -1386,7 +1414,7 @@ export default function AddConsignmentV2({ portal = 'console' }: {
   const toReq = allDrops.flatMap((d) => [missingOf(d, 'to').length === 0, windowOk(d)])
   const rtoReq = simple || !typeRule.rto || c.rtoMode === RTO_MODES[0] ? [true] : [missingOf(rto, 'rto').length === 0]
   /* the two ends must make a route (not the same hub twice; a Transfer = two facilities) */
-  const routeReq = merchantMode ? [] : [!route.error, transferOk]
+  const routeReq = merchantMode ? [] : [legList.length > 0, transferOk, !sameHubBothEnds, !fromKindBad, !toKindBad]
   const pieceReq = isFtl
     ? [!!ftlService, vehicles.length > 0, uncovered.length === 0,
       ...rows.map((r) => !!r.vehicleType && r.count >= 1 && r.loadKg > 0 && r.addressIdx.length > 0), noDg]
@@ -1563,10 +1591,9 @@ export default function AddConsignmentV2({ portal = 'console' }: {
       ...(typeRule.payment ? {} : { paymentMode: '', orderAmount: null }),
       ...(ctype === 'Exchange' ? {} : { exchangeOrderNumber: '' }),
       /* how it moves (shipmentLegs) */
-      ...(route.movementType ? { movementType: route.movementType } : {}),
-      skipFirstMileInbound: route.stops.some((st) => st.key === 'from') && !!sw.skipFirstMile,
-      skipLastMile: route.stops.some((st) => st.key === 'to') && !!sw.skipLastMile,
-      directPickAndDeliver: route.directApplies && !!sw.direct,
+      ...(movementType ? { movementType } : {}),
+      /* the legs are chosen outright now — the old stop switches are never set */
+      skipFirstMileInbound: false, skipLastMile: false, directPickAndDeliver: legsDirect,
       packages: isFtl ? [] : goods.map((p) => ({
         packageId: p.packageId, packageType: p.packageTypeName || CUSTOM_PACKAGE_NAME, quantity: p.quantity,
         trackingNumber: p.trackingNumber ?? '', palletSpace: p.palletSpace ?? '', description: p.description ?? '',
@@ -1677,7 +1704,7 @@ export default function AddConsignmentV2({ portal = 'console' }: {
       return
     }
     /* a first-mile pickup request only when the route starts with a Pickup leg (FM exists only then) */
-    const auto = hasPickupLeg(route.movementType) ? growOrderActions.autoBookOnConsignment(o.id, merchantCode) : null
+    const auto = hasPickupLeg(movementType) ? growOrderActions.autoBookOnConsignment(o.id, merchantCode) : null
     toast.success(auto ? `Consignment ${o.orderNumber} created · Pickup Request ${auto.number} scheduled` : `Consignment ${o.orderNumber} created`)
     nav(base)
   }
@@ -1805,7 +1832,10 @@ export default function AddConsignmentV2({ portal = 'console' }: {
   const sourcesOf = (role: 'from' | 'to'): Source[] => {
     const main = role === 'from' ? typeRule.from : typeRule.to
     if (merchantMode) return [main === 'facilities' ? 'merchant' : main]
-    return main === 'facilities' ? ['facilities'] : [main, 'facilities']
+    /* the legs decide it (a Transfer's ends are hubs by type) */
+    if (main === 'facilities') return ['facilities']
+    if (!(role === 'from' ? fromRestricted : toRestricted)) return [main, 'facilities']
+    return (role === 'from' ? fromIsAddress : toIsAddress) ? [main] : ['facilities']
   }
   const partyFromPick = (v: string): Party | null => {
     const [kind, ref] = [v.slice(0, v.indexOf(':')), v.slice(v.indexOf(':') + 1)]
@@ -1831,7 +1861,7 @@ export default function AddConsignmentV2({ portal = 'console' }: {
     const srcs = sourcesOf(role)
     const onlyFacilities = srcs.length === 1 && srcs[0] === 'facilities'
     return <F label={onlyFacilities ? 'Facility' : 'Saved address'} value={valueOf(role, p)} searchable
-      placeholder={onlyFacilities ? 'Pick a hub' : srcs[0] === 'customers' ? 'Search customers, locations or hubs' : 'Search your addresses or hubs'}
+      placeholder={onlyFacilities ? 'Pick a hub' : `${srcs[0] === 'customers' ? 'Search customers or locations' : 'Search your addresses'}${srcs.includes('facilities') ? ' or hubs' : ''}`}
       options={srcs.flatMap(optionsOf)}
       onChange={(v) => {
         const next = partyFromPick(v)
@@ -1873,7 +1903,14 @@ export default function AddConsignmentV2({ portal = 'console' }: {
     const facility = role !== 'rto' && (role === 'from' ? fromEnd.kind === 'facility' : HUB_CODES.has(p.locationCode ?? ''))
     return (
       <div>
-        <SubTitle right={right}>{title}</SubTitle>
+        <SubTitle right={<span className="flex items-center gap-3">
+          {!merchantMode && role !== 'rto' && (
+            <span className="rounded-full bg-warm-100 px-2.5 py-0.5 text-[12px] text-ink-2">
+              {src === 'facilities' ? 'Hub' : src === 'customers' ? 'Customer address' : 'Merchant address'}
+            </span>
+          )}
+          {right}
+        </span>}>{title}</SubTitle>
         <div className={`grid items-end gap-3 ${src === 'facilities' ? '' : 'grid-cols-[minmax(0,1fr)_auto]'}`}>
           {pickerFor(role, idx)}
           {src !== 'facilities' && <button type="button" onClick={() => openAddress(role, idx, true)}
@@ -1886,80 +1923,93 @@ export default function AddConsignmentV2({ portal = 'console' }: {
           {<AddressCard party={p} missing={missingOf(p, role)} onEdit={() => openAddress(role, idx, false)}
                 tag={facility ? 'Hub' : at >= 0 ? book[at].tag ?? 'Saved' : role === 'from' && fromList ? 'Saved' : filled(p.name) ? 'New' : undefined} />}
           {editing && <p className="mt-2 text-[12px] text-ink-3">Open the address (✎ or New address) to customise its fields.</p>}
+          {((role === 'from' && fromKindBad) || (role === 'to' && idx === 0 && toKindBad)) && (
+            <ErrLine className="mt-2">{src === 'facilities' ? 'Pick a hub — this end has no pickup / delivery leg.' : 'Pick an address — this end has a pickup / delivery leg.'}</ErrLine>
+          )}
         </div>
       </div>
     )
   }
-  const [routeEdit, setRouteEdit] = useState(false)
-  const stopHubName = (code: string) => hubName(code, stores)
-  /* ONE line (owner, 2026-09-29: "this design in less space"): Route · stop — leg → stop … · movement type ·
-     Edit route. The detail (which hub serves a customer, whether a pickup request is booked) is in tooltips. */
-  const routeBlock = (
+  /* ------------------------------------------------------------ Shipment legs (owner, 2026-09-29) */
+  const hubLabel = (code: string | null | undefined) => (code ? hubName(code, stores) : 'Hub (from the address)')
+  const fromWho = typeRule.from === 'customers' ? 'the customer' : 'the merchant'
+  const toWho = typeRule.to === 'merchant' ? 'the merchant' : 'the customer'
+  const LEG_INFO: Record<LegKind, { name: string; hint: string; rail: string }> = {
+    pickup: { name: 'First Mile', hint: `Pick up from ${fromWho} and bring to hub`, rail: 'Pickup to hub' },
+    linehaul: { name: 'Line Haul', hint: 'Long trip between hubs or cities', rail: 'Long trip between hubs or cities' },
+    delivery: { name: 'Last Mile', hint: `Deliver from hub to ${toWho}`, rail: 'Hub to delivery' },
+    pickAndDeliver: { name: 'Pick & Del', hint: 'Same rider picks and delivers', rail: 'One trip, no hub' },
+  }
+  /** a leg switched off / on turns its end into a hub / an address: an end of the wrong kind is cleared */
+  const fitEnds = (nextFromAddress: boolean, nextToAddress: boolean) => {
+    if (hasAddr(sender) && (fromEnd.kind === 'facility') === nextFromAddress) {
+      setSender({ ...blankParty(), windowStart: sender.windowStart, windowEnd: sender.windowEnd }); setSenderStore(OTHER_ADDRESS)
+    }
+    if (hasAddr(receiver) && (toEnd.kind === 'facility') === nextToAddress) {
+      setReceiver({ ...blankParty(), windowStart: receiver.windowStart, windowEnd: receiver.windowEnd })
+    }
+  }
+  const setLegs = (patch: Partial<typeof legChoice>) => {
+    const next = { ...legChoice, ...patch }
+    const direct = next.mode === 'direct'
+    /* only a leg that is SET (or Direct) decides an end's kind; a following one keeps whatever is picked */
+    fitEnds(direct || next.fm === null ? (direct || fromEnd.kind !== 'facility') : next.fm,
+      direct || next.lm === null ? (direct || toEnd.kind !== 'facility') : next.lm)
+    setLegChoice(next)
+  }
+  /* the hubs it passes, in order (an end that is a hub, the stop between two legs) — shown as plain words */
+  const viaHubs: string[] = []
+  if (!legsDirect) {
+    /* only a KNOWN hub is named (owner, 2026-09-29: no "Hub (from the address)" placeholder) */
+    const add = (code: string | null | undefined) => { if (!code) return; const n = hubName(code, stores); if (viaHubs[viaHubs.length - 1] !== n) viaHubs.push(n) }
+    if (!fromIsAddress) add(fromEnd.hub)
+    if (legFm && (legLh || legLm)) add(originHub)
+    if (legLh && legLm) add(destHub)
+    if (!toIsAddress) add(toEnd.hub)
+  }
+  const viaText = legsDirect ? 'One trip, no hub' : legList.length === 0 ? 'No legs yet' : viaHubs.length ? `Via ${viaHubs.join(' → ')}` : ''
+  const pill = (on: boolean, disabled = false) => `inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[13px] transition-colors
+    ${disabled ? 'cursor-not-allowed opacity-50' : ''} ${on ? 'border-ink bg-warm-50 font-bold text-ink' : 'border-line bg-surface text-ink-2 hover:border-warm-300 hover:text-ink'}`
+  const legHints = [
+    isTransfer && { tone: 'text-ink-3', text: 'A Transfer moves hub to hub — Line Haul only.' },
+    legList.length === 0 && showErrors && { tone: 'text-danger-fg', text: 'Tick at least one leg.' },
+    sameHubBothEnds && { tone: 'text-danger-fg', text: 'Ship From and Ship To are the same hub.' },
+    !legLh && hubsDiffer && { tone: 'text-warning-fg', text: `The ends are served by different hubs (${hubLabel(originHub)} → ${hubLabel(destHub)}) — add Line Haul?` },
+    !isTransfer && legLh && !hubsDiffer && !!originHub && (legFm || legLm) && { tone: 'text-ink-3', text: `Both ends are served by ${hubLabel(originHub)} — Line Haul may not be needed.` },
+  ].filter(Boolean) as { tone: string; text: string }[]
+  /* owner, 2026-09-29: Shipment legs as ONE simple line below the two addresses — four pills (the three legs, or
+     Direct) and, on the right, the hubs it goes through in words */
+  const legsLine = (
     <div className="mt-6 border-t border-warm-200 pt-4 lg:pr-10">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px]">
-        <span className="font-bold text-ink">Shipment legs</span>
-        {route.movementType && (
-          <span className="rounded-full bg-warm-50 px-2.5 py-0.5 text-[12px] text-ink-2"
-            title={`${route.movementType}${hasPickupLeg(route.movementType) ? ' — a first-mile pickup request is booked' : ' — no first-mile pickup request'}${allDrops.length > 1 ? ' · shown for Address 1' : ''}`}>
-            {MOVEMENT_LABEL[route.movementType]}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
+        <span className="mr-2 flex items-center gap-2 text-[13px] font-bold text-ink">
+          Shipment legs<InfoTip text="How it moves. First Mile = pick up and bring to a hub (off: Ship From is a hub). Line Haul = hub to hub. Last Mile = hub to delivery (off: Ship To is a hub). Pick & Del = one trip, no hub." />
+        </span>
+        {(['pickup', 'linehaul', 'delivery'] as const).map((k) => {
+          const on = k === 'pickup' ? legFm : k === 'linehaul' ? legLh : legLm
+          const toggle = () => (legsDirect ? setLegs({ mode: 'hub', ...(k === 'pickup' ? { fm: true } : k === 'delivery' ? { lm: true } : { lh: true }) })
+            : k === 'pickup' ? setLegs({ fm: !legFm }) : k === 'delivery' ? setLegs({ lm: !legLm }) : setLegChoice((x) => ({ ...x, lh: !legLh })))
+          return (
+            <button key={k} type="button" role="checkbox" aria-checked={on} disabled={isTransfer} title={LEG_INFO[k].hint} onClick={toggle} className={pill(on, isTransfer)}>
+              {on && <Check size={13} strokeWidth={3} className="text-brand-500" />}{LEG_INFO[k].name}
+            </button>
+          )
+        })}
+        <span className="px-1 text-[12px] text-ink-3">or</span>
+        <button type="button" role="checkbox" aria-checked={legsDirect} disabled={isTransfer} title="Pick & Del — one trip, no hub; the same rider picks and delivers"
+          onClick={() => setLegs({ mode: legsDirect ? 'hub' : 'direct' })} className={pill(legsDirect, isTransfer)}>
+          {legsDirect && <Check size={13} strokeWidth={3} className="text-brand-500" />}Pick &amp; Del
+        </button>
+        {viaText && (
+          <span className="text-[12px] text-ink-3 lg:ml-auto" aria-label="Legs to be created"
+            title={movementType ? `Saved as ${movementType}${hasPickupLeg(movementType) ? ' — a first-mile pickup request is booked' : ''}` : undefined}>
+            {viaText}
           </span>
         )}
-        {route.error && <span className="text-danger-fg">{route.error}</span>}
-        {!route.error && route.points.length === 0 && <span className="text-ink-3">appear once Ship From and Ship To are chosen</span>}
-        {route.stops.length > 0 && !route.error && (
-          <button type="button" onClick={() => setRouteEdit((v) => !v)} className="ml-auto text-[13px] font-bold text-brand-500 hover:text-brand-600">
-            {routeEdit ? 'Done' : 'Edit legs'}
-          </button>
-        )}
       </div>
-      {!route.error && route.points.length > 0 && (
-        /* stations joined by their legs — a person = a customer, a building = a hub; a dashed hub is a stop
-           Edit legs can skip; the leg's name sits on its line */
-        <ol className="mt-4 flex items-start" aria-label="Shipment legs">
-          {route.points.map((pt, i) => {
-            const hub = pt.kind === 'facility'
-            const Icon = hub ? Warehouse : UserRound
-            const name = hub ? stopHubName(pt.hub ?? '') : 'Customer'
-            return (
-              <Fragment key={i}>
-                <li className="flex w-28 shrink-0 flex-col items-center text-center"
-                  title={hub ? `Hub · ${name}` : `Customer — served by ${stopHubName(pt.hub ?? '')}`}>
-                  <span className={`flex h-8 w-8 items-center justify-center rounded-full border-2 ${pt.role === 'stop'
-                    ? 'border-dashed border-ink-3 bg-surface text-ink-2' : 'border-ink bg-ink text-white'}`}>
-                    <Icon size={15} />
-                  </span>
-                  <span className="mt-1.5 line-clamp-2 text-[12px] font-bold leading-tight text-ink">{name}</span>
-                  <span className="text-[11px] text-ink-3">{i === 0 ? 'Ship From' : i === route.points.length - 1 ? 'Ship To' : 'Via'}</span>
-                </li>
-                {i < route.legs.length && (
-                  <li aria-label={LEG_LABEL[route.legs[i]]} className="relative mt-4 flex min-w-16 flex-1 items-center">
-                    <span aria-hidden className="h-0.5 flex-1 rounded-full bg-warm-300" />
-                    <ArrowRight aria-hidden size={14} className="-ml-1 shrink-0 text-warm-400" />
-                    <span className="absolute left-1/2 top-[-11px] -translate-x-1/2 whitespace-nowrap rounded-full border border-warm-200 bg-surface px-2 py-px text-[11px] font-bold text-ink-2">
-                      {LEG_LABEL[route.legs[i]]}
-                    </span>
-                  </li>
-                )}
-              </Fragment>
-            )
-          })}
-        </ol>
+      {legHints.length > 0 && (
+        <p className="mt-2 flex flex-wrap gap-x-4 text-[12px]">{legHints.map((h, i) => <span key={i} className={h.tone}>{h.text}</span>)}</p>
       )}
-      {(routeEdit || editing) && route.points.length > 0 && !route.error && (
-        <div className="mt-3 flex flex-wrap gap-x-8 gap-y-3 rounded-lg bg-warm-50 px-4 py-3">
-          {route.stops.map((st) => (
-            <SwitchField key={st.key} label={`Stop at ${stopHubName(st.hub)}`}
-              hint={st.key === 'from' ? 'Off = skip first-mile inbound' : 'Off = skip the last-mile hub'}
-              checked={!(st.key === 'from' ? sw.skipFirstMile : sw.skipLastMile)}
-              onChange={(on) => setSw(st.key === 'from' ? { skipFirstMile: !on } : { skipLastMile: !on })} />
-          ))}
-          {route.directApplies && (
-            <SwitchField label="One vehicle picks up and delivers" hint="Straight to the facility, no line haul"
-              checked={!!sw.direct} onChange={(on) => setSw({ direct: on })} />
-          )}
-        </div>
-      )}
-      {!transferOk && <ErrLine className="mt-2">A Transfer moves between two facilities — pick a hub at each end.</ErrLine>}
     </div>
   )
   const addressModal = (
@@ -2022,7 +2072,7 @@ export default function AddConsignmentV2({ portal = 'console' }: {
   const partiesSection = (
     <FormCard id="sec-parties" title="Ship From → Ship To"
       caption={ctype === 'Transfer' ? 'Stock moving between two facilities — pick a hub at each end.'
-        : merchantMode ? 'Pick a saved address or add a new one.' : 'Pick a saved address or add a new one — the route below follows from where it starts and ends.'}>
+        : merchantMode ? 'Pick a saved address or add a new one.' : 'Pick a saved address or add a new one — Shipment legs decide whether each end is an address or a hub.'}>
       <div className="grid gap-y-10 lg:grid-cols-2">
         <div className="min-w-0 lg:pr-8">
           {addressSlot('from', 0, 'Ship From')}
@@ -2055,7 +2105,7 @@ export default function AddConsignmentV2({ portal = 'console' }: {
           {(isFtl || (merchantMode && mode === 'ftl')) && <div className="mt-6"><AddMoreButton label="Add delivery address" onClick={() => setDrops((ds) => [...ds, blankParty()])} /></div>}
         </div>
       </div>
-      {!merchantMode && routeBlock}
+      {!merchantMode && legsLine}
       {addressModal}
     </FormCard>
   )
