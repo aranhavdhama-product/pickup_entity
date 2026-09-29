@@ -175,7 +175,10 @@ export default function OrdersListPage() {
   const clearAll = () => { setQ(''); setStateSel([]); setOrigin(''); setFrom(''); setTo(''); setAdv({}); setPage(1) }
 
   const rows = useMemo(() => {
-    const needle = q.trim().toLowerCase()
+    /* a comma-separated paste (an Excel column, newline-joined by SearchBox into
+       one comma-separated line) is a LIST of needles — a row matching ANY of them
+       is a match, not one big literal substring nobody's data will ever contain */
+    const needles = q.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
     const f = datePart(from), t = datePart(to)
     const states = stateSel.filter((v) => v.startsWith(ST)).map((v) => v.slice(ST.length))
     const secs = stateSel.filter((v) => v.startsWith(SEC)).map((v) => v.slice(SEC.length))
@@ -189,9 +192,10 @@ export default function OrdersListPage() {
       if (t && day > t) return false
       if (!has('Type', r.taskType) || !has('Service Type', r.serviceType) || !has('Exception', r.exception)) return false
       if (adv.Tag?.length && !adv.Tag.some((x) => r.tags.includes(x))) return false
-      if (!needle) return true
-      return [r.consignmentNumber, r.orderNumber, r.referenceNumber, r.shipToName, r.address, r.order.receiver.contactNumber, r.pickupRequestNumber]
-        .some((v) => (v ?? '').toLowerCase().includes(needle))
+      if (!needles.length) return true
+      const fields = [r.consignmentNumber, r.orderNumber, r.referenceNumber, r.shipToName, r.address, r.order.receiver.contactNumber, r.pickupRequestNumber]
+        .map((v) => (v ?? '').toLowerCase())
+      return needles.some((n) => fields.some((v) => v.includes(n)))
     })
   }, [inTab, stateSel, origin, from, to, adv, q])
 
@@ -303,6 +307,7 @@ export default function OrdersListPage() {
             <DataTable key={tab}
               columns={columns} rows={paged} rowKey="orderId" selectable
               selectionActions={(s, clear) => selectionActions(s as ShipmentRow[], clear)}
+              autoSelectId={q.trim() && rows.length === 1 ? rows[0].orderId : null}
               onRowClick={(r) => setDrawer((r as ShipmentRow).orderId)} />
             <div className="flex items-center justify-between gap-3">
               <div className="flex-1">

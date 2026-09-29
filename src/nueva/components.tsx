@@ -736,14 +736,26 @@ export type Column = {
 export type SelectionAction = { label: string; icon?: ReactNode; onClick?: () => void; disabled?: boolean }
 
 export function DataTable({
-  columns, rows, selectable, rowKey = 'id', onEdit, onRowClick, extraActions, selectionActions,
+  columns, rows, selectable, rowKey = 'id', onEdit, onRowClick, extraActions, selectionActions, autoSelectId,
 }: {
   columns: Column[]; rows: any[]; selectable?: boolean; rowKey?: string
   onEdit?: (row: any) => void; onRowClick?: (row: any) => void; extraActions?: (row: any) => ReactNode
   /** consignment-style multiselect: floating actions panel shown while rows are selected */
   selectionActions?: (selectedRows: any[], clear: () => void) => SelectionAction[]
+  /** when set (e.g. the caller's search narrowed to exactly one row), that row is
+   * selected automatically so its action panel opens with no extra click — the
+   * user can still dismiss it, which stays dismissed until this id changes. */
+  autoSelectId?: string | null
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  /* adjusted during render, not an effect — a NEW autoSelectId (a fresh single
+   * search match) forces the selection right before this render paints, but a
+   * user's manual clear() in between two renders of the SAME id is left alone. */
+  const [autoSelectedFor, setAutoSelectedFor] = useState<string | null | undefined>(undefined)
+  if (autoSelectId !== undefined && autoSelectId !== autoSelectedFor) {
+    setAutoSelectedFor(autoSelectId)
+    if (autoSelectId) setSelected(new Set([autoSelectId]))
+  }
   /** any declared width switches the grid to a fixed layout; none = unchanged */
   const sized = columns.some((c) => c.width)
   const allChecked = rows.length > 0 && selected.size === rows.length

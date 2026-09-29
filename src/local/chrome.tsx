@@ -13,7 +13,7 @@
  *
  * Nueva `Tabs` / `MenuSelect` / `DateInput` stay for `/console`.
  */
-import { useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ClipboardEvent, type ComponentType, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import {
   Calendar, CaretDown, ChevronLeft, ChevronRight, Funnel, SearchGlyph, SwapRight,
@@ -420,10 +420,22 @@ export function ClearFilters({ active, onClick }: { active: boolean; onClick: ()
 }
 
 export function SearchBox({ value, onChange, placeholder = 'Search' }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
+  /* pasting an Excel column brings newlines (and often tabs) — a plain single-line
+   * input would otherwise mash them together with no separator. Normalize that one
+   * paste into a comma-separated line; a page whose search understands multiple
+   * comma-separated terms (an OR match) reads it directly, and it's still sane,
+   * readable text everywhere else. An ordinary single-line paste is untouched. */
+  const onPaste = (e: ClipboardEvent<HTMLInputElement>) => {
+    const text = e.clipboardData.getData('text')
+    if (!/[\n\r\t]/.test(text)) return
+    e.preventDefault()
+    const items = text.split(/[\n\r\t,]+/).map((s) => s.trim()).filter(Boolean)
+    onChange(items.join(', '))
+  }
   return (
     <div className="pfp-search">
       <SearchGlyph size={16} />
-      <input value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} />
+      <input value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} onPaste={onPaste} />
     </div>
   )
 }
