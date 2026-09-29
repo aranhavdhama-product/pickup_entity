@@ -956,7 +956,8 @@ export default function AddOrderPage() {
 
   /* ---- the sections, one order regardless of order complexity ---- */
   const sections = ['sec-consignment', 'sec-ship-from-rto', 'sec-ship-to',
-    isFtl ? 'sec-vehicle' : 'sec-package', ...(isFtl ? [] : ['sec-services']), 'sec-payment']
+    isFtl ? 'sec-vehicle' : 'sec-package', ...(isFtl ? [] : ['sec-services']),
+    ...(merchant?.postpaidTerms === 'none' ? [] : ['sec-payment'])]
   const doneOf: Record<string, boolean> = {
     'sec-consignment': done(consignmentReq),
     'sec-ship-from-rto': done(fromReq) && done(rtoReq), 'sec-ship-to': done(toReq),
@@ -1011,6 +1012,9 @@ export default function AddOrderPage() {
           <F label={lbl('exchangeOrderNumber')} value={c.exchangeOrderNumber ?? ''} placeholder="eg, ABC0000" onChange={(v) => setC({ exchangeOrderNumber: v })}
             helper="Original order being exchanged" />
         )}
+        {/* declared value of the order, not the amount to collect — stays here regardless
+            of the payment method chosen below */}
+        <FNum label={lbl('orderAmount')} unit={CURRENCY} blankZero placeholder="eg, 100.22" value={c.orderAmount ?? 0} onChange={(n) => setC({ orderAmount: n || null })} />
       </Grid>
 
       {/* Handling (left) and Instructions (right), one merged block. Dedicate Truck is the
@@ -1146,11 +1150,15 @@ export default function AddOrderPage() {
           </div>
         )
       })}
-      <button type="button" onClick={() => setDrops((ds) => [...ds, blankParty()])}
-        className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-warm-300 py-3
-                   text-[13px] font-bold text-brand-500 transition-colors hover:border-brand-500 hover:bg-brand-50/40">
-        <Plus size={14} /> Add another delivery address
-      </button>
+      {/* multiple drops only make sense when a dedicated vehicle can route between them stop by
+          stop — an LTL/parcel order ships as one consignment to one address */}
+      {isFtl && (
+        <button type="button" onClick={() => setDrops((ds) => [...ds, blankParty()])}
+          className="mt-5 flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-warm-300 py-3
+                     text-[13px] font-bold text-brand-500 transition-colors hover:border-brand-500 hover:bg-brand-50/40">
+          <Plus size={14} /> Add another delivery address
+        </button>
+      )}
     </SectionCard>
   )
 
@@ -1390,45 +1398,44 @@ export default function AddOrderPage() {
     </SectionCard>
   )
 
-  /* Postpaid merchants never see the COD/Card/Wallet/Gateway picker — either nothing to
-     pay now (billed on invoice) or a purchase order to link instead. Everyone else picks
-     a method and, for Card, a saved card or fresh details; Payment Gateway's own
-     "Continue" jumps straight to checkout instead of waiting on the sticky footer. */
+  /* Invoice-billed postpaid merchants skip the Payment section entirely (excluded from
+     `sections` above) — nothing to collect at order time. PO-linked postpaid merchants get
+     the PO picker instead of the COD/Card/Wallet/Gateway method picker everyone else sees;
+     Payment Gateway's own "Continue" jumps straight to checkout instead of waiting on the
+     sticky footer. */
   const paymentSection = (
     <SectionCard id="sec-payment" title="Payment" done={doneOf['sec-payment']}
       icon={<WalletIcon size={15} className={ICON} />}
-      caption={merchant?.postpaidTerms === 'none'
-        ? 'This merchant is billed on invoice — no payment is collected for this order.'
-        : merchant?.postpaidTerms === 'po'
-          ? "Link this order to one of the merchant's purchase orders."
-          : 'Select the payment method and continue.'}>
-      {merchant?.postpaidTerms === 'none' ? (
-        <div className="rounded-md border border-line bg-warm-25 px-3.5 py-3 text-[12.5px] text-ink-3">
-          No payment method is needed — this consignment is invoiced to the merchant on their billing cycle.
-        </div>
-      ) : merchant?.postpaidTerms === 'po' ? (
-        <div className="grid gap-2">
-          {MERCHANT_PURCHASE_ORDERS.map((po) => {
-            const on = selectedPo === po.poNumber
+      caption={merchant?.postpaidTerms === 'po'
+        ? "Link this order to one of the merchant's purchase orders."
+        : 'Select the payment method and continue.'}>
+      {merchant?.postpaidTerms === 'po' ? (
+        <div className="max-w-sm">
+          <F label="Purchase Order" required searchable value={selectedPo} onChange={setSelectedPo}
+            placeholder={`Search ${MERCHANT_PURCHASE_ORDERS.length} purchase orders…`}
+            options={MERCHANT_PURCHASE_ORDERS.map((po) => ({
+              value: po.poNumber,
+              label: `${po.poNumber} — Remaining ${money(po.remainingAmount, CURRENCY)} of ${money(po.totalAmount, CURRENCY)}`
+                + (po.remainingAmount < svc.price ? ' (Insufficient)' : ''),
+            }))}
+            error={showErrors && !selectedPo ? 'Select a purchase order to create the consignment.' : undefined} />
+          {selectedPo && (() => {
+            const po = MERCHANT_PURCHASE_ORDERS.find((p) => p.poNumber === selectedPo)!
             const sufficient = po.remainingAmount >= svc.price
             return (
-              <button key={po.poNumber} type="button" onClick={() => setSelectedPo(po.poNumber)} role="radio" aria-checked={on}
-                className={`flex items-center gap-3 rounded-md border bg-surface px-3.5 py-2.5 text-left transition-colors
-                  ${on ? 'border-brand-500 bg-brand-50/30' : 'border-line text-ink-2 hover:border-warm-300'}`}>
-                {on
-                  ? <CircleDot size={15} className="shrink-0 text-brand-500" />
-                  : <span className="h-[15px] w-[15px] shrink-0 rounded-full border border-warm-300" />}
-                <div className="min-w-0 flex-1">
-                  <span className="block text-[13.5px] font-bold text-ink">{po.poNumber}</span>
-                  <span className="block text-[12px] text-ink-3">
-                    Remaining {money(po.remainingAmount, CURRENCY)} of {money(po.totalAmount, CURRENCY)}
-                  </span>
+              <div className="mt-3 rounded-md border border-line bg-warm-25 px-3.5 py-3">
+                <div className="flex items-center justify-between text-[13px]">
+                  <span className="text-ink-3">Remaining on {po.poNumber}</span>
+                  <span className="font-bold text-ink">{money(po.remainingAmount, CURRENCY)} of {money(po.totalAmount, CURRENCY)}</span>
                 </div>
-                {!sufficient && <span className="shrink-0 text-[11.5px] font-bold text-danger-fg">Insufficient</span>}
-              </button>
+                {sufficient ? (
+                  <p className="mt-1.5 text-[12px] text-success-fg">Sufficient to cover this order ({money(svc.price, CURRENCY)}).</p>
+                ) : (
+                  <p className="mt-1.5 text-[12px] text-danger-fg">Insufficient — this order exceeds the remaining balance by {money(svc.price - po.remainingAmount, CURRENCY)}.</p>
+                )}
+              </div>
             )
-          })}
-          {showErrors && !selectedPo && <p className="mt-1 text-[12.5px] text-brand-500">Select a purchase order to create the consignment.</p>}
+          })()}
         </div>
       ) : (
         <>
@@ -1450,12 +1457,6 @@ export default function AddOrderPage() {
               )
             })}
           </div>
-
-          {c.paymentMode === 'COD' && (
-            <div className="mt-4 max-w-xs">
-              <FNum label={lbl('orderAmount')} blankZero placeholder="eg, 100.22" value={c.orderAmount ?? 0} onChange={(n) => setC({ orderAmount: n || null })} />
-            </div>
-          )}
 
           {c.paymentMode === 'Card' && (
             <div className="mt-4">
@@ -1498,9 +1499,6 @@ export default function AddOrderPage() {
                 </div>
               )}
               {showErrors && !cardOk && <p className="mt-2 text-[12.5px] text-brand-500">Pick a saved card or add new card details.</p>}
-              <div className="mt-4 max-w-xs">
-                <FNum label={lbl('orderAmount')} blankZero placeholder="eg, 100.22" value={c.orderAmount ?? 0} onChange={(n) => setC({ orderAmount: n || null })} />
-              </div>
             </div>
           )}
 
