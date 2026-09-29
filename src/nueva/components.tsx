@@ -639,8 +639,8 @@ export function MultiSelect({ value, options, labels, onChange, placeholder = 'S
         className="h-10 w-full flex items-center gap-2 rounded-md border border-warm-300 bg-surface px-3 cursor-pointer
                    hover:border-warm-400 transition-colors">
         {value.length === 0
-          ? <span className="text-[13px] text-warm-400">{placeholder}</span>
-          : <span className="truncate text-[13px] text-ink">{value.length === 1 ? label(value[0]) : `${value.length} selected`}</span>}
+          ? <span className="min-w-0 flex-1 truncate whitespace-nowrap text-[13px] text-warm-400">{placeholder}</span>
+          : <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{value.length === 1 ? label(value[0]) : `${value.length} selected`}</span>}
         <ChevronDown size={15} className={`ml-auto shrink-0 text-warm-400 transition-transform ${open ? 'rotate-180' : ''}`} />
       </div>
       {value.length > 0 && (

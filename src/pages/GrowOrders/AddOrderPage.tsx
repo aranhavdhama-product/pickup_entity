@@ -1106,9 +1106,10 @@ export default function AddOrderPage() {
           dropdown falls in right beside it once it's on (a field driven by a toggle
           never appears above the toggle that triggers it), Instructions last. */}
       <SubHead label="Handling & Instructions" />
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_1fr_2fr]">
         {/* each pinned to its own column so toggling Dedicate Truck (which brings
-            Service Type in or out) never shifts Instructions sideways */}
+            Service Type in or out) never shifts Instructions sideways; Instructions
+            gets the extra width so its placeholder fits on one line */}
         {!hid('dedicateTruck') && <div className="pt-[26px] sm:col-start-1">{dedicateToggle}</div>}
         {serviceTypeField}
         {(!hid('specialInstructions') || !hid('deliveryInstructions')) && (
