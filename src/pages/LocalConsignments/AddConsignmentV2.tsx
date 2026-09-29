@@ -2314,7 +2314,10 @@ export default function AddConsignmentV2({ portal = 'console' }: {
     ], (k) => k === '__pkgId' || inMore(k), secOpen(`pkg:${i}`))
     return (
       <>
-        <SGrid cols={5}>
+        {/* owner, 2026-09-29: the package's details chevron sits IN its field row (at the end, level with the
+            inputs: label 20 + 6px gap, then centred on the 32px control) — like a SKU row's chevron */}
+        <div className="relative">
+        <SGrid cols={5} className="pr-10">
           <div title={packageTypeTitle}>
             <F label="Package Type" required value={packageValue(p, packageTypes)} options={packageTypeOpts} onChange={(v) => pickPackageType(i, v)} />
           </div>
@@ -2328,14 +2331,11 @@ export default function AddConsignmentV2({ portal = 'console' }: {
             onChange={(w) => setParcel(i, { weight: w, weightMode: 'manual' })} />
           {r.nodes}
         </SGrid>
+        <RevealToggle open={secOpen(`pkg:${i}`)} onToggle={() => toggleSec(`pkg:${i}`)} waiting={r.waiting} waitingFilled={r.waitingFilled}
+          label="package details" iconOnly className="absolute right-1 top-7" />
+        </div>
         {below}
-        {/* owner, 2026-09-29: the package's adders on ONE line — Add SKU · More package details */}
-        {(adder || (r.waiting > 0 && !editing)) && (
-          <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2">
-            {adder}
-            <RevealToggle open={secOpen(`pkg:${i}`)} onToggle={() => toggleSec(`pkg:${i}`)} waiting={r.waiting} waitingFilled={r.waitingFilled} label="package details" iconOnly />
-          </div>
-        )}
+        {adder && <div className="mt-4">{adder}</div>}
       </>
     )
   }

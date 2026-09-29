@@ -242,8 +242,8 @@ Product changes layered on the replica (deliberate departures from the live port
   for Full vehicle, which also allows extra drops). The console form's saved customisation (`fe-consignment-form-v2-rules`:
   hidden · labels · More · Required) applies to Grow too (owner, 2026-09-29), plus the Form Fields tab's Required.
   Sticky footer = the estimate · Go Back · Save for later · Continue to checkout (DRAFT_KEY → `/grow/orders/checkout`,
-  a session draft is restored on Back). Package card (both portals): Add SKU + a chevron-only "more package details"
-  on one line; a SKU's details toggle is a chevron only (words in the tooltip). The old `MerchantOrderForm` / `packageEditor` / `orderSummaryRail` are gone. Selected card = 2px brand
+  a session draft is restored on Back). Package card (both portals): a chevron-only "more package details" at the END of
+  the package's field row (level with the inputs), Add SKU on its own line below; a SKU's details toggle is a chevron only (words in the tooltip). The old `MerchantOrderForm` / `packageEditor` / `orderSummaryRail` are gone. Selected card = 2px brand
   border, no fill; segments/choices neutral (border-ink + bg-warm-50). Pricing = ONE module
   `src/growOrders/rates.ts` (`quoteLane`/`quoteService`, ESTIMATED; ₱ card for PH, $ card for the
   Chicago/US network; zone same city · region · nationwide), also used by the Rate Calculator and
