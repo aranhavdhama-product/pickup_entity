@@ -35,7 +35,7 @@ import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ChevronDown, ChevronRight, CircleDot, CircleMinus, ClipboardList, CreditCard, FileCheck,
-  Package, Package as PackageIcon, Pencil, Plus, ScanBarcode, ScanLine, Truck, Undo2, User,
+  Package, Package as PackageIcon, Pencil, Plus, ScanBarcode, Truck, Undo2, User,
   Wallet as WalletIcon, Warehouse, X,
 } from 'lucide-react'
 import { blankParty, CURRENCY } from '../../growOrders/seed'
@@ -1017,24 +1017,13 @@ export default function AddOrderPage() {
         <FNum label={lbl('orderAmount')} unit={CURRENCY} blankZero placeholder="eg, 100.22" value={c.orderAmount ?? 0} onChange={(n) => setC({ orderAmount: n || null })} />
       </Grid>
 
-      {/* Handling (left) and Instructions (right), one merged block. Dedicate Truck is the
-          FTL switch, not a minor setting, so it stays in the open; its own details
-          (Service Type, Loading Time) render below it, once it's on — a field driven by a
-          toggle should never appear above the toggle that triggers it. */}
+      {/* Handling and Instructions, one row: Dedicate Truck first, its own Service Type
+          dropdown falls in right beside it once it's on (a field driven by a toggle
+          never appears above the toggle that triggers it), Instructions last. */}
       <SubHead label="Handling & Instructions" />
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <div>
-          {!hid('dedicateTruck') && (
-            <div className="flex flex-wrap items-center gap-3">{dedicateToggle}</div>
-          )}
-          {isFtl && (
-            <div className="mt-4">
-              <Grid>
-                {serviceTypeField}
-              </Grid>
-            </div>
-          )}
-        </div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        {!hid('dedicateTruck') && <div className="pt-[26px]">{dedicateToggle}</div>}
+        {serviceTypeField}
         {(!hid('specialInstructions') || !hid('deliveryInstructions')) && (
           <Fld label="Instructions" info>
             <MultiSelect value={instructionTags} options={INSTRUCTION_OPTIONS} creatable
@@ -1182,12 +1171,6 @@ export default function AddOrderPage() {
   })
   const packageSection = (
     <div id="sec-package" className="scroll-mt-20">
-      {!hid('scannable') && (
-        <div className="mb-4">
-          <ChipToggle icon={ScanLine} label="Do you want separate labels for each package? - Yes or no"
-            checked={!!c.scannable} onChange={(v) => setC({ scannable: v })} />
-        </div>
-      )}
       <RepeatableList<Parcel>
         title="Packages" addNoun="Package" icon={<PackageIcon size={15} className={ICON} />}
         caption="Add the packages in this consignment. A package can ship as-is, or you can optionally list what's inside it."
@@ -1224,6 +1207,15 @@ export default function AddOrderPage() {
                   </Fld>
                 )}
               </div>
+
+              {/* only meaningful once a package covers more than one physical unit —
+                  with a single unit there's exactly one label anyway */}
+              {!hid('scannable') && p.quantity > 1 && (
+                <div className="mt-4">
+                  <InlineToggle label="Separate label for each unit in this package"
+                    checked={!!c.scannable} onChange={(v) => setC({ scannable: v })} />
+                </div>
+              )}
 
               {/* contents — optional, nested SKU lines scoped to this package */}
               <div className="mt-5 border-t border-line pt-4">
