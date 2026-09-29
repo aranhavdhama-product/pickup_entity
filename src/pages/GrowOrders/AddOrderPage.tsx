@@ -859,8 +859,12 @@ export default function AddOrderPage() {
   const skuReq = isFtl ? [] : skuLines.map(({ it }) => isBlankItem(it) || (filled(it.name) && it.quantity >= 1))
   /* the Services section only exists for LTL — Service Type (FTL) already picks the FTL rate */
   const carrierReq = isFtl ? [] : [!!service]
-  const paymentReq = merchant?.postpaidTerms === 'none' ? []
-    : merchant?.postpaidTerms === 'po' ? [!!selectedPo]
+  /* a CSR never collects COD/Card/Wallet/Gateway details on a merchant's behalf —
+     every CSR-created order links to a purchase order instead, regardless of the
+     target merchant's own terms. */
+  const poLinked = !!signedIn?.isCsr || merchant?.postpaidTerms === 'po'
+  const paymentReq = !poLinked && merchant?.postpaidTerms === 'none' ? []
+    : poLinked ? [!!selectedPo]
     : [!!c.paymentMode, c.paymentMode !== 'Card' || cardOk]
   const docsReq = (merchant?.requiredDocuments ?? []).map((d) => !!docs[d.code])
   const allReq = [...consignmentReq, ...fromReq, ...toReq, ...rtoReq, ...pieceReq, ...skuReq, ...carrierReq, ...paymentReq, ...docsReq]
@@ -1017,7 +1021,7 @@ export default function AddOrderPage() {
   const sections = ['sec-consignment', 'sec-ship-from-rto', 'sec-ship-to',
     isFtl ? 'sec-vehicle' : 'sec-package', ...(isFtl ? [] : ['sec-services']),
     ...((merchant?.requiredDocuments?.length ?? 0) > 0 ? ['sec-documents'] : []),
-    ...(merchant?.postpaidTerms === 'none' ? [] : ['sec-payment'])]
+    ...(!poLinked && merchant?.postpaidTerms === 'none' ? [] : ['sec-payment'])]
   const doneOf: Record<string, boolean> = {
     'sec-consignment': done(consignmentReq),
     'sec-ship-from-rto': done(fromReq) && done(rtoReq), 'sec-ship-to': done(toReq),
@@ -1491,17 +1495,18 @@ export default function AddOrderPage() {
   )
 
   /* Invoice-billed postpaid merchants skip the Payment section entirely (excluded from
-     `sections` above) — nothing to collect at order time. PO-linked postpaid merchants get
-     the PO picker instead of the COD/Card/Wallet/Gateway method picker everyone else sees;
-     Payment Gateway's own "Continue" jumps straight to checkout instead of waiting on the
-     sticky footer. */
+     `sections` above) — nothing to collect at order time. PO-linked postpaid merchants,
+     and every CSR-created order regardless of the target merchant, get the PO picker
+     instead of the COD/Card/Wallet/Gateway method picker everyone else sees; Payment
+     Gateway's own "Continue" jumps straight to checkout instead of waiting on the sticky
+     footer. */
   const paymentSection = (
     <SectionCard id="sec-payment" title="Payment" done={doneOf['sec-payment']}
       icon={<WalletIcon size={15} className={ICON} />}
-      caption={merchant?.postpaidTerms === 'po'
+      caption={poLinked
         ? "Link this order to one of the merchant's purchase orders."
         : 'Select the payment method and continue.'}>
-      {merchant?.postpaidTerms === 'po' ? (
+      {poLinked ? (
         <div className="max-w-sm">
           <F label="Purchase Order" required searchable value={selectedPo} onChange={setSelectedPo}
             placeholder={`Search ${MERCHANT_PURCHASE_ORDERS.length} purchase orders…`}
