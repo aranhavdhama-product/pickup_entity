@@ -57,10 +57,21 @@ import { hubName, inboundHubFor, INBOUND_HUBS } from '../../growOrders/hubs'
 import { usePickupLocations, useReceiverBook } from '../GrowOrders/pickupLocations'
 import { hasPickupLeg, LEG_LABEL, MOVEMENT_LABEL, routeOf, type RouteEnd } from './shipmentLegs'
 import {
-  ADDITIONAL_SERVICES, DEFAULT_FTL_SERVICE, FTL_SERVICE_CODES, PARCEL_SERVICES, SERVICE_TYPES, clearDraftKeys,
-  loadTypeOf, ftlQuoteVehicles, ftlServiceType, totalLoadKg,
+  ADDITIONAL_SERVICES, DEFAULT_FTL_SERVICE, DRAFT_KEY, FTL_SERVICE_CODES, FTL_SERVICE_TYPES, PARCEL_SERVICES, SERVICE_TYPES, VEHICLE_SPECS,
+  clearDraftKeys, loadTypeOf, ftlQuoteVehicles, ftlServiceType, setDraftSidecar, totalLoadKg, vehiclesFor,
   vehiclesOf, type ConsignmentFields, type FtlVehicle, type OrderDraft, type Parcel, type ParcelItem, type VasLine,
 } from '../../growOrders/draft'
+import { usePickupModuleConfig } from '../../config/pickupModule'
+import { hubVehicleTypes } from '../../config/vehicleConfig'
+import { autoPickupWindowFor, pickupPolicy, policyCheck, userWindowError } from '../../growOrders/pickupSlots'
+import {
+  bookableServices, chargeableKg, currencyForHub, laneReady, quoteLane, quoteService, shipFromHubOf, vasPrice as laneVasPrice,
+  vehicleRate, zoneParties,
+} from '../../growOrders/rates'
+import { SlotWindowFields } from '../LocalPickup/slotFields'
+import { packageReady } from '../GrowOrders/packageModel'
+import { windowOk as slotWindowOk } from '../GrowOrders/utils'
+import { ServiceTypeChooser, type BookingMode, type FleetVehicle } from '../GrowOrders/serviceCards'
 /* the console's field registry — pure module, read-only here */
 import { byKeyMandatory, CONSIGNMENT_FIELDS, fieldLabel, loadFieldConfig, loadFormBehavior, type FieldDef } from '../ConsignmentAdd/fieldConfig'
 
@@ -411,6 +422,10 @@ const TYPE_RULES: Record<string, { from: 'merchant' | 'customers' | 'facilities'
 }
 
 const jumpTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+/** what checkout's "Back" left in the session (Grow) */
+const readSessionDraft = (): OrderDraft | null => {
+  try { return JSON.parse(sessionStorage.getItem(DRAFT_KEY) || 'null') as OrderDraft | null } catch { return null }
+}
 
 /* -------------------------------------------------------------------- page ---- */
 /** Plain-language one-liners under the handling switches (owner copy, 2026-09-24). */
@@ -735,6 +750,8 @@ function FormCard({ id, title, caption, count, action, children }: {
    absolute helper / "Required field." line (mt-1 + 16px = 20px) — plus 4px, so a message never touches
    the next row's label: 24px. */
 const FIELD_GAPS = 'gap-x-6 gap-y-6'
+/** the handling toggles' one row (console Handling card, Grow's Handling & extras) */
+const HANDLING_ROW = 'flex flex-wrap items-center gap-x-8 gap-y-3'
 /** The console field grid — `cols` equal columns (4 default), SGrid's API with this form's gaps. */
 function SGrid({ children, cols = 4, className = '' }: { children: ReactNode; cols?: 3 | 4 | 5 | 7; className?: string }) {
   const c = { 3: 'lg:grid-cols-3', 4: 'lg:grid-cols-4', 5: 'lg:grid-cols-5', 7: 'lg:grid-cols-7' }[cols]
@@ -941,10 +958,19 @@ const saveGoodsSetting = (v: GoodsSetting) => { try { localStorage.setItem(GOODS
  * how it moves → extras. Same fields, validation and `OrderDraft` as AddOrderPage (which stays
  * the staging replica at /add), one tier only.
  */
-export default function AddConsignmentV2() {
+/** Grow (merchant portal): the carrier's / ops' fields never render — the merchant is the header ⇄, the carrier
+    allocates the carrier, ops set the Order Category, tags, loading time, vehicle, coordinates and pallet space. */
+const MERCHANT_OFF = new Set(['merchant', 'consignmentNumber', 'tags', 'totalLoadingTime', 'dedicateTruck', 'vehicleType',
+  'addrCoordinates', 'pkgPalletSpace', ...GOODS_CATEGORIES.map((g) => catKey(g.name))])
+export default function AddConsignmentV2({ portal = 'console' }: {
+  /** 'merchant' = the Grow Create Order (`/grow/orders/add`): the same form minus the carrier's and ops' features,
+      plus the lane's services with ESTIMATED rates, the pickup module's window and checkout / Save for later */
+  portal?: 'console' | 'merchant'
+} = {}) {
+  const merchantMode = portal === 'merchant'
   useEffect(() => { void loadMasters() }, [])
-  const base = '/local/consignments'
-  const prPath = (id: string) => `/local/pickup/${id}`
+  const base = merchantMode ? '/grow/orders' : '/local/consignments'
+  const prPath = (id: string) => (merchantMode ? `/grow/orders/pickups/${id}` : `/local/pickup/${id}`)
   const nav = useNavigate()
   const db = useGrowOrders()
   const masters = useMasters()
@@ -961,7 +987,10 @@ export default function AddConsignmentV2() {
   /* ?step=1|2 — QA shortcut: sample parties + identifiers + carrier prefilled, scrolled to the packages (1) / carriers (2) */
   const jump = Math.min(2, Math.max(0, Number(params.get('step')) || 0))
   const draftId = params.get('draft')
-  const saved = draftId ? orderById(draftId)?.draft ?? null : null
+  /* a saved draft; on Grow also what checkout's "Back" left in the session (this form clears it on mount) */
+  const [saved] = useState<OrderDraft | null>(() => (draftId ? orderById(draftId)?.draft ?? null
+    : merchantMode && !params.get('fromOverage') ? readSessionDraft() : null))
+  const resumeId = draftId ?? saved?.orderId ?? null
   const pr = pickupRequestById(params.get('fromPickup'))
   const [ovPrId = '', ovId = ''] = (params.get('fromOverage') ?? '').split(':')
   const ovPr = pickupRequestById(ovPrId || null)
@@ -983,16 +1012,18 @@ export default function AddConsignmentV2() {
   const [tier, setTierState] = useState<'full' | 'simplified'>(() => {
     try { return localStorage.getItem(FORM_TIER_V2_KEY) === 'simplified' ? 'simplified' : 'full' } catch { return 'full' }
   })
-  const simple = tier === 'simplified' && !editing
+  const simple = !merchantMode && tier === 'simplified' && !editing
   const setTier = (t: 'full' | 'simplified') => {
     setTierState(t)
     try { localStorage.setItem(FORM_TIER_V2_KEY, t) } catch { /* private mode */ }
     setShowErrors(false)
   }
-  const rules = editing ? draftRules : savedRules
+  /* Grow reads the ACCOUNT's consignment settings (hides + the Form Fields tab's Required), never this form's builder */
+  const merchantRules = useMemo<FormRulesV2>(() => Object.fromEntries((behavior.required ?? []).map((k) => [k, { required: true }])), [behavior])
+  const rules = merchantMode ? merchantRules : editing ? draftRules : savedRules
   const lockOf = (k: string): FieldLock => (byKeyMandatory(k) ? 'system' : FORM_LOCKED.has(k) ? 'form' : null)
   const baseHidden = (k: string) => !!fieldCfg[k]?.hidden || behavior.hidden.includes(k)
-  const ownHidden = (k: string) => !lockOf(k) && (rules[k]?.hidden ?? baseHidden(k))
+  const ownHidden = (k: string) => (merchantMode && MERCHANT_OFF.has(k)) || (!lockOf(k) && (rules[k]?.hidden ?? baseHidden(k)))
   const hiddenWith = (k: string): string | null => {
     const parent = FIELD_DEF.get(k)?.dependsOn
     return parent && (ownHidden(parent) || hiddenWith(parent)) ? parent : null
@@ -1044,7 +1075,10 @@ export default function AddConsignmentV2() {
       : stores[0]?.party ?? blankParty())
   const storeOf = (p: Party) => stores.find((s) => s.party.name === p.name && s.party.line1 === p.line1)
     ?? db.stores.find((s) => s.party.name === p.name && s.party.line1 === p.line1)
-  const [sender, setSender] = useState<Party>(firstSender)
+  const [sender, setSender] = useState<Party>(() => {
+    const p = firstSender()
+    return merchantMode && pr && !saved && !p.windowStart ? { ...p, windowStart: pr.startAt, windowEnd: pr.endAt } : p
+  })
   const [senderStore, setSenderStore] = useState(() => {
     const p = firstSender()
     const st = storeOf(p)
@@ -1069,7 +1103,7 @@ export default function AddConsignmentV2() {
       schedulingConfirmation: false, dedicateTruck: ftlFirst, totalLoadingTime: null,
       clearanceRequired: false, scannable: false, splittable: false,
       specialInstructions: '', rtoMode: RTO_MODES[0], vas: [],
-      carrier: qa ? (ftlFirst ? CARRIERS[1].code : CARRIERS[0].code) : '',
+      carrier: qa && !merchantMode ? (ftlFirst ? CARRIERS[1].code : CARRIERS[0].code) : '',
       category: [],
       ...saved?.consignment,
       ...(saved && !saved.consignment?.vas?.length && saved.additionalServices?.length
@@ -1082,7 +1116,8 @@ export default function AddConsignmentV2() {
   const [instructions] = useState(saved?.instructions ?? '')
 
   /* ---- FTL variant (as AddOrderPage) ---- */
-  const isFtl = ftlFirst
+  /* Grow books a full vehicle in its Service Type card (Shared | Full vehicle) — the goods are still entered */
+  const isFtl = ftlFirst && !merchantMode
   const [ftlService, setFtlService] = useState(saved?.ftlServiceType || pr?.ftlServiceType || DEFAULT_FTL_SERVICE)
   const [rows, setRows] = useState<VehicleRow[]>(() => {
     if (saved?.shipmentType === 'FTL') return rowsOf(vehiclesOf(saved))
@@ -1093,9 +1128,11 @@ export default function AddConsignmentV2() {
   const vehicles = useMemo(() => vehiclesOfRows(rows), [rows])
 
   /* ---- packages ---- */
+  const savedParcels = !saved ? null : saved.shipmentType === 'FTL' ? (merchantMode ? saved.sourceParcels ?? null : null) : saved.parcels ?? null
   const [parcels, setParcels] = useState<Parcel[]>(() => {
-    if (saved?.parcels?.length && saved.shipmentType !== 'FTL') return saved.parcels.map((p) => ({ ...p, packageId: p.packageId || newPackageId() }))
+    if (savedParcels?.length) return savedParcels.map((p) => ({ ...p, packageId: p.packageId || newPackageId() }))
     const p = newParcel()
+    if (merchantMode && jump && !fromOverage) return [{ ...p, weight: 2.5, l: 30, w: 20, h: 15, weightMode: 'manual' }]
     const w = fromOverage?.scan.weightKg
     return [fromOverage ? { ...p, weight: w ?? p.weight, weightMode: w ? 'manual' : 'auto', trackingNumber: fromOverage.scan.barcode } : p]
   })
@@ -1103,7 +1140,7 @@ export default function AddConsignmentV2() {
      SKU master supplies size and weight, the packages are DERIVED; PACKAGES = describe each box.
      A reopened draft is Items when every package is one SKU unit packed as itself. ---- */
   const itemsFromDraft = (): ItemLine[] | null => {
-    const ps = saved && saved.shipmentType !== 'FTL' ? saved.parcels ?? [] : []
+    const ps = savedParcels ?? []
     if (!ps.length) return null
     const asItem = ps.every((p) => {
       const it = p.items?.length === 1 ? p.items[0] : null
@@ -1114,7 +1151,7 @@ export default function AddConsignmentV2() {
   }
   /* the account's setting decides — except an overage scan / the QA shortcut (a package: its barcode is the
      tracking number) and a reopened draft (the shape it was saved in) */
-  const [draftShape] = useState<'items' | 'packages' | null>(() => (saved && saved.shipmentType !== 'FTL' ? (itemsFromDraft() ? 'items' : 'packages') : null))
+  const [draftShape] = useState<'items' | 'packages' | null>(() => (savedParcels?.length ? (itemsFromDraft() ? 'items' : 'packages') : null))
   const [lines, setLines] = useState<ItemLine[]>(() => itemsFromDraft() ?? [{ id: newPackageId(), item: blankItem() }])
   const useItems = !simple && !isFtl && !fromOverage && !jump && (draftShape ? draftShape === 'items' : goodsSetting === 'sku')
   /* packages entered as two lists (SKUs, then boxes) or as boxes with their SKUs */
@@ -1131,10 +1168,99 @@ export default function AddConsignmentV2() {
   const goods = useItems ? itemParcels : parcels
   const secure = saved?.secure ?? false
   const noDg = true
-  const [service, setService] = useState(saved && saved.shipmentType !== 'FTL' ? saved.service : SERVICES[0].code)
+  const [service, setService] = useState(() => (merchantMode
+    /* Grow: no service until the lane's cards are shown (one eligible card is preselected) */
+    ? (saved?.shipmentType === 'FTL' ? saved.ftlServiceType || saved.service : saved?.service ?? pr?.ftlServiceType ?? '')
+    : saved && saved.shipmentType !== 'FTL' ? saved.service : SERVICES[0].code))
 
   const fromList = !!senderStore && senderStore !== OTHER_ADDRESS
   const allDrops = [receiver, ...drops]
+
+  /* ---- Grow: the load type, the lane's services + ESTIMATED rates (growOrders/rates), the Ship From hub's fleet ---- */
+  const [mode, setMode] = useState<BookingMode | null>(ftlFirst ? 'ftl' : fromOverage || saved || jump ? 'ltl' : null)
+  const lm: BookingMode = mode ?? 'ltl'
+  const [counts, setCounts] = useState<Record<string, number>>(() => {
+    const vs = saved?.shipmentType === 'FTL' ? vehiclesOf(saved)
+      : pr?.shipmentType === 'FTL' ? vehiclesOf({ vehicleType: pr.vehicleType, vehicleUnit: pr.vehicleUnit, actualLoad: pr.expectedWeightKg, drops: [] }) : []
+    const out: Record<string, number> = {}
+    for (const v of vs) if (v.vehicleType) out[v.vehicleType] = (out[v.vehicleType] ?? 0) + 1
+    return out
+  })
+  const laneHub = useMemo(() => shipFromHubOf(fromList ? senderStore : null, sender), [fromList, senderStore, sender])
+  const currency = merchantMode ? currencyForHub(laneHub, sender) : CURRENCY
+  const weights = chargeableKg(goods)
+  const vasNames = (c.vas ?? []).map((v) => v.service).filter(Boolean)
+  const services = useMemo(() => bookableServices(), [])
+  const serviceHidden = isHidden('serviceType')
+  const offered = serviceHidden ? services.filter((s) => s.loadType === 'both' || s.loadType === lm).slice(0, 1) : services
+  const laneOk = laneReady(sender) && allDrops.every(laneReady)
+  const weightOk = goods.length > 0 && goods.every(packageReady)
+  const ready = laneOk && weightOk
+  const fleet: FleetVehicle[] = useMemo(() => {
+    if (!merchantMode || !laneHub) return []
+    const ftlCat = FTL_SERVICE_TYPES.find((t) => t.code === service)
+    const fits = (name: string) => !ftlCat || ftlCat.vehicles.some((v) => name.startsWith(v))
+    let list = hubVehicleTypes(laneHub).filter((v) => fits(v.name))
+    if (!list.length) list = vehicleTypesFor(masters.vehicleTypes, laneHub, service || null).filter((v) => fits(v.name))
+    if (!list.length && ftlCat) list = vehiclesFor(ftlCat.code).map((v) => ({ code: v.type, name: v.type, payloadKg: v.payloadKg, capacity: v.capacity }))
+    const one = (code: string) => (laneReady(sender) && laneReady(receiver) && service
+      ? quoteService({ code: service, name: service }, { from: sender, to: receiver, parcels: [], mode: 'ftl', currency, vehicles: [{ vehicleType: code, actualLoadKg: 0, addressIdx: [0] }] }).net
+      : vehicleRate(code, currency))
+    /* the booking stores the CATALOGUE type ("8 Ton Truck"); the card shows the hub's own name */
+    const catalogue = (name: string) => VEHICLE_SPECS.map((x) => x.type).filter((t) => name.startsWith(t)).sort((a, b) => b.length - a.length)[0] ?? name
+    const seen = new Set<string>()
+    return list.map((v) => ({ ...v, code: catalogue(v.name) })).filter((v) => (seen.has(v.code) ? false : (seen.add(v.code), true)))
+      .map((v) => ({ code: v.code, name: v.name, payloadKg: v.payloadKg, capacity: v.capacity, rate: one(v.code) }))
+  }, [merchantMode, laneHub, service, masters.vehicleTypes, currency, sender, receiver])
+  const fleetNote = laneHub ? `Vehicles configured at ${hubName(laneHub, stores) || laneHub}. Rates per vehicle for this route.` : ''
+  const mVehicles: FtlVehicle[] = useMemo(() => {
+    const chosen = fleet.flatMap((v) => Array.from({ length: counts[v.code] ?? 0 }, () => v.code))
+    const per = chosen.length ? weights.chargeable / chosen.length : 0
+    const addressIdx = allDrops.map((_, i) => i)
+    return chosen.map((vehicleType) => ({ vehicleType, actualLoadKg: Math.round(per * 100) / 100, addressIdx }))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fleet, counts, weights.chargeable, allDrops.length])
+  const vehicleLine = [...new Set(mVehicles.map((v) => v.vehicleType))]
+    .map((t) => `${mVehicles.filter((v) => v.vehicleType === t).length} × ${t}`).join(', ')
+  const quotes = !merchantMode || !mode ? [] : !ready
+    /* not priced yet: the cards still show, with the service's own transit days and no rate */
+    ? quoteLane({ ...zoneParties('local'), parcels: [], mode: lm, currency }, offered)
+    : quoteLane({
+      from: sender, to: receiver, drops, parcels: goods, mode: lm, currency, vas: vasNames,
+      vehicles: mode === 'ftl' ? (mVehicles.length ? mVehicles : fleet.slice(0, 1).map((v) => ({ vehicleType: v.code, actualLoadKg: weights.chargeable, addressIdx: [0] }))) : undefined,
+    }, offered)
+  /* one eligible service = preselected; a service the lane / mode no longer offers is dropped */
+  const selected = !ready ? '' : quotes.some((q) => q.code === service) ? service : quotes.length === 1 ? quotes[0].code : ''
+  const quote = quotes.find((q) => q.code === selected) ?? null
+  const ftlOk = mode !== 'ftl' || mVehicles.length > 0
+  /* a new load type swaps the card list and drops the chosen service */
+  const changeMode = (m: BookingMode) => { if (m !== mode) setService(''); setMode(m); setC({ dedicateTruck: m === 'ftl' }) }
+  const setCount = (code: string, n: number) => setCounts((cs) => ({ ...cs, [code]: n }))
+
+  /* ---- Grow: the pickup module decides the pickup window (owner, 2026-09-25): off → none · manual → optional
+     ("schedule later") · auto + ask the shipper → required · auto without asking → the computed booking is shown ---- */
+  const pickupCfg = usePickupModuleConfig()
+  const pickupState: 'off' | 'manual' | 'auto-ask' | 'auto-rule' = !merchantMode || !pickupCfg.enabled ? 'off'
+    : pickupCfg.mode !== 'auto' ? 'manual' : pickupCfg.autoPickup.userSelectsWindow ? 'auto-ask' : 'auto-rule'
+  const askWindow = pickupState === 'auto-ask'
+  const pickupPol = useMemo(() => pickupPolicy(merchantCode, {
+    pickupLocationCode: fromList ? senderStore : null, hubCode: laneReady(receiver) ? inboundHubFor(receiver) : null,
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- pickupCfg: re-read when the module settings change
+  }), [merchantCode, fromList, senderStore, receiver.city, receiver.state, pickupCfg])
+  const slotOk = useMemo(() => {
+    const check = policyCheck(pickupPol)
+    const now = new Date()
+    return (w: { startAt: string; endAt: string }) => slotWindowOk(w.startAt, w.endAt) && check(w)
+      && (!askWindow || !userWindowError(w.startAt, now, pickupPol, pickupCfg.autoPickup))
+  }, [pickupPol, askWindow, pickupCfg.autoPickup])
+  const windowErr = askWindow && sender.windowStart ? userWindowError(sender.windowStart, new Date(), pickupPol, pickupCfg.autoPickup) : null
+  const hasWindow = filled(sender.windowStart) && filled(sender.windowEnd)
+  const autoWin = useMemo(() => (pickupState === 'auto-rule'
+    ? autoPickupWindowFor(new Date(), pickupPol, pickupCfg.autoPickup, null) : null), [pickupState, pickupPol, pickupCfg.autoPickup])
+  const autoRuleText = pickupCfg.autoPickup.dateRule === 'same-day' ? `same day, before ${pickupCfg.sameDayCutoff}`
+    : pickupCfg.autoPickup.dateRule === 'days-after-order'
+      ? `${pickupCfg.autoPickup.daysAfterOrder} day${pickupCfg.autoPickup.daysAfterOrder === 1 ? '' : 's'} after the order is created`
+      : 'next business day'
 
 
   const fromPr = pr && isFtl ? pr : undefined
@@ -1204,7 +1330,7 @@ export default function AddConsignmentV2() {
      = AddOrderPage's Regular required set + the builder's "required" rules (only for shown fields) */
   const needOk = (k: string, ok: boolean) => (need(k) ? [ok] : [])
   const str = (v: unknown) => (v == null ? '' : String(v))
-  const consignmentReq = [filled(effectiveOrder), filled(effectiveRef), !!c.consignmentType, filled(c.shipByDate), !!merchant,
+  const consignmentReq = [filled(effectiveOrder), filled(effectiveRef), !!c.consignmentType, filled(c.shipByDate), ...(merchantMode ? [] : [!!merchant]),
     ...needOk('consignmentNumber', filled(c.consignmentNumber)),
     /* an Exchange names the order it exchanges (owner, 2026-09-29: fields follow the type) */
     ...(!simple && ctype === 'Exchange' && !hid('exchangeOrderNumber') ? [filled(c.exchangeOrderNumber)] : []),
@@ -1232,11 +1358,13 @@ export default function AddConsignmentV2() {
   }
   /* the pickup / delivery window lives on the card, not in the address */
   const windowOk = (p: Party) => !need('addrWindow') || (filled(p.windowStart) && filled(p.windowEnd))
-  const fromReq = [missingOf(sender, 'from').length === 0, windowOk(sender)]
+  const fromReq = [missingOf(sender, 'from').length === 0,
+    /* Grow: the pickup window follows the pickup module (asked only when manual, required when auto asks) */
+    ...(!merchantMode || pickupState === 'manual' ? [windowOk(sender)] : []), ...(askWindow ? [hasWindow, !windowErr] : [])]
   const toReq = allDrops.flatMap((d) => [missingOf(d, 'to').length === 0, windowOk(d)])
   const rtoReq = simple || !typeRule.rto || c.rtoMode === RTO_MODES[0] ? [true] : [missingOf(rto, 'rto').length === 0]
   /* the two ends must make a route (not the same hub twice; a Transfer = two facilities) */
-  const routeReq = [!route.error, transferOk]
+  const routeReq = merchantMode ? [] : [!route.error, transferOk]
   const pieceReq = isFtl
     ? [!!ftlService, vehicles.length > 0, uncovered.length === 0,
       ...rows.map((r) => !!r.vehicleType && r.count >= 1 && r.loadKg > 0 && r.addressIdx.length > 0), noDg]
@@ -1253,11 +1381,14 @@ export default function AddConsignmentV2() {
   const vasReq = simple || isHidden('vas') ? [] : (c.vas ?? []).map(vasOk)
   /* Items mode needs at least one SKU picked (a blank line is ignored) */
   const goodsReq = useItems && !typeRule.goodsOptional ? [itemParcels.length > 0] : []
-  const carrierReq = [!!c.carrier]
+  const carrierReq = merchantMode ? [] : [!!c.carrier]
   /* owner, 2026-09-29: Vehicle Type is optional; Service Type is required */
   const vehicleReq: boolean[] = []
-  const serviceReq = [...vehicleReq, !!(isFtl ? ftlService : service), ...needOk('labelFormat', !!c.labelFormat),
-    ...needOk('totalLoadingTime', (c.totalLoadingTime ?? 0) > 0)]
+  const serviceReq = merchantMode
+    /* Grow: a load type, a priced service card and (full vehicle) at least one vehicle */
+    ? [!!mode, !!quote, ftlOk, ...needOk('labelFormat', !!c.labelFormat)]
+    : [...vehicleReq, !!(isFtl ? ftlService : service), ...needOk('labelFormat', !!c.labelFormat),
+      ...needOk('totalLoadingTime', (c.totalLoadingTime ?? 0) > 0)]
   const handlingReq = needOk('tags', (c.tags ?? []).length > 0)
   const extrasReq = [...vasReq, ...needOk('specialInstructions', filled(c.specialInstructions))]
   const allReq = [...consignmentReq, ...serviceReq, ...fromReq, ...toReq, ...rtoReq, ...routeReq, ...goodsReq, ...pieceReq, ...skuReq,
@@ -1370,7 +1501,7 @@ export default function AddConsignmentV2() {
   }, [dictated, listKey, autoKey, stores])
 
   useEffect(() => { clearDraftKeys() }, [])
-  const jumpTarget = jump === 1 ? (isFtl ? 'sec-vehicle' : 'sec-packages') : jump === 2 ? 'sec-carrier' : null
+  const jumpTarget = jump === 1 ? (isFtl ? 'sec-vehicle' : 'sec-packages') : jump === 2 ? (merchantMode ? 'sec-service' : 'sec-carrier') : null
   useEffect(() => {
     if (!jumpTarget) return
     const t = setTimeout(() => document.getElementById(jumpTarget)?.scrollIntoView({ block: 'start' }), 150)
@@ -1422,7 +1553,52 @@ export default function AddConsignmentV2() {
     formMode: simple ? 'simplified' : 'full',
   })
 
-  const backTo = fromPr ? prPath(fromPr.id) : fromOverage ? prPath(fromOverage.pr.id) : base
+  /* Grow's OrderDraft: the lane's service + ESTIMATED rate + currency, the full-vehicle shape with its packages as
+     sourceParcels, the signed-in merchant recorded silently; the window only where the pickup module asks for one */
+  const buildMerchantDraft = (): OrderDraft => {
+    const ftl = mode === 'ftl'
+    const units = mVehicles.length
+    const load = mVehicles.reduce((n, v) => n + v.actualLoadKg, 0)
+    const svcCode = selected || service
+    const cleanParcels = goods.map((p) => ({ ...p, items: (p.items ?? []).filter((it) => !isBlankItem(it)), itemInfo: itemInfoOf(p) }))
+    const from = fromList ? { ...sender, locationCode: senderStore } : sender
+    return {
+      orderId: resumeId ?? undefined,
+      storeCode: draftStoreCode,
+      sender: (pickupState === 'manual' || askWindow) && hasWindow ? from : { ...from, windowStart: '', windowEnd: '' },
+      receiver, drops, shipmentType: ftl ? 'FTL' : 'Parcel',
+      ...(ftl
+        ? { vehicleType: mVehicles[0]?.vehicleType ?? '', vehicleUnit: units, actualLoad: load, ftlServiceType: svcCode, vehicles: mVehicles, sourceParcels: cleanParcels }
+        : { vehicleType: '', vehicleUnit: 0, actualLoad: 0 }),
+      additionalServices: vasNames,
+      /* a full vehicle keeps the one synthetic FTL line every reader expects */
+      parcels: ftl
+        ? [{ cargoType: 'FTL', itemInfo: [svcCode, ...mVehicles.map((v) => v.vehicleType), ...vasNames].join(' · '), quantity: Math.max(1, units), weight: load / Math.max(1, units), l: 120, w: 100, h: 150 }]
+        : cleanParcels,
+      authority: saved?.authority || 'Leave at the door', instructions, secure,
+      service: svcCode, rate: quote?.net ?? 0, etaDays: quote?.days ?? 0, currency,
+      consignment: {
+        ...c,
+        dedicateTruck: ftl, carrier: '', category: [], tags: [], totalLoadingTime: null,
+        orderNumber: effectiveOrder.trim(), referenceNumber: effectiveRef.trim(),
+        consignmentNumber: c.consignmentNumber?.trim() || effectiveRef.trim(),
+        merchantCode: merchant?.code ?? null, merchantName: merchant?.name ?? '',
+        rto: typeRule.rto && c.rtoMode === RTO_MODES[1] ? rto : null,
+        ...(typeRule.rto ? {} : { rtoMode: RTO_MODES[0] }),
+        ...(typeRule.payment ? {} : { paymentMode: '', orderAmount: null }),
+        ...(ctype === 'Exchange' ? {} : { exchangeOrderNumber: '' }),
+        packages: ftl ? [] : goods.map((p) => ({
+          packageId: p.packageId, packageType: p.packageTypeName || CUSTOM_PACKAGE_NAME, quantity: p.quantity,
+          trackingNumber: p.trackingNumber ?? '', palletSpace: '', description: p.description ?? '',
+        })),
+      },
+      formMode: 'full',
+    }
+  }
+
+  const backTo = merchantMode
+    ? (pr ? prPath(pr.id) : fromOverage ? prPath(fromOverage.pr.id) : draftId ? '/grow/orders?tab=drafts' : '/grow/orders')
+    : fromPr ? prPath(fromPr.id) : fromOverage ? prPath(fromOverage.pr.id) : base
 
 
   /* ---- the sections, in dependency order. Parcel: the packages come before Service (Load type and
@@ -1432,7 +1608,7 @@ export default function AddConsignmentV2() {
   const handlingChipsVisible = GOODS_CATEGORIES.some(({ name }) => !hid(catKey(name)))
   const handlingTogglesVisible = !hid('scannable') || !hid('splittable') || !hid('clearanceRequired') || !hid('tags')
   const handlingVisible = handlingChipsVisible || handlingTogglesVisible
-  const sections = simple ? ['sec-consignment', 'sec-parties', isFtl ? 'sec-vehicle' : 'sec-packages', 'sec-carrier'] : isFtl
+  const sections = merchantMode ? ['sec-consignment', 'sec-parties', 'sec-packages', 'sec-extras', 'sec-service'] : simple ? ['sec-consignment', 'sec-parties', isFtl ? 'sec-vehicle' : 'sec-packages', 'sec-carrier'] : isFtl
     ? ['sec-consignment', 'sec-parties', 'sec-service', 'sec-vehicle', ...(handlingVisible ? ['sec-handling'] : []), 'sec-carrier']
     : ['sec-consignment', 'sec-parties', 'sec-packages', ...(handlingVisible ? ['sec-handling'] : []), 'sec-service', 'sec-carrier']
   const doneOf: Record<string, boolean> = {
@@ -1444,6 +1620,7 @@ export default function AddConsignmentV2() {
     /* owner, 2026-09-29: Service and Instructions & services are ONE card */
     'sec-service': done(serviceReq) && done(extrasReq),
     'sec-carrier': done(carrierReq),
+    ...(merchantMode ? { 'sec-extras': done(extrasReq), 'sec-service': done(serviceReq) } : {}),
   }
 
   const proceed = () => {
@@ -1453,6 +1630,13 @@ export default function AddConsignmentV2() {
       setShowErrors(true)
       const first = sections.find((s) => !doneOf[s])
       if (first) setTimeout(() => jumpTo(first), 60)
+      return
+    }
+    if (merchantMode) {
+      /* Grow: the booking goes to checkout (payment), which creates the order */
+      sessionStorage.setItem(DRAFT_KEY, JSON.stringify(buildMerchantDraft()))
+      setDraftSidecar({ pickupId: pr?.id ?? null, overage: fromOverage ? { prId: fromOverage.pr.id, overageId: fromOverage.scan.id } : null })
+      nav('/grow/orders/checkout')
       return
     }
     const o = growOrderActions.saveDraft(buildDraft(), draftId ?? undefined)
@@ -1469,6 +1653,13 @@ export default function AddConsignmentV2() {
     nav(base)
   }
 
+  const saveForLater = () => {
+    const o = growOrderActions.saveDraft(buildMerchantDraft(), resumeId ?? undefined)
+    clearDraftKeys()
+    toast.success(`Order ${o.orderNumber} saved to Drafts`)
+    nav('/grow/orders?tab=drafts')
+  }
+
   /* ------------------------------------------------------------ 1 · Consignment details */
   const err = (bad: boolean) => (bad ? 'Required field.' : undefined)
   const categories = c.category ?? []
@@ -1477,11 +1668,11 @@ export default function AddConsignmentV2() {
     setC({ category: on ? [...categories.filter((x) => x !== name), name] : categories.filter((x) => x !== name) })
   const consignmentSection = (
     <FormCard id="sec-consignment" title="Consignment details"
-      caption="Who it is for, how it is identified, its type, when it ships and how it is paid.">
+      caption={merchantMode ? 'How it is identified, its type, when it ships and how it is paid.' : 'Who it is for, how it is identified, its type, when it ships and how it is paid.'}>
       {(() => {
         const r = revealEntries([
           /* Merchant first: it decides the Ship From addresses and the package presets below */
-          [null, <F key="me" fieldKey="merchant" label="Merchant" required value={merchant?.code ?? ''} placeholder="eg, ELEX"
+          !merchantMode && [null, <F key="me" fieldKey="merchant" label="Merchant" required value={merchant?.code ?? ''} placeholder="eg, ELEX"
             options={masters.merchants.map((m) => ({ value: m.code, label: m.name }))} error={err(!merchant)}
             onChange={(v) => setMerchantCode(v || null)} />],
           idPref !== 'referenceNumber' && [null, <F key="on" fieldKey="orderNumber" label={lbl('orderNumber')} required value={c.orderNumber ?? ''} placeholder="eg, ABC0001"
@@ -1492,7 +1683,8 @@ export default function AddConsignmentV2() {
             helper={idPref === 'referenceNumber' ? `${lbl('orderNumber')} is copied from this.` : undefined} />],
           !hid('consignmentNumber') && ['consignmentNumber', <F key="cn" fieldKey="consignmentNumber" label={lbl('consignmentNumber')} value={c.consignmentNumber ?? ''} placeholder="eg, 0001"
             onChange={(v) => setC({ consignmentNumber: v })} />, filled(c.consignmentNumber)],
-          [null, <F key="ct" fieldKey="consignmentType" label={lbl('consignmentType')} required value={ctype} options={opts(CONSIGNMENT_TYPES)} onChange={changeType} />],
+          [null, <F key="ct" fieldKey="consignmentType" label={lbl('consignmentType')} required value={ctype}
+            options={opts(merchantMode ? CONSIGNMENT_TYPES.filter((t) => t !== 'Transfer') : CONSIGNMENT_TYPES)} onChange={changeType} />],
           [null, <F key="sb" fieldKey="shipByDate" label={lbl('shipByDate')} required type="date" value={c.shipByDate ?? ''} error={err(!filled(c.shipByDate))} onChange={(d) => setC({ shipByDate: d })} />],
           !hid('exchangeOrderNumber') && (ctype === 'Exchange' || editing) && ['exchangeOrderNumber',
             <F key="ex" fieldKey="exchangeOrderNumber" label={lbl('exchangeOrderNumber')} required={ctype === 'Exchange'} value={c.exchangeOrderNumber ?? ''} placeholder="eg, ABC0000"
@@ -1501,7 +1693,7 @@ export default function AddConsignmentV2() {
           !hid('paymentMode') && (typeRule.payment || editing) && ['paymentMode', <F key="pm" fieldKey="paymentMode" label={lbl('paymentMode')} value={c.paymentMode ?? ''} placeholder="eg, Prepaid"
             options={opts(PAYMENT_MODES)} onChange={(v) => setC({ paymentMode: v })} />, !!c.paymentMode],
           !hid('orderAmount') && (typeRule.payment || editing) && ['orderAmount', <FNum key="oa" fieldKey="orderAmount" label={c.paymentMode === 'COD' ? 'Amount to collect (COD)' : lbl('orderAmount')} blankZero
-            placeholder="eg, 100.22" value={c.orderAmount ?? 0} onChange={(n) => setC({ orderAmount: n || null })} />, (c.orderAmount ?? 0) > 0],
+            placeholder="eg, 100.22" unit={merchantMode ? currency : undefined} value={c.orderAmount ?? 0} onChange={(n) => setC({ orderAmount: n || null })} />, (c.orderAmount ?? 0) > 0],
         ], inMore, secOpen('sec-consignment'))
         return <>
           <SGrid>{r.nodes}</SGrid>
@@ -1583,6 +1775,7 @@ export default function AddConsignmentV2() {
   /* the type decides each end's list; facilities are always offered (hub → customer, customer → hub) */
   const sourcesOf = (role: 'from' | 'to'): Source[] => {
     const main = role === 'from' ? typeRule.from : typeRule.to
+    if (merchantMode) return [main === 'facilities' ? 'merchant' : main]
     return main === 'facilities' ? ['facilities'] : [main, 'facilities']
   }
   const partyFromPick = (v: string): Party | null => {
@@ -1767,14 +1960,44 @@ export default function AddConsignmentV2() {
       </Modal>
     </>
   )
+  const fmtWin = (w: { startAt: string; endAt: string }) => {
+    const d = new Date(`${w.startAt.slice(0, 10)}T00:00`)
+    return `${d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} · ${w.startAt.slice(11, 16)}–${w.endAt.slice(11, 16)}`
+  }
+  /* Grow: the pickup window under Ship From, as the pickup module says */
+  const merchantPickupWindow = pickupState === 'auto-rule' ? (autoWin && (
+    <p className="mt-5 flex flex-wrap items-center gap-x-1.5 rounded-lg bg-warm-50 px-4 py-3 text-[13px] text-ink-2">
+      <b className="text-ink">Pickup is booked automatically</b>
+      <span>· {fmtWin(autoWin)} ({autoRuleText})</span>
+      {pickupCfg.autoPickup.slotConfirmation && <span>· you will be asked to confirm the slot</span>}
+    </p>
+  )) : pickupState === 'auto-ask' || (pickupState === 'manual' && !hid('addrWindow')) ? (
+    <div className="mt-5">
+      <div className="mb-2 flex items-center gap-3">
+        <span className="text-[13px] text-ink">
+          {askWindow || need('addrWindow') ? <>Pickup window<span className="text-danger-fg">&nbsp;*</span></> : 'Pickup window (optional)'}
+        </span>
+        {pickupState === 'manual' && hasWindow && !need('addrWindow') && (
+          <button type="button" onClick={() => setSender((x) => ({ ...x, windowStart: '', windowEnd: '' }))}
+            className="text-[12px] font-bold text-brand-500 hover:text-brand-600">Clear</button>
+        )}
+      </div>
+      <SlotWindowFields startAt={sender.windowStart ?? ''} endAt={sender.windowEnd ?? ''} policy={pickupPol} ok={slotOk}
+        onChange={(w) => setSender((x) => ({ ...x, windowStart: w.startAt, windowEnd: w.endAt }))}
+        error={windowErr || (showErrors && (askWindow || need('addrWindow')) && !hasWindow ? 'Choose a pickup date and time.' : null)} />
+      <p className="mt-1 text-[12px] text-ink-3">{askWindow
+        ? `Booked automatically in this window · up to ${pickupCfg.bookingHorizonDays} days ahead · same-day cut-off ${pickupCfg.sameDayCutoff}`
+        : 'Leave empty to schedule the pickup later from Shipments'}</p>
+    </div>
+  ) : null
   const partiesSection = (
     <FormCard id="sec-parties" title="Ship From → Ship To"
       caption={ctype === 'Transfer' ? 'Stock moving between two facilities — pick a hub at each end.'
-        : 'Pick a saved address or add a new one — the route below follows from where it starts and ends.'}>
+        : merchantMode ? 'Pick a saved address or add a new one.' : 'Pick a saved address or add a new one — the route below follows from where it starts and ends.'}>
       <div className="grid gap-y-10 lg:grid-cols-2">
         <div className="min-w-0 lg:pr-8">
           {addressSlot('from', 0, 'Ship From')}
-          {windowCells('from', 0)}
+          {merchantMode ? merchantPickupWindow : windowCells('from', 0)}
           {typeRule.rto && (
             <div className="mt-5">
               <InlineSwitch label="RTO address same as Ship From address" title="If it can't be delivered, it comes back to the Ship From address"
@@ -1800,10 +2023,10 @@ export default function AddConsignmentV2() {
             </Configurable></div>
           )}
           {/* multi-drop is a dedicated-truck booking: every address needs a vehicle */}
-          {isFtl && <div className="mt-6"><AddMoreButton label="Add delivery address" onClick={() => setDrops((ds) => [...ds, blankParty()])} /></div>}
+          {(isFtl || (merchantMode && mode === 'ftl')) && <div className="mt-6"><AddMoreButton label="Add delivery address" onClick={() => setDrops((ds) => [...ds, blankParty()])} /></div>}
         </div>
       </div>
-      {routeBlock}
+      {!merchantMode && routeBlock}
       {addressModal}
     </FormCard>
   )
@@ -1835,7 +2058,7 @@ export default function AddConsignmentV2() {
         })}
       </div>}
       {/* row 2 — how the boxes travel, and their tags; every control on one baseline */}
-      {handlingTogglesVisible && <div className={`${handlingChipsVisible ? 'mt-5' : ''} flex flex-wrap items-center gap-x-8 gap-y-3`}>
+      {handlingTogglesVisible && <div className={`${handlingChipsVisible ? 'mt-5' : ''} ${HANDLING_ROW}`}>
         {!hid('scannable') && (
           <Configurable fieldKey="scannable">
             <InlineSwitch label={custom('scannable', 'Scannable', 'Barcode on every box')} title={SWITCH_HINTS.scannable}
@@ -2228,6 +2451,9 @@ export default function AddConsignmentV2() {
       className="lg:pr-10" value={c.specialInstructions ?? ''} placeholder="eg, Call the customer 30 minutes before arriving"
       onChange={(v) => setC({ specialInstructions: v })} />, filled(c.specialInstructions)],
   ], inMore, secOpen('sec-service'))
+  const vasOpts = merchantMode
+    ? VAS_SERVICES.map((v) => ({ value: v, label: laneVasPrice(v, currency) ? `${v} · ${money(laneVasPrice(v, currency), currency)}` : v }))
+    : VAS_OPTS
   const VAS_COLS = 'grid grid-cols-[120px_minmax(0,1.6fr)_minmax(0,1.6fr)_112px_minmax(0,1.2fr)_32px] items-start gap-x-3'
   /* owner, 2026-09-29: a block whose fields are all hidden leaves no divider and no space */
   const extrasVisible = extrasReveal.nodes.length > 0 || extrasReveal.waiting > 0 || !hid('vas')
@@ -2272,8 +2498,8 @@ export default function AddConsignmentV2() {
                                 options={goods.map((g) => g.packageId ?? '').filter(Boolean)}
                                 labels={(x) => { const n = goods.findIndex((g) => g.packageId === x); const g = goods[n]; return g ? `Package ${n + 1} · ${g.packageTypeName === CUSTOM_PACKAGE_NAME ? (g.items?.[0]?.name || 'Custom') : g.packageTypeName} × ${g.quantity}` : x }}
                                 onChange={(x) => setVas(i, { packageId: x })} />}
-                        <MenuSelect value={v.service} placeholder="Pick a service" searchable options={VAS_OPTS.map((o) => o.value)}
-                          labels={(x) => VAS_OPTS.find((o) => o.value === x)?.label ?? x} onChange={(x) => setVas(i, { service: x })} />
+                        <MenuSelect value={v.service} placeholder="Pick a service" searchable options={vasOpts.map((o) => o.value)}
+                          labels={(x) => vasOpts.find((o) => o.value === x)?.label ?? x} onChange={(x) => setVas(i, { service: x })} />
                         <NumBox integer blankZero placeholder="0" unit="min" value={v.serviceTimeMin} onChange={(n) => setVas(i, { serviceTimeMin: n })} />
                         <Input value={v.remark} placeholder="eg, Second floor" onChange={(x) => setVas(i, { remark: x })} />
                         <button type="button" aria-label={`Remove service ${i + 1}`} title="Remove" onClick={() => setC({ vas: (c.vas ?? []).filter((_, j) => j !== i) })}
@@ -2348,6 +2574,41 @@ export default function AddConsignmentV2() {
         </div>
         {!c.carrier && <ErrLine className="mt-3">Pick a carrier.</ErrLine>}
       </div>
+    </FormCard>
+  )
+
+  /* ============================================================ Grow (merchant): Handling & extras · Service Type */
+  const merchantExtrasSection = (
+    <FormCard id="sec-extras" title="Handling & extras" caption="How the boxes travel, the label, a note for the carrier and any extra services.">
+      {handlingTogglesVisible && (
+        <div className={HANDLING_ROW}>
+          {!hid('scannable') && <InlineSwitch label={custom('scannable', 'Scannable', 'Barcode on every box')} title={SWITCH_HINTS.scannable}
+            checked={!!c.scannable} onChange={(v) => setC({ scannable: v })} />}
+          {!hid('splittable') && <InlineSwitch label="Can be delivered in parts" title={SWITCH_HINTS.splittable}
+            checked={!!c.splittable} onChange={(v) => setC({ splittable: v })} />}
+          {!hid('clearanceRequired') && <InlineSwitch label={lbl('clearanceRequired')} title={SWITCH_HINTS.clearanceRequired}
+            checked={!!c.clearanceRequired} onChange={(v) => setC({ clearanceRequired: v })} />}
+        </div>
+      )}
+      {(svcReveal.nodes.length > 0 || svcReveal.waiting > 0) && (
+        <div className={handlingTogglesVisible ? 'mt-6' : ''}>
+          <SGrid>{svcReveal.nodes}</SGrid>
+          <RevealToggle open={secOpen('sec-service')} onToggle={() => toggleSec('sec-service')} waiting={svcReveal.waiting} waitingFilled={svcReveal.waitingFilled} className="mt-4" />
+        </div>
+      )}
+      {extrasSection}
+    </FormCard>
+  )
+  const merchantServiceSection = (
+    <FormCard id="sec-service" title="Service Type"
+      caption={mode ? 'Services and estimated rates for this route — pick one.' : 'Choose how it travels — the services for that option appear below.'}>
+      <ServiceTypeChooser ready={ready} mode={mode} onMode={changeMode} modeLocked={!!fromOverage || pr?.shipmentType === 'FTL'}
+        quotes={quotes} selected={selected} onSelect={setService} currency={currency} fleet={fleet} counts={counts} onCount={setCount}
+        fleetNote={fleetNote} showErrors={showErrors} serviceLocked={serviceHidden} />
+      {showErrors && !ready && (
+        <ErrLine className="mt-3">Add {[!laneReady(sender) && 'a Ship From address', !allDrops.every(laneReady) && 'a Ship To address',
+          !weightOk && 'a weight or size for every package'].filter(Boolean).join(', ')} to see the services.</ErrLine>
+      )}
     </FormCard>
   )
 
@@ -2451,7 +2712,10 @@ export default function AddConsignmentV2() {
     </FormCard>
   )
 
-  const byId: Record<string, ReactNode> = simple ? {
+  const byId: Record<string, ReactNode> = merchantMode ? {
+    'sec-consignment': consignmentSection, 'sec-parties': partiesSection, 'sec-packages': packagesSection,
+    'sec-extras': merchantExtrasSection, 'sec-service': merchantServiceSection,
+  } : simple ? {
     'sec-consignment': simpleConsignment, 'sec-parties': simpleParties, 'sec-packages': simplePackages,
     'sec-vehicle': vehicleSection, 'sec-carrier': carrierSection,
   } : {
@@ -2459,7 +2723,12 @@ export default function AddConsignmentV2() {
     'sec-vehicle': vehicleSection, 'sec-service': serviceSection, 'sec-carrier': carrierSection,
   }
 
-  const builderBar = editing ? (
+  const builderBar = merchantMode ? (
+    <div className="mb-5">
+      <h1 className="text-[18px] font-bold text-ink">Create Order</h1>
+      <p className="mt-0.5 text-[13px] text-ink-2">Top to bottom — what, where, what is in it, then the services and estimated rates for that route.</p>
+    </div>
+  ) : editing ? (
     <div className="sticky top-0 z-40 mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-line bg-info-bg px-5 py-3 shadow-ds-1">
       <SlidersHorizontal size={18} className="shrink-0 text-info-fg" />
       <div className="min-w-0 flex-1">
@@ -2495,8 +2764,15 @@ export default function AddConsignmentV2() {
   return (
     <BuilderCtx.Provider value={builder}>
     <ShowErrorsCtx.Provider value={showErrors}>
-    <div className="px-6 pb-10 pt-2">
+    <div className={merchantMode ? 'pb-6' : 'px-6 pb-10 pt-2'}>
       {builderBar}
+      {merchantMode && pr && (
+        <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg bg-info-bg px-4 py-2.5 text-[13px] text-ink">
+          <Truck size={15} className="shrink-0 text-info-fg" />
+          <span>Creating an order for <b>{pr.number}</b>{pr.ftlServiceType ? ` · ${pr.ftlServiceType}` : ''} · window {prWindow(pr)}</span>
+          <Link to={prPath(pr.id)} className="font-bold text-brand-500 hover:text-brand-600">View pickup request</Link>
+        </div>
+      )}
       {fromPr && (
         <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg bg-info-bg px-4 py-2.5 text-[13px] text-ink">
           <Truck size={15} className="shrink-0 text-info-fg" />
@@ -2521,9 +2797,18 @@ export default function AddConsignmentV2() {
 
       {/* sticky footer — the form switch (owner, 2026-09-29: where the section strip was), then Go Back + Add Order */}
       <div className="sticky bottom-0 z-30 mt-5 flex items-center gap-x-4 rounded-xl border border-warm-200 bg-surface px-5 py-3 shadow-ds-1">
-        <Button variant="outline" disabled={editing} onClick={() => setTier(simple ? 'full' : 'simplified')}>
-          {simple ? 'Switch to Regular form' : 'Switch to Simplified'}
-        </Button>
+        {merchantMode ? (
+          /* Grow: the estimate for what is on screen (checkout confirms it) */
+          <div className="min-w-0 text-[13px]">
+            {quote && ftlOk
+              ? <p className="truncate text-ink"><b>{money(quote.net, currency)}</b><span className="text-ink-2"> estimated · {quote.name} · delivery by {quote.days} day{quote.days === 1 ? '' : 's'}{vehicleLine ? ` · ${vehicleLine}` : ''}</span></p>
+              : <p className="truncate text-ink-3">{!mode ? 'Choose a load type in Service Type to see rates' : !ready ? 'Rates appear once the addresses and packages are in' : !quote ? 'Choose a service' : 'Add a vehicle'}</p>}
+          </div>
+        ) : (
+          <Button variant="outline" disabled={editing} onClick={() => setTier(simple ? 'full' : 'simplified')}>
+            {simple ? 'Switch to Regular form' : 'Switch to Simplified'}
+          </Button>
+        )}
         {/* the actions never wrap away from each other — the strip gives way first */}
         <div className="ml-auto flex shrink-0 items-center gap-3">
           {editing
@@ -2531,7 +2816,8 @@ export default function AddConsignmentV2() {
             : showErrors && !canSubmit && <span className="text-[13px] text-danger-fg">{missingCount} required field{missingCount === 1 ? '' : 's'} to fill</span>}
           <Button variant="ghost" onClick={() => { clearDraftKeys(); nav(backTo) }}>Go Back</Button>
           {/* enabled: a click with gaps shows them (errors appear only after this attempt) */}
-          <Button onClick={proceed} disabled={editing}>Add Order</Button>
+          {merchantMode && <Button variant="outline" onClick={saveForLater}>Save for later</Button>}
+          <Button onClick={proceed} disabled={editing}>{merchantMode ? 'Continue to checkout' : 'Add Order'}</Button>
         </div>
       </div>
     </div>

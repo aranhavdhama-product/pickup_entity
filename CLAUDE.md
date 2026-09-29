@@ -229,14 +229,19 @@ Product changes layered on the replica (deliberate departures from the live port
   `/local/consignments/add[/vehicle]` = `AddOrderPage.tsx` (staging-exact, capture
   `docs/superpowers/research/2026-09-24-staging-add-order-form.md`; Order Category, Merchant select,
   Carriers, creates outright; primitives in `components/consignmentForm.tsx`). Grow
-  `/grow/orders/add[/vehicle]` = `MerchantOrderForm.tsx` (spec
-  `docs/superpowers/specs/2026-09-25-grow-merchant-order-form-design.md`): the same fields minus the
-  carrier/ops ones (Merchant = the header ⇄, Carrier, Order Category, Location Codes, Consignment
-  Number, Tags, Pallet Space, Total Loading Time, Task/Routing Type, lat/long), one page — Consignment
-  details · Ship From · Ship To (+ Return To Origin) · Package & SKU (`packageEditor.tsx`) · Instructions & extras
-  · **Service Type LAST** (`serviceCards.tsx`: Shared | Full vehicle segment, one rate card per
-  service for the OD pair — every service in both modes since 2026-09-29, vehicle cards with count steppers
-  from Vehicle Config at the Ship From hub) — beside a sticky Order summary rail (`orderSummaryRail.tsx`). Selected card = 2px brand
+  `/grow/orders/add[/vehicle]` = **the v2 form in merchant mode** (owner, 2026-09-29: "make grow form like this,
+  no carrier-specific feature"): `LocalConsignments/AddConsignmentV2.tsx` with `portal="merchant"` — the SAME cards,
+  address cards + popup (Save this address), goods entry and fields, minus the carrier/ops ones (`MERCHANT_OFF`:
+  Merchant = the header ⇄, Consignment Number, Tags, Order Category chips, Total Loading Time, Load type / Vehicle
+  Type, lat/long, Pallet Space; no Carriers card, no Shipment legs, no form builder, no Simplified tier, no
+  Transfer type, no hubs as addresses). Cards: Consignment details · Ship From → Ship To (pickup window under Ship
+  From follows the pickup module: off · manual optional · auto-ask required · auto-rule shown) · Package & SKU ·
+  Handling & extras (3 toggles · Label Format · instructions · VAS in the lane's currency) · **Service Type LAST**
+  (`serviceCards.ServiceTypeChooser`: Shared | Full vehicle segment, one rate card per service for the OD pair,
+  vehicle cards with count steppers from Vehicle Config at the Ship From hub; Full vehicle allows extra drops).
+  Hides + Required come from the ACCOUNT settings (`fe-consignment-form-behavior`), never the v2 builder rules.
+  Sticky footer = the estimate · Go Back · Save for later · Continue to checkout (DRAFT_KEY → `/grow/orders/checkout`,
+  a session draft is restored on Back). The old `MerchantOrderForm` / `packageEditor` / `orderSummaryRail` are gone. Selected card = 2px brand
   border, no fill; segments/choices neutral (border-ink + bg-warm-50). Pricing = ONE module
   `src/growOrders/rates.ts` (`quoteLane`/`quoteService`, ESTIMATED; ₱ card for PH, $ card for the
   Chicago/US network; zone same city · region · nationwide), also used by the Rate Calculator and

@@ -13,7 +13,7 @@ import { useState, type ReactNode } from 'react'
 import { Banknote, Boxes, Home, Pencil, Truck } from 'lucide-react'
 import type { ServiceQuote } from '../../growOrders/rates'
 import { money } from './utils'
-import { CountStepper, MSection, Segment } from './merchantFormBits'
+import { CountStepper, Segment } from './merchantFormBits'
 
 export type BookingMode = 'ltl' | 'ftl'
 
@@ -53,7 +53,8 @@ export function RateCard({ title, left, right, trailing, selected, onClick, iner
   )
 }
 
-export function ServiceTypeSection({
+/** The body of the Grow form's Service Type card (the card itself is the form's own — AddConsignmentV2 merchant mode). */
+export function ServiceTypeChooser({
   ready, mode, onMode, modeLocked, quotes, selected, onSelect, currency, fleet, counts, onCount, fleetNote,
   showErrors, serviceLocked, children,
 }: {
@@ -86,14 +87,15 @@ export function ServiceTypeSection({
   const vehicles = Object.values(counts).reduce((n, c) => n + c, 0)
   const pick = (code: string) => { onSelect(code); setEditing(false) }
   return (
-    <MSection id="sec-service" title="Service Type"
-      caption={mode ? 'Services and rates for this route. Pick one.' : 'Choose how it travels — the services for that option appear below.'}
-      action={ready && chosen && !serviceLocked && quotes.length > 1 ? (
-        <button type="button" title={editing ? 'Done' : 'Change service'} onClick={() => setEditing((v) => !v)}
-          className="flex h-8 w-8 items-center justify-center rounded-md border border-line text-ink-2 hover:bg-warm-100">
-          <Pencil size={14} />
-        </button>
-      ) : undefined}>
+    <>
+      {ready && chosen && !serviceLocked && quotes.length > 1 && (
+        <div className="-mt-2 mb-3 flex justify-end">
+          <button type="button" onClick={() => setEditing((v) => !v)}
+            className="inline-flex items-center gap-1.5 text-[13px] font-bold text-brand-500 hover:text-brand-600">
+            <Pencil size={13} />{editing ? 'Done' : 'Change service'}
+          </button>
+        </div>
+      )}
       <div className="max-w-[1060px]">
         <Segment<BookingMode> value={(mode ?? '') as BookingMode} onChange={onMode} disabled={modeLocked} options={[
           { value: 'ltl', label: 'Shared vehicle (LTL)', sub: 'Your packages travel with other shipments', icon: <Boxes size={18} /> },
@@ -144,6 +146,6 @@ export function ServiceTypeSection({
           <p className="mt-4 text-[12px] text-ink-3">Estimated rates, before tax. The carrier confirms the final charge.</p>
         )}
       </div>
-    </MSection>
+    </>
   )
 }

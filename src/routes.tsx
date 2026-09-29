@@ -68,7 +68,6 @@ import RequestsPage from './pages/GrowPortal/RequestsPage'
 import ConsignmentsPage from './pages/GrowPortal/ConsignmentsPage'
 import GrowOrdersLayout from './pages/GrowOrders/GrowOrdersLayout'
 import OrdersListPage from './pages/GrowOrders/OrdersListPage'
-import MerchantOrderForm from './pages/GrowOrders/MerchantOrderForm'
 import LocalAddConsignment from './pages/LocalConsignments/AddConsignment'
 import LocalAddConsignmentV2 from './pages/LocalConsignments/AddConsignmentV2'
 import OrderViewPage from './pages/GrowOrders/OrderViewPage'
@@ -168,8 +167,8 @@ export default function AppRoutes() {
       <Route path="/driver" element={<DriverApp />} />
       <Route path="/grow/orders" element={<GrowOrdersLayout />}>
         <Route index element={<OrdersListPage />} />
-        <Route path="add" element={<MerchantOrderForm />} />
-        <Route path="add/vehicle" element={<MerchantOrderForm />} />
+        <Route path="add" element={<LocalAddConsignmentV2 portal="merchant" />} />
+        <Route path="add/vehicle" element={<LocalAddConsignmentV2 portal="merchant" />} />
         <Route path="checkout" element={<CheckoutPage />} />
         {/* before :id — "pickups" must not be read as an order id */}
         <Route path="pickups" element={<PickupRequestsPage />} />
