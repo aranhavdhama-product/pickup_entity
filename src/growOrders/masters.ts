@@ -77,6 +77,15 @@ export interface Merchant {
   isCsr?: boolean
   /** merchant codes this CSR may create orders on behalf of. */
   mappedMerchants?: string[]
+  /**
+   * A freshly-registered account with nothing set up yet — Dashboard shows the
+   * "Send Your First Order" onboarding checklist instead of the usual KPIs/
+   * charts, until Complete Profile / Get a Quote / Book Your Shipment are all
+   * done, then it reverts on its own. Only ever set on the sample merchant
+   * below; a live businessUnit row never has this, so it degrades safely to
+   * "not a new account" (the ordinary dashboard).
+   */
+  isNewAccount?: boolean
 }
 
 export type LocationType = 'MERCHANT_LOCATION' | 'CUSTOMER_LOCATION' | 'PUDO' | 'HUB' | 'PARCEL_LOCKER'
@@ -188,6 +197,7 @@ export const SAMPLE_MERCHANTS: Merchant[] = [
   ] },
   { code: 'CSR_MAYA', name: 'Maya (CSR)', party: null, isCsr: true,
     mappedMerchants: ['2GO_PH', 'LITE_EXPRESS', 'POSTPAID_INVOICE', 'POSTPAID_PO'] },
+  { code: 'NEW_MERCHANT', name: 'New Merchant Co.', party: null, isNewAccount: true },
 ]
 
 export const SAMPLE_LOCATIONS: MasterLocation[] = STORES.map((s) => ({

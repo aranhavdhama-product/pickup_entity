@@ -25,18 +25,21 @@
  */
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { CalendarClock, ChevronRight, CircleX, Gauge, Info, LifeBuoy } from 'lucide-react'
+import { CalendarClock, CheckCircle2, ChevronRight, CircleX, Gauge, Info, LifeBuoy, PackagePlus } from 'lucide-react'
 import { useGrowOrders } from '../../growOrders/store'
-import { useMasters } from '../../growOrders/masters'
+import { currentMerchant, useMasters, useMerchantCode } from '../../growOrders/masters'
+import { useMerchantSettings } from '../../growOrders/merchantSettings'
+import { hasSeenQuote, markQuoteSeen } from '../../growOrders/onboarding'
 import { pickupPagesVisible, usePickupModuleConfig } from '../../config/pickupModule'
 import { usePlanning } from '../LocalPFP/planningStore'
 import { canSchedulePickup } from '../LocalPFP/adapter'
-import { KpiTile, Panel } from '../../nueva/components'
+import { Button, KpiTile, Panel } from '../../nueva/components'
 import { DateRange, FilterSelect } from '../../local/chrome'
 import { shipmentRowsOf } from './shipmentRows'
 import { storeName } from './utils'
 import { daysBetween, inRange, isoDay, presetRange } from './dateRanges'
 import { deliveredAtOf, eddOf } from './trackingModel'
+import { usePickupLocations } from './pickupLocations'
 
 const STAGES: { label: string; states: string[] }[] = [
   { label: 'Created', states: ['Created'] },
@@ -154,12 +157,53 @@ function DayLine({ days, values, format = (v) => String(v), fixedMax }: {
   )
 }
 
+/**
+ * One row of the "Send Your First Order" checklist: a numbered/checked circle
+ * with a connecting line to the next step, the step's label, and its status —
+ * "Completed", a clickable "Continue", or a plain "Not started" once a later
+ * step can't be reached yet.
+ */
+function OnboardingStep({ n, label, status, onClick, last }: {
+  n: number; label: string; status: 'done' | 'active' | 'pending'; onClick: () => void; last?: boolean
+}) {
+  return (
+    <div className="flex gap-4">
+      <div className="flex flex-col items-center">
+        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[13px] font-bold
+          ${status === 'done' ? 'bg-brand-500 text-white'
+            : status === 'active' ? 'border-2 border-brand-500 text-brand-500' : 'border border-line text-ink-3'}`}>
+          {status === 'done' ? <CheckCircle2 size={16} /> : n}
+        </span>
+        {!last && <span className={`mt-1 w-px flex-1 ${status === 'done' ? 'bg-brand-500' : 'bg-line'}`} />}
+      </div>
+      <div className="flex flex-1 items-start justify-between pb-8">
+        <p className={`text-[15px] font-bold ${status === 'pending' ? 'text-ink-3' : 'text-ink'}`}>{label}</p>
+        {status === 'done' && <span className="text-[13px] font-bold text-brand-500">Completed</span>}
+        {status === 'active' && (
+          <button type="button" onClick={onClick} className="text-[13px] font-bold text-brand-500 hover:underline">Continue</button>
+        )}
+        {status === 'pending' && <span className="text-[13px] text-ink-3">Not started</span>}
+      </div>
+    </div>
+  )
+}
+
 /* -------------------------------------------------------------- page ---- */
 
 export default function GrowDashboardPage() {
   const db = useGrowOrders()
   const plan = usePlanning()
-  useMasters()
+  const masters = useMasters()
+  const merchant = currentMerchant(masters.merchants, useMerchantCode())
+  const settings = useMerchantSettings(merchant?.code ?? '', merchant?.name ?? '', merchant?.party)
+  const pickup = usePickupLocations(db.stores)
+  /* Complete Profile / Book Your Shipment are real, derived facts; Get a Quote
+     has nothing else to verify against, so it tracks a simple "visited" flag
+     (onboarding.ts) — set the moment the merchant follows this step's link. */
+  const profileDone = !!settings.business.line1.trim() && pickup.stores.length > 0
+  const quoteDone = hasSeenQuote(merchant?.code ?? null)
+  const orderDone = db.orders.some((o) => !o.isDraft && o.consignment?.merchantCode === merchant?.code)
+  const showOnboarding = !!merchant?.isNewAccount && !(profileDone && quoteDone && orderDone)
   const nav = useNavigate()
   const pickupPages = pickupPagesVisible(usePickupModuleConfig())
   const initial = presetRange('Last 30 Days')
@@ -200,6 +244,61 @@ export default function GrowDashboardPage() {
       {label}<ChevronRight size={13} />
     </button>
   )
+
+  /* a brand-new account (isNewAccount, the sample "New Merchant Co." persona) has
+     nothing to chart yet — this replaces the KPIs/charts entirely, and reverts to
+     the ordinary dashboard on its own once all three steps are genuinely done */
+  if (showOnboarding) {
+    return (
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center justify-between gap-6 rounded-xl border border-brand-100 bg-brand-50/60 px-8 py-7">
+          <div className="flex max-w-[640px] flex-col gap-3">
+            <p className="text-[22px] font-bold text-ink">Welcome to Grow 🎉</p>
+            <p className="text-[13px] leading-relaxed text-ink-2">This is your dashboard, where you can send and track parcels from pickup to delivery — and the best part? You save instantly.</p>
+            <div><Button icon={<PackagePlus size={15} />} onClick={() => nav('/grow/orders/add')}>Send Parcel</Button></div>
+          </div>
+          <span className="hidden h-24 w-24 shrink-0 items-center justify-center rounded-full bg-brand-100 text-brand-500 md:flex">
+            <PackagePlus size={40} />
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.3fr_1fr]">
+          <Panel>
+            <div className="flex flex-col gap-1 pb-2">
+              <p className="text-[15px] font-bold text-ink">Send Your First Order</p>
+              <p className="text-[13px] text-ink-3">Follow these steps to get you up and running</p>
+            </div>
+            <div className="flex flex-col pt-4">
+              <OnboardingStep n={1} label="Complete Profile"
+                status={profileDone ? 'done' : 'active'}
+                onClick={() => nav('/grow/orders/settings?tab=account')} />
+              <OnboardingStep n={2} label="Get a Quote"
+                status={quoteDone ? 'done' : profileDone ? 'active' : 'pending'}
+                onClick={() => { markQuoteSeen(merchant?.code ?? null); nav('/grow/orders/quote') }} />
+              <OnboardingStep n={3} label="Book Your Shipment"
+                status={orderDone ? 'done' : quoteDone ? 'active' : 'pending'}
+                onClick={() => nav('/grow/orders/add')} last />
+            </div>
+          </Panel>
+
+          <Panel>
+            <div className="flex items-center justify-between gap-4 py-1">
+              <div className="flex items-center gap-3">
+                <span className="inline-flex h-9 w-9 items-center justify-center rounded-md bg-warm-100 text-ink-2"><LifeBuoy size={18} /></span>
+                <div>
+                  <p className="text-[15px] font-bold text-ink">Help Center</p>
+                  <p className="text-[13px] text-ink-3">We've picked out some articles to help set you up</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => nav('/grow/orders/help')} className="text-[13px] font-bold text-brand-500 hover:underline">
+                See all articles
+              </button>
+            </div>
+          </Panel>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col gap-4">
