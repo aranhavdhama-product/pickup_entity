@@ -30,11 +30,11 @@
  * never change. Errors appear only after an Add Order attempt. Labels 13px ink (owner exception to the type scale).
  * Deep links: `?draft=`, `?fromPickup=`, `?fromOverage=`, `?step=1|2` (packages / carriers).
  */
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ComponentProps, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
+import { useContext, useEffect, useMemo, useRef, useState, type ComponentProps, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  Check, ChevronDown, ChevronLeft, ChevronUp, CircleMinus, Eye, EyeOff, Info, Lock, MapPinned, Package, Pencil, Plus, RotateCcw,
+  Check, ChevronDown, ChevronLeft, ChevronUp, CircleMinus, Eye, EyeOff, Info, Lock, Package, Plus, RotateCcw,
   Bookmark, ScanBarcode, SlidersHorizontal, Trash2, Truck, X, Crown, Flame, GlassWater, Layers, Users, Weight,
 } from 'lucide-react'
 import { blankParty, CURRENCY } from '../../growOrders/seed'
@@ -50,7 +50,7 @@ import {
   Button, DateInput, Input, MenuSelect, Modal, MultiSelectDropdown, Toggle, SearchInput,
 } from '../../nueva/components'
 import {
-  AddMoreButton, PhoneInput, RadioCard, RowCard, SwitchField, TimeBox, UnitBox,
+  AddMoreButton, RadioCard, RowCard, TimeBox, UnitBox,
 } from '../../components/consignmentForm'
 import { money, OTHER_ADDRESS, partyOk, prWindow, storeOptionLabel } from '../GrowOrders/utils'
 import { hubName, inboundHubFor, INBOUND_HUBS } from '../../growOrders/hubs'
@@ -75,7 +75,13 @@ import { packageReady } from '../GrowOrders/packageModel'
 import { windowOk as slotWindowOk } from '../GrowOrders/utils'
 import { ServiceTypeChooser, type BookingMode, type FleetVehicle } from '../GrowOrders/serviceCards'
 /* the console's field registry — pure module, read-only here */
-import { byKeyMandatory, CONSIGNMENT_FIELDS, fieldLabel, loadFieldConfig, loadFormBehavior, type FieldDef } from '../ConsignmentAdd/fieldConfig'
+import type { FieldDef } from '../ConsignmentAdd/fieldConfig'
+/* the shared builder engine + address layout, extracted 2026-10-04 so Grow's AddOrderPage can use the same one */
+import {
+  AddressCard, BuilderCtx, BuilderLabel, Configurable, ErrLine, PartyBlock, revealEntries,
+  RevealToggle, ShowErrorsCtx, useFormBuilderV2, useRuleRequired, type Builder as BuilderType,
+} from '../ConsignmentAdd/formBuilderV2'
+import { PartyFields } from '../GrowOrders/AddOrderPage'
 
 
 /* ---- option lists ---- */
@@ -85,7 +91,6 @@ const LABEL_FORMATS = ['PDF', 'ZPL']
 /** sample Tag Master — the portal has no tag API */
 const TAG_OPTIONS = ['Ambient', 'Priority', 'Gift', 'B2B', 'Weekend Delivery', 'Bulky']
 const RTO_MODES = ['Same As Ship From', 'Use Different Address']
-const DIAL_CODES = ['+63', '+27', '+264', '+267', '+1', '+44', '+91']
 const DIM_UOMS = ['CM', 'IN', 'M']
 const WEIGHT_UOMS = ['KG', 'LB', 'G']
 const CARRIERS = [
@@ -115,8 +120,6 @@ function rowsOf(vs: FtlVehicle[]): VehicleRow[] {
 /** …and expand back into one FtlVehicle per vehicle, the shape the draft and the rate card read. */
 const vehiclesOfRows = (rows: VehicleRow[]): FtlVehicle[] => rows.flatMap((r) =>
   Array.from({ length: Math.max(1, r.count) }, () => ({ vehicleType: r.vehicleType, actualLoadKg: r.loadKg / Math.max(1, r.count), addressIdx: r.addressIdx })))
-const POSTCODES = ['1000', '1105', '1300', '1600', '4000', '5000', '6000', '6014', '6015', '8000']
-const STATES = ['Eastern Cape', 'Free State', 'Gauteng', 'KwaZulu-Natal', 'Limpopo', 'Mpumalanga', 'North West', 'Northern Cape', 'Western Cape', 'Metro Manila', 'Laguna', 'Cebu', 'Iloilo']
 const COUNTRIES = ['Philippines', 'South Africa', 'Namibia', 'Botswana']
 /** WHAT the goods are — decides `pkg.kind` (the Package Type is what they are IN). */
 const CARGO_TYPES = ['Parcel', 'Document', 'Fragile', 'Perishable', 'Bulky']
@@ -494,7 +497,8 @@ function SFld({ label, required, info, error, helper, className = '', fieldKey, 
   )
 }
 
-/* ================================================================ FORM BUILDER (owner, 2026-09-29) ====
+/* ================================================================ FORM BUILDER (owner, 2026-09-29;
+ * engine extracted to ConsignmentAdd/formBuilderV2.tsx, 2026-10-04, so Grow's AddOrderPage shares it) ===
  * "Edit consignment form" turns THIS form into its own live preview: every configurable field gets
  * rename · Required · Hide on its label; hidden fields stay on screen, faded, so they can come back.
  * Storage = a v2-ONLY rules key layered over the account's shared config (Form Builder hides +
@@ -502,32 +506,9 @@ function SFld({ label, required, info, error, helper, className = '', fieldKey, 
  * Locks: the registry's system-mandatory fields (api / account) and the fields THIS form's own checks
  * need (SKU + package weight and L × W × H) — never hideable, never optional. Required is offered only
  * on fields that hold a value (not switches, Load type or Service Type). Required ⇒ shown; hidden ⇒ not
- * required; a dependant hides with its parent (Order Amount ↔ Payment Mode, Loading Time ↔ Load type). */
-export interface FieldRuleV2 {
-  hidden?: boolean; required?: boolean; label?: string
-  /** true = in its section's "More information" fold, false = in the main grid (absent = the default) */
-  more?: boolean
-}
-export type FormRulesV2 = Record<string, FieldRuleV2>
-export const FORM_RULES_V2_KEY = 'fe-consignment-form-v2-rules'
-const asRules = (raw: unknown): FormRulesV2 => {
-  const out: FormRulesV2 = {}
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out
-  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
-    if (!v || typeof v !== 'object') continue
-    const r = v as Record<string, unknown>
-    out[k] = {
-      ...(typeof r.hidden === 'boolean' ? { hidden: r.hidden } : {}),
-      ...(typeof r.required === 'boolean' ? { required: r.required } : {}),
-      ...(typeof r.label === 'string' && r.label.trim() ? { label: r.label } : {}),
-      ...(typeof r.more === 'boolean' ? { more: r.more } : {}),
-    }
-  }
-  return out
-}
-const loadRulesV2 = (): FormRulesV2 => { try { return asRules(JSON.parse(localStorage.getItem(FORM_RULES_V2_KEY) ?? '{}')) } catch { return {} } }
-const saveRulesV2 = (r: FormRulesV2) => { try { localStorage.setItem(FORM_RULES_V2_KEY, JSON.stringify(asRules(r))) } catch { /* private mode */ } }
-/** the form's own checks require these — locked like the system's mandatory fields */
+ * required; a dependant hides with its parent (Order Amount ↔ Payment Mode, Loading Time ↔ Load type).
+ * The fields below are THIS form's own extensions to the base registry — passed into the shared
+ * useFormBuilderV2 engine as `extraFields`/`formLocked`/etc, never redefined locally. */
 /** grouped keys drive several controls — hide / require together, no single label to rename */
 const GROUP_KEYS = new Set(['addrLines23', 'addrCoordinates', 'addrFloorLift', 'addrWindow', 'skuDimensions', 'skuWeight', 'pkgDimensions'])
 /** v2-only configurable keys (owner, 2026-09-29): Lift on its own, the whole VAS section, each Handling category */
@@ -540,7 +521,6 @@ const V2_FIELDS: FieldDef[] = [
   ...GOODS_CATEGORIES.map(({ name }): FieldDef => ({ key: catKey(name), defaultLabel: name, section: 'Handling & scheduling', tier: 'advanced', apiPath: 'consignmentDetails.category[]' })),
 ]
 const V2_KEYS = new Set(V2_FIELDS.map((f) => f.key))
-const FIELD_DEF = new Map([...CONSIGNMENT_FIELDS, ...V2_FIELDS].map((f) => [f.key, f]))
 /* owner, 2026-09-29: Service Type is mandatory too */
 const FORM_LOCKED = new Set(['skuWeight', 'skuDimensions', 'pkgWeight', 'pkgDimensions', 'serviceType'])
 /** a value that is always valid — can be hidden, never "required" */
@@ -550,163 +530,8 @@ const DEFAULT_MORE = new Set(['addrCompanyName', 'addrLines23', 'addrLandmark', 
   'pkgDescription', 'pkgPalletSpace'])
 /** the SKU line's fields live in the line's own fold — not movable section by section */
 const SKU_ROW_KEYS = new Set(['skuCategory', 'skuDescription', 'skuHsn', 'skuImage', 'skuUnitCost'])
-/** keys that can sit in a section's More fold (never a locked or a row-level one) */
-const movable = (k: string) => FIELD_DEF.has(k) && !byKeyMandatory(k) && !FORM_LOCKED.has(k) && !SKU_ROW_KEYS.has(k)
-  && k !== 'vas' && !k.startsWith('cat:')
-
-export type FieldLock = 'system' | 'form' | null
-interface Builder {
-  editing: boolean
-  lock: (k: string) => FieldLock
-  requirable: (k: string) => boolean
-  /** hidden by its own rule (not only through its parent) */
-  ownHidden: (k: string) => boolean
-  isHidden: (k: string) => boolean
-  /** the parent that hides it, if any */
-  hiddenWith: (k: string) => string | null
-  required: (k: string) => boolean
-  /** in its section's "More information" fold (a required field never is) */
-  inMore: (k: string) => boolean
-  label: (k: string) => string
-  set: (k: string, patch: FieldRuleV2) => void
-}
-const BuilderCtx = createContext<Builder | null>(null)
-/** false until the first Add Order attempt — then every missing field says so */
-const ShowErrorsCtx = createContext(false)
-/** a builder "required" rule applies to this key (and the field is shown) */
-function useRuleRequired(key?: string) {
-  const b = useContext(BuilderCtx)
-  return !!key && !!b?.required(key)
-}
-/** a red line that appears only after an Add Order attempt */
-function ErrLine({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return useContext(ShowErrorsCtx) ? <p className={`text-[12px] text-danger-fg ${className}`}>{children}</p> : null
-}
-
-/** Required · Hide for one key (no label) — shared by BuilderLabel and Configurable. */
-function FieldTools({ k }: { k: string }) {
-  const b = useContext(BuilderCtx)!
-  const lock = b.lock(k)
-  if (lock) {
-    return (
-      <span title={lock === 'system' ? 'Required by the system — cannot be hidden or made optional' : 'This form needs it — cannot be hidden'}
-        className="inline-flex shrink-0 items-center gap-1 text-[11px] text-ink-3"><Lock size={12} />{lock === 'system' ? 'System' : 'Needed'}</span>
-    )
-  }
-  const parent = b.hiddenWith(k)
-  const own = b.ownHidden(k)
-  return (
-    <span className="ml-auto inline-flex shrink-0 items-center gap-1.5">
-      {parent && !own && <span className="text-[11px] text-ink-3">Hidden with {b.label(parent)}</span>}
-      {b.requirable(k) && (
-        <button type="button" aria-pressed={b.required(k)} onClick={() => b.set(k, { required: !b.required(k) })}
-          disabled={own || !!parent}
-          title={b.required(k) ? 'Make optional' : 'Make required'}
-          className={`h-6 rounded-full border px-2 text-[11px] font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-40
-            ${b.required(k) ? 'border-ink bg-warm-50 text-ink' : 'border-warm-300 bg-surface text-ink-3 hover:text-ink'}`}>
-          Required
-        </button>
-      )}
-      {movable(k) && (
-        <button type="button" aria-pressed={b.inMore(k)} onClick={() => b.set(k, { more: !b.inMore(k) })}
-          disabled={own || !!parent || b.required(k)}
-          title={b.required(k) ? 'A required field stays in the main form' : b.inMore(k) ? 'Move to the main form' : 'Move to More information'}
-          className={`h-6 rounded-full border px-2 text-[11px] font-bold transition-colors disabled:cursor-not-allowed disabled:opacity-40
-            ${b.inMore(k) ? 'border-ink bg-warm-50 text-ink' : 'border-warm-300 bg-surface text-ink-3 hover:text-ink'}`}>
-          More
-        </button>
-      )}
-      <button type="button" aria-pressed={own} onClick={() => b.set(k, { hidden: !own })}
-        title={own ? 'Show this field' : 'Hide this field'} aria-label={own ? 'Show field' : 'Hide field'}
-        className={`inline-flex h-6 w-6 items-center justify-center rounded-md hover:bg-warm-100 ${own ? 'text-warm-400' : 'text-ink-2'}`}>
-        {own ? <EyeOff size={14} /> : <Eye size={14} />}
-      </button>
-    </span>
-  )
-}
-/** The edit-mode label row: rename in place (single-key fields), then the tools; locked / fixed fields say so. */
-function BuilderLabel({ label, fieldKey, required }: { label?: string; fieldKey?: string; required?: boolean }) {
-  const b = useContext(BuilderCtx)!
-  const star = required && <span className="text-danger-fg">&nbsp;*</span>
-  if (!fieldKey || !FIELD_DEF.has(fieldKey)) {
-    return (
-      <div className="mb-1.5 flex min-h-6 items-center gap-1 text-[13px] leading-5 text-ink" title="Part of the form — not configurable">
-        <span className="min-w-0 truncate">{label}{star}</span>
-        <Lock size={11} className="ml-auto shrink-0 text-warm-300" />
-      </div>
-    )
-  }
-  const renamable = !GROUP_KEYS.has(fieldKey)
-  return (
-    <div className="mb-1.5 flex min-h-6 items-center gap-1.5 text-[13px] leading-5 text-ink">
-      {renamable
-        ? <input aria-label={`Rename ${label}`} value={b.label(fieldKey)} onChange={(e) => b.set(fieldKey, { label: e.target.value })}
-            className="-mx-1 min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 text-[13px] text-ink hover:border-warm-300 focus:border-brand-500 focus:outline-none" />
-        : <span className="min-w-0 flex-1 truncate" title="Grouped with its neighbours — not renamable">{label}</span>}
-      {star}
-      <FieldTools k={fieldKey} />
-    </div>
-  )
-}
-/** Edit-mode frame for a non-field control (a switch): its tools above it. */
-function Configurable({ fieldKey, children }: { fieldKey: string; children: ReactNode }) {
-  const b = useContext(BuilderCtx)
-  if (!b?.editing) return <>{children}</>
-  return (
-    <div className="rounded-md outline-dashed outline-1 outline-offset-[5px] outline-warm-300">
-      <div className="mb-1.5 flex min-h-6 items-center"><FieldTools k={fieldKey} /></div>
-      <div className={b.isHidden(fieldKey) ? 'pointer-events-none opacity-40' : ''}>{children}</div>
-    </div>
-  )
-}
-
-/**
- * "More information" — optional fields a section rarely needs stay HIDDEN IN PLACE; the toggle reveals
- * them where they belong in the section's order (owner, 2026-09-29: "Address Line 2 goes under Line 1,
- * not at the bottom"). Nothing moves; the builder only decides which fields wait behind the toggle.
- */
-type RevealEntry = [string | null, ReactNode, boolean?] | false | null | undefined
-function revealEntries(entries: RevealEntry[], inMore: (k: string) => boolean, open: boolean) {
-  const nodes: ReactNode[] = []
-  let waiting = 0
-  let waitingFilled = 0
-  for (const e of entries) {
-    if (!e) continue
-    const [k, node, isFilled] = e
-    if (k && inMore(k)) {
-      waiting += 1
-      if (isFilled) waitingFilled += 1
-      if (!open) continue
-    }
-    nodes.push(node)
-  }
-  return { nodes, waiting, waitingFilled }
-}
-/** The reveal toggle under a section's fields; hidden while editing (everything is shown then). */
-function RevealToggle({ open, onToggle, waiting, waitingFilled = 0, label = 'information', className = '', iconOnly = false }: {
-  open: boolean; onToggle: () => void; waiting: number; waitingFilled?: number; label?: string; className?: string
-  /** a chevron only, the words in its tooltip (a package's details — owner, 2026-09-29) */
-  iconOnly?: boolean
-}) {
-  const b = useContext(BuilderCtx)
-  if (b?.editing || waiting === 0) return null
-  const words = open ? `Less ${label}` : `More ${label} · ${waiting} field${waiting === 1 ? '' : 's'}${waitingFilled ? `, ${waitingFilled} filled` : ''}`
-  if (iconOnly) return (
-    <button type="button" onClick={onToggle} aria-expanded={open} title={words} aria-label={words}
-      className={`inline-flex h-7 w-7 items-center justify-center rounded-md text-brand-500 hover:bg-warm-100 ${className}`}>
-      {open ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-    </button>
-  )
-  return (
-    <div className={className}>
-      <button type="button" onClick={onToggle} aria-expanded={open}
-        className="inline-flex items-center gap-1 text-[13px] text-brand-500 hover:text-brand-600">
-        {open ? <ChevronUp size={14} /> : <ChevronDown size={14} />}{open ? `Less ${label}` : `More ${label}`}
-        {!open && <span className="ml-1 text-[12px] text-ink-3">· {waiting} field{waiting === 1 ? '' : 's'}{waitingFilled ? `, ${waitingFilled} filled` : ''}</span>}
-      </button>
-    </div>
-  )
-}
+/** keys excluded from the "More" toggle beyond the shared engine's own mandatory/locked rules */
+const movableExtra = (k: string) => SKU_ROW_KEYS.has(k) || k === 'vas' || k.startsWith('cat:')
 
 /**
  * A card's explanation behind an ⓘ beside its title (owner, 2026-09-29: "move these heading texts into an info
@@ -794,128 +619,7 @@ function DateTimeCell({ label, at, onChange, fallbackTime }: { label: string; at
   )
 }
 
-/**
- * One address's fields (the Add / Edit address popup, and inline while editing the form). Required
- * first — Name* · Contact Number · Address Line 1* · Country* · State* · City* · Postal Code — then the
- * optional ones, each in the main grid or the "More information" fold by its placement (builder).
- * `variant="rto"` = the return address: Contact + Postal Code required, no coordinates / floor.
- */
-function PartyBlock({ party, set, nameLabel, requireContact, hid, variant = 'full', grouped = false }: {
-  party: Party; set: (patch: Partial<Party>) => void; nameLabel: string
-  requireContact?: boolean; hid: (k: string) => boolean; variant?: 'full' | 'rto'
-  /** the popup: the same order under two quiet headings, Contact then Address */
-  grouped?: boolean
-}) {
-  const rto = variant === 'rto'
-  const b = useContext(BuilderCtx)
-  const showErrors = useContext(ShowErrorsCtx)
-  const miss = (v: string | undefined, req: boolean) => req && !filled(v)
-  const val = (k: keyof Party) => String(party[k] ?? '')
-  const text = (k: keyof Party, label: string, o: { required?: boolean; type?: string; placeholder?: string; className?: string; fieldKey?: string } = {}) => (
-    <F key={String(k)} label={label} required={o.required} type={o.type} placeholder={o.placeholder} className={o.className} fieldKey={o.fieldKey}
-      value={val(k)} error={miss(val(k), !!o.required) ? 'Required field.' : undefined}
-      onChange={(v) => set({ [k]: v } as Partial<Party>)} />
-  )
-  const sel = (k: 'country' | 'postalCode' | 'state', label: string, list: string[], required: boolean) => (
-    <F label={label} required={required} value={party[k] ?? ''} options={opts(list)}
-      error={miss(party[k], required) ? 'Required field.' : undefined} onChange={(v) => set({ [k]: v })} />
-  )
-  const L = (k: string, d: string) => b?.label(k) ?? d
-  const [open, setOpen] = useState(false)
-  const reveal = open || !!b?.editing
-  const inMore = (k: string) => !!b?.inMore(k)
-  /* the order a person writes an address in — Country → Postal Code → Suburb → City → State (owner) */
-  const contactEntries: RevealEntry[] = [
-    [null, text('name', nameLabel, { required: true, placeholder: 'eg, John Doe' })],
-    !hid('addrCompanyName') && ['addrCompanyName', text('businessName', L('addrCompanyName', 'Company Name'), { placeholder: 'eg, Random Company', fieldKey: 'addrCompanyName' }), filled(party.businessName)],
-    [null, <SFld key="phone" label="Contact Number" required={requireContact} error={miss(party.contactNumber, !!requireContact)}>
-      <PhoneInput code={party.countryCode ?? ''} number={party.contactNumber} codes={DIAL_CODES}
-        invalid={showErrors && miss(party.contactNumber, !!requireContact)}
-        onCode={(v) => set({ countryCode: v })} onNumber={(v) => set({ contactNumber: v })} />
-    </SFld>],
-    !hid('addrEmail') && ['addrEmail', text('email', L('addrEmail', 'Email'), { type: 'email', placeholder: 'eg, johndoe@xyz.com', fieldKey: 'addrEmail' }), filled(party.email)],
-  ]
-  const addressEntries: RevealEntry[] = [
-    [null, text('line1', 'Address Line 1', { required: true, placeholder: 'eg, Building No., Street' })],
-    !hid('addrLines23') && ['addrLines23', text('line2', 'Address Line 2', { placeholder: 'eg, Street 1 A', fieldKey: 'addrLines23' }), filled(party.line2)],
-    !hid('addrLines23') && ['addrLines23', <F key="line3" label="Address Line 3" value={party.line3 ?? ''} placeholder="eg, Behind High School" onChange={(v) => set({ line3: v })} />, filled(party.line3)],
-    !hid('addrLandmark') && ['addrLandmark', text('landmark', L('addrLandmark', 'Landmark'), { placeholder: 'eg, Behind High School', fieldKey: 'addrLandmark' }), filled(party.landmark)],
-    [null, <div key="country" className="contents">{sel('country', 'Country', COUNTRIES, true)}</div>],
-    [null, <div key="postal" className="contents">{sel('postalCode', 'Postal Code', POSTCODES, rto)}</div>],
-    !hid('addrSuburb') && ['addrSuburb', text('county', L('addrSuburb', 'Suburb / County'), { fieldKey: 'addrSuburb' }), filled(party.county)],
-    [null, text('city', 'City', { required: true })],
-    [null, <div key="state" className="contents">{sel('state', 'State', STATES, true)}</div>],
-    !rto && !hid('addrCoordinates') && ['addrCoordinates', text('latitude', 'Latitude', { type: 'number', fieldKey: 'addrCoordinates' }), filled(party.latitude)],
-    !rto && !hid('addrCoordinates') && ['addrCoordinates', text('longitude', 'Longitude', { type: 'number' }), filled(party.longitude)],
-    !rto && !hid('addrFloorLift') && ['addrFloorLift', text('floorNumber', 'Floor Number', { type: 'number', fieldKey: 'addrFloorLift' }), filled(party.floorNumber)],
-    !rto && !hid('addrLift') && ['addrLift', <div key="lift" className="flex items-start pt-7"><Configurable fieldKey="addrLift">
-      <SwitchField label={L('addrLift', 'Lift Available')} checked={!!party.liftAvailable} onChange={(v) => set({ liftAvailable: v })} />
-    </Configurable></div>, !!party.liftAvailable],
-  ]
-  const who = revealEntries(contactEntries, inMore, reveal)
-  const where = revealEntries(addressEntries, inMore, reveal)
-  const waiting = who.waiting + where.waiting
-  const waitingFilled = who.waitingFilled + where.waitingFilled
-  const toggle = <RevealToggle open={open} onToggle={() => setOpen((v) => !v)} waiting={waiting} waitingFilled={waitingFilled} label="address details" className="mt-5" />
-  if (grouped) {
-    const head = (t: string) => (
-      <div className="mb-4 flex items-center gap-3"><span className="text-[13px] font-bold text-ink-2">{t}</span><span className="h-px flex-1 bg-warm-200" /></div>
-    )
-    return (
-      <div>
-        {head('Contact')}
-        <Grid2>{who.nodes}</Grid2>
-        <div className="mt-8">{head('Address')}</div>
-        <Grid2>{where.nodes}</Grid2>
-        {toggle}
-      </div>
-    )
-  }
-  return (
-    <div>
-      {/* one flowing two-column order — no spans, so a revealed field never leaves a gap */}
-      <Grid2>{who.nodes}{where.nodes}</Grid2>
-      {toggle}
-    </div>
-  )
-}
-
-/** The chosen address, read back as a card: who · how to reach them · where. */
-function AddressCard({ party, missing, onEdit, tag }: { party: Party; missing: string[]; onEdit: () => void; tag?: string }) {
-  const showErrors = useContext(ShowErrorsCtx)
-  const empty = !filled(party.name) && !filled(party.line1)
-  const place = [party.city, party.state, party.postalCode, party.country].filter((x) => filled(x)).join(', ')
-  const contact = [party.contactNumber ? `${party.countryCode ?? ''} ${party.contactNumber}`.trim() : '', party.email].filter(Boolean).join(' · ')
-  const bad = showErrors && missing.length > 0
-  return (
-    <div className={`rounded-lg border bg-surface p-4 ${bad ? 'border-danger-fg' : 'border-warm-200'}`}>
-      {empty
-        ? <p className="text-[13px] text-ink-3">No address yet — pick a saved one above or add a new address.</p>
-        : (
-          <div className="flex items-start gap-3">
-            <MapPinned size={16} className="mt-0.5 shrink-0 text-ink-3" />
-            <div className="min-w-0 flex-1">
-              <p className="flex flex-wrap items-center gap-2 text-[14px] font-bold text-ink">
-                {party.name || <span className="font-normal text-ink-3">No name</span>}
-                {party.businessName && <span className="text-[13px] font-normal text-ink-2">· {party.businessName}</span>}
-                {tag && <span className="rounded-full bg-warm-50 px-2 py-0.5 text-[11px] font-normal text-ink-2">{tag}</span>}
-              </p>
-              {contact && <p className="mt-1 text-[13px] text-ink-2">{contact}</p>}
-              <p className="mt-1 text-[13px] text-ink">{[party.line1, party.line2, party.line3, party.landmark].filter((x) => filled(x)).join(', ')}</p>
-              {place && <p className="text-[13px] text-ink-2">{place}</p>}
-            </div>
-            <button type="button" onClick={onEdit} title="Edit this address" aria-label="Edit this address"
-              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-warm-200 text-ink-2 hover:bg-warm-50 hover:text-ink">
-              <Pencil size={14} />
-            </button>
-          </div>
-        )}
-      {missing.length > 0 && (bad
-        ? <p className="mt-3 text-[12px] text-danger-fg">Missing: {missing.join(', ')}</p>
-        : !empty && <p className="mt-3"><span className="rounded-full bg-warm-50 px-2 py-0.5 text-[11px] text-ink-2">Incomplete — {missing.length} to add</span></p>)}
-    </div>
-  )
-}
+/* PartyBlock and AddressCard moved to ConsignmentAdd/formBuilderV2.tsx (2026-10-04) — imported above. */
 
 /** A compact switch — label beside the toggle, its explanation only in the tooltip (the one-line rows). */
 function InlineSwitch({ label, title, checked, onChange }: { label: string; title?: string; checked: boolean; onChange: (v: boolean) => void }) {
@@ -1018,13 +722,14 @@ export default function AddConsignmentV2({ portal = 'console' }: {
     && (params.get('type') === 'FTL' || pathname.endsWith('/vehicle') || pr?.shipmentType === 'FTL' || saved?.shipmentType === 'FTL')
   const overageStore = fromOverage ? stores.find((s) => s.code === fromOverage.pr.storeCode) : undefined
 
-  /* ---- the console registry: relabels + Form Builder hides (the Regular tier's membership) ---- */
-  /* the account's shared config (read only) + this form's own rules on top (the builder writes these) */
-  const [fieldCfg] = useState(loadFieldConfig)
-  const [behavior] = useState(loadFormBehavior)
-  const [savedRules, setSavedRules] = useState<FormRulesV2>(loadRulesV2)
-  const [draftRules, setDraftRules] = useState<FormRulesV2>({})
-  const [editing, setEditing] = useState(false)
+  /* ---- the console registry + the on-canvas builder engine (ConsignmentAdd/formBuilderV2.tsx) ---- */
+  const {
+    behavior, editing, showHidden, setShowHidden, hid, lbl, builder: rawBuilder, addressLayout,
+    setDraftLayout, startEditing: startEditingRules, cancelEditing, saveEditing: saveEditingRules, resetRules,
+  } = useFormBuilderV2({
+    merchantMode, extraFields: V2_FIELDS, formLocked: FORM_LOCKED, notRequirable: NOT_REQUIRABLE,
+    defaultMore: DEFAULT_MORE, groupKeys: GROUP_KEYS, movableExtra, forceHidden: (k) => merchantMode && MERCHANT_OFF.has(k),
+  })
   /* the Simplified form (owner, 2026-09-29): the original form's quick tier, moved across as it was and restyled;
      not customisable — the builder's rules apply to the regular form only */
   const [tier, setTierState] = useState<'full' | 'simplified'>(() => {
@@ -1036,49 +741,19 @@ export default function AddConsignmentV2({ portal = 'console' }: {
     try { localStorage.setItem(FORM_TIER_V2_KEY, t) } catch { /* private mode */ }
     setShowErrors(false)
   }
-  /* owner, 2026-09-29: a field customised on the console form (hidden · renamed · More · Required) is the same on
-     Grow — the saved builder rules, plus the Form Fields tab's Grow-only Required */
-  const merchantRules = useMemo<FormRulesV2>(() => {
-    const out: FormRulesV2 = { ...savedRules }
-    for (const k of behavior.required ?? []) if (!out[k]?.hidden) out[k] = { ...out[k], required: true }
-    return out
-  }, [savedRules, behavior])
-  const rules = merchantMode ? merchantRules : editing ? draftRules : savedRules
-  const lockOf = (k: string): FieldLock => (byKeyMandatory(k) ? 'system' : FORM_LOCKED.has(k) ? 'form' : null)
-  const baseHidden = (k: string) => !!fieldCfg[k]?.hidden || behavior.hidden.includes(k)
-  const ownHidden = (k: string) => (merchantMode && MERCHANT_OFF.has(k)) || (!lockOf(k) && (rules[k]?.hidden ?? baseHidden(k)))
-  const hiddenWith = (k: string): string | null => {
-    const parent = FIELD_DEF.get(k)?.dependsOn
-    return parent && (ownHidden(parent) || hiddenWith(parent)) ? parent : null
-  }
-  const isHidden = (k: string) => ownHidden(k) || !!hiddenWith(k)
-  const requirable = (k: string) => FIELD_DEF.has(k) && !lockOf(k) && !NOT_REQUIRABLE.has(k)
-  const need = (k: string) => !simple && requirable(k) && !isHidden(k) && !!rules[k]?.required
-  const inMore = (k: string) => movable(k) && !need(k) && (rules[k]?.more ?? DEFAULT_MORE.has(k))
-  /* editing = the live preview: every field renders (hidden ones faded) so it can be brought back */
-  /* the builder's eye (icon only): hidden fields shown faded (default) or left out while editing */
-  const [showHidden, setShowHidden] = useState(true)
-  const hid = (key: string) => (editing ? !showHidden && isHidden(key) : isHidden(key))
-  const lbl = (key: string) => rules[key]?.label?.trim() || (V2_KEYS.has(key) ? FIELD_DEF.get(key)!.defaultLabel : fieldLabel(key, fieldCfg))
-  const setRule = (k: string, patch: FieldRuleV2) => setDraftRules((r) => {
-    const cur: FieldRuleV2 = { ...r[k], ...patch }
-    if (patch.hidden) cur.required = false
-    if (patch.required) cur.hidden = false
-    return { ...r, [k]: cur }
-  })
-  const builder: Builder = {
-    editing, lock: lockOf, requirable, ownHidden, isHidden, hiddenWith, required: need, inMore, label: lbl, set: setRule,
-  }
+  /* Simplified is not customisable — required never applies there */
+  const need = (k: string) => !simple && rawBuilder.required(k)
+  const isHidden = rawBuilder.isHidden
+  const inMore = rawBuilder.inMore
+  const builder: BuilderType = { ...rawBuilder, required: need }
   /* how goods are entered — edited with the rest of the form, saved with it */
   const [savedGoods, setSavedGoods] = useState<GoodsSetting>(loadGoodsSetting)
   const [draftGoods, setDraftGoods] = useState<GoodsSetting>('sku')
   const goodsSetting = editing ? draftGoods : savedGoods
-  const startEditing = () => { setDraftRules(savedRules); setDraftGoods(savedGoods); setEditing(true) }
-  const cancelEditing = () => setEditing(false)
+  const startEditing = () => { startEditingRules(); setDraftGoods(savedGoods) }
   const saveEditing = () => {
-    saveRulesV2(draftRules); setSavedRules(asRules(draftRules))
+    saveEditingRules()
     saveGoodsSetting(draftGoods); setSavedGoods(draftGoods)
-    setEditing(false)
     toast.success('Consignment form updated — applies to this form')
   }
   /* "More information" per section (and per package): open ones reveal their waiting fields in place */
@@ -1917,10 +1592,19 @@ export default function AddConsignmentV2({ portal = 'console' }: {
           </button>}
         </div>
         <div className="mt-4">
-          {/* owner, 2026-09-29: address fields are customised in the popup — the card stays a card while editing */}
-          {<AddressCard party={p} missing={missingOf(p, role)} onEdit={() => openAddress(role, idx, false)}
-                tag={facility ? 'Hub' : at >= 0 ? book[at].tag ?? 'Saved' : role === 'from' && fromList ? 'Saved' : filled(p.name) ? 'New' : undefined} />}
-          {editing && <p className="mt-2 text-[12px] text-ink-3">Open the address (✎ or New address) to customise its fields.</p>}
+          {/* the tenant's address-layout choice (editing bar, "Classic"/"Card") — a live preview here,
+              not just a Grow setting: PartyFields is the SAME component Grow's AddOrderPage renders */}
+          {addressLayout === 'default' ? (
+            <PartyFields party={p} set={patchParty(role, idx)}
+              nameLabel={role === 'to' ? 'Customer Name' : role === 'rto' ? 'Name' : 'Sender Name'}
+              windowLabel={null} requireContact={role !== 'from'} hid={hid} req={builder.required}
+              showErrors={showErrors} floorLift={role !== 'rto'} />
+          ) : (
+            /* owner, 2026-09-29: address fields are customised in the popup — the card stays a card while editing */
+            <AddressCard party={p} missing={missingOf(p, role)} onEdit={() => openAddress(role, idx, false)}
+              tag={facility ? 'Hub' : at >= 0 ? book[at].tag ?? 'Saved' : role === 'from' && fromList ? 'Saved' : filled(p.name) ? 'New' : undefined} />
+          )}
+          {editing && addressLayout === 'builderV2' && <p className="mt-2 text-[12px] text-ink-3">Open the address (✎ or New address) to customise its fields.</p>}
           {((role === 'from' && fromKindBad) || (role === 'to' && idx === 0 && toKindBad)) && (
             <ErrLine className="mt-2">{src === 'facilities' ? 'Pick a hub — this end has no pickup / delivery leg.' : 'Pick an address — this end has a pickup / delivery leg.'}</ErrLine>
           )}
@@ -2836,12 +2520,25 @@ export default function AddConsignmentV2({ portal = 'console' }: {
           the eye hides it. <Lock size={11} className="inline" /> fields are needed by the system. Saved changes apply to this form.
         </p>
       </div>
+      {/* which Ship From / Ship To / RTO layout merchants (Grow) and this form render — a live preview,
+          not just a Grow setting: flipping it swaps the section below right away */}
+      <div className="flex shrink-0 items-center gap-1.5 rounded-md border border-line bg-surface p-0.5"
+        title="Classic = the plain field grid; Card = address summary cards with an edit popup">
+        <button type="button" onClick={() => setDraftLayout('default')} aria-pressed={addressLayout === 'default'}
+          className={`rounded px-2.5 py-1 text-[12px] font-bold transition-colors ${addressLayout === 'default' ? 'bg-warm-100 text-ink' : 'text-ink-3 hover:text-ink'}`}>
+          Classic addresses
+        </button>
+        <button type="button" onClick={() => setDraftLayout('builderV2')} aria-pressed={addressLayout === 'builderV2'}
+          className={`rounded px-2.5 py-1 text-[12px] font-bold transition-colors ${addressLayout === 'builderV2' ? 'bg-warm-100 text-ink' : 'text-ink-3 hover:text-ink'}`}>
+          Card addresses
+        </button>
+      </div>
       <button type="button" onClick={() => setShowHidden((v) => !v)} aria-pressed={showHidden}
         title={showHidden ? 'Hide the hidden fields' : 'Show the hidden fields'} aria-label={showHidden ? 'Hide the hidden fields' : 'Show the hidden fields'}
         className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-line bg-surface text-ink-2 hover:bg-warm-50 hover:text-ink">
         {showHidden ? <Eye size={16} /> : <EyeOff size={16} />}
       </button>
-      <Button variant="ghost" icon={<RotateCcw size={14} />} onClick={() => { setDraftRules({}); setDraftGoods('sku') }}>Reset to default</Button>
+      <Button variant="ghost" icon={<RotateCcw size={14} />} onClick={() => { resetRules(); setDraftGoods('sku'); setDraftLayout('default') }}>Reset to default</Button>
       <Button variant="outline" onClick={cancelEditing}>Cancel</Button>
       <Button onClick={saveEditing}>Save changes</Button>
     </div>

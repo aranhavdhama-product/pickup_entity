@@ -35,7 +35,7 @@ import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ChevronDown, ChevronRight, CircleDot, CircleMinus, ClipboardList, CreditCard, FileCheck,
-  Package, Package as PackageIcon, Pencil, Plus, ScanBarcode, SlidersHorizontal, Truck, Undo2, User,
+  Package, Package as PackageIcon, Pencil, Plus, ScanBarcode, Truck, Undo2, User,
   Wallet as WalletIcon, Warehouse, X,
 } from 'lucide-react'
 import { blankParty, CURRENCY } from '../../growOrders/seed'
@@ -49,7 +49,7 @@ import {
 import { ORIGIN_COUNTRIES } from '../../data/originCountries'
 import { toast } from '../../nueva/toast'
 import {
-  Button, Checkbox, DateInput, IconButton, Input, MenuSelect, MultiSelect, MultiSelectDropdown, PageHeader, Panel,
+  Button, Checkbox, DateInput, IconButton, Input, MenuSelect, Modal, MultiSelect, MultiSelectDropdown, PageHeader, Panel,
   SearchInput, StatusPill, Toggle,
 } from '../../nueva/components'
 import { DateTimeRangeInput } from '../../nueva/DateRangeFilter'
@@ -66,11 +66,8 @@ import {
   vehiclesOf, volKg, type ConsignmentFields, type FtlVehicle, type OrderDraft, type Parcel, type ParcelItem,
   type ParcelService,
 } from '../../growOrders/draft'
-/* the console's field registry, shared with its Form Builder drawer */
-import {
-  fieldHidden, fieldLabel, loadFieldConfig, loadFormBehavior, resetFieldConfig, saveFieldConfig,
-} from '../ConsignmentAdd/fieldConfig'
-import { FormBuilderDrawer } from '../ConsignmentAdd/FormBuilderDrawer'
+/* the shared form-builder engine + address layout (tenant-configured, read-only here) */
+import { AddressCard, BuilderCtx, PartyBlock, ShowErrorsCtx, useFormBuilderV2 } from '../ConsignmentAdd/formBuilderV2'
 
 /* ---- option lists ---- */
 const CONSIGNMENT_TYPES = ['Forward', 'Reverse', 'Exchange', 'Transfer', 'Service']
@@ -450,7 +447,8 @@ function PhoneField({ label, required, code, number, onCode, onNumber, disabled,
  *   {Pick Up|Delivery} window · Floor Number · Lift Available
  * `locked` = a Location Master address picked from the list — shown, not retyped.
  */
-function PartyFields({ party, set, nameLabel, windowLabel, requireContact, locked, locationCode, hid, req, showErrors, floorLift = true, advancedDefaultOpen }: {
+/** also reused by LocalConsignments/AddConsignmentV2.tsx for its "Classic addresses" layout choice */
+export function PartyFields({ party, set, nameLabel, windowLabel, requireContact, locked, locationCode, hid, req, showErrors, floorLift = true, advancedDefaultOpen }: {
   party: Party; set: (patch: Partial<Party>) => void
   nameLabel: string; windowLabel: string | null; requireContact?: boolean; locked?: boolean
   locationCode?: ReactNode; hid: (k: string) => boolean
@@ -712,18 +710,13 @@ export default function AddOrderPage() {
     && (params.get('type') === 'FTL' || pathname.endsWith('/vehicle') || pr?.shipmentType === 'FTL' || saved?.shipmentType === 'FTL')
   const overageStore = fromOverage ? stores.find((s) => s.code === fromOverage.pr.storeCode) : undefined
 
-  /* ---- the console registry: relabels + Form Builder / Base Modules hides ----
-     Merchants edit fieldCfg themselves from the Form Builder opened below;
-     behavior (account-level required/hidden) is configured elsewhere (Settings
-     → Consignment Order → Form Fields) and only read here. */
-  const [fieldCfg, setFieldCfg] = useState(loadFieldConfig)
-  const [behavior] = useState(loadFormBehavior)
-  const [builderOpen, setBuilderOpen] = useState(false)
-  const applyFieldCfg = (next: typeof fieldCfg) => { setFieldCfg(next); saveFieldConfig(next) }
-  const hid = (key: string) => fieldHidden(key, fieldCfg, behavior)
-  const lbl = (key: string) => fieldLabel(key, fieldCfg)
-  /** an optional field the account has configured as required (Settings → Form Fields) */
-  const req = (key: string) => !!behavior.required?.includes(key)
+  /* ---- the shared form-builder engine (ConsignmentAdd/formBuilderV2.tsx) ----
+     A merchant never edits — hides, required overrides, relabels and the Ship
+     From/To/RTO layout choice are all set by the tenant from the console's
+     "Edit consignment form" (LocalConsignments/AddConsignmentV2.tsx); Grow only
+     ever reads the saved result. */
+  const { behavior, hid, lbl, builder, addressLayout } = useFormBuilderV2({ merchantMode: true })
+  const req = builder.required
   const advancedDefaultOpen = behavior.defaultMode === 'full'
 
   /* ---- Ship From ---- */
@@ -743,6 +736,25 @@ export default function AddOrderPage() {
   })
   const [saveSender, setSaveSender] = useState(false)
   const [editFrom, setEditFrom] = useState(false)
+  /** the "Card addresses" layout's edit popup — which address is open, if any */
+  const [addrEdit, setAddrEdit] = useState<{ role: 'from' | 'to' | 'rto'; idx: number } | null>(null)
+  /** what an address still misses, in words — the AddressCard's own completeness check (Card layout only) */
+  const missingOf = (p: Party, role: 'from' | 'to' | 'rto'): string[] => {
+    const out: string[] = []
+    const add = (ok: boolean, label: string) => { if (!ok) out.push(label) }
+    add(filled(p.name), role === 'to' ? 'Customer Name' : role === 'rto' ? 'Name' : 'Sender Name')
+    if (role !== 'from') add(filled(p.contactNumber), 'Contact Number')
+    add(filled(p.line1), 'Address Line 1'); add(filled(p.country), 'Country'); add(filled(p.state), 'State'); add(filled(p.city), 'City')
+    if (role === 'rto') add(filled(p.postalCode), 'Postal Code')
+    if (req('addrEmail')) add(filled(p.email), lbl('addrEmail'))
+    if (req('addrCompanyName')) add(filled(p.businessName), lbl('addrCompanyName'))
+    if (req('addrLines23')) add(filled(p.line2), 'Address Line 2')
+    if (req('addrLandmark')) add(filled(p.landmark), lbl('addrLandmark'))
+    if (req('addrSuburb')) add(filled(p.county), lbl('addrSuburb'))
+    if (role !== 'rto' && req('addrCoordinates')) add(filled(p.latitude ?? '') && filled(p.longitude ?? ''), 'Latitude & Longitude')
+    if (role !== 'rto' && req('addrFloorLift')) add(filled(p.floorNumber ?? ''), 'Floor Number')
+    return out
+  }
 
   /* ---- Ship To (multi-drop) + RTO ---- */
   const [receiver, setReceiver] = useState<Party>(() => saved?.receiver
@@ -1202,7 +1214,12 @@ export default function AddOrderPage() {
       icon={<Warehouse size={15} className={ICON} />}
       caption="Provide the pickup address and contact details for this consignment."
       action={editFrom ? saveSenderToggle : undefined}>
-      {!editFrom ? (
+      {addressLayout === 'builderV2' ? (
+        <>
+          <div className="mb-4"><PickupSearch options={senderOptions} onPick={pickSender} /></div>
+          <AddressCard party={sender} missing={missingOf(sender, 'from')} onEdit={() => setAddrEdit({ role: 'from', idx: 0 })} />
+        </>
+      ) : !editFrom ? (
         <>
           <div className="flex items-start gap-3 rounded-lg border border-line bg-warm-25 px-4 py-3">
             <Warehouse size={16} className="mt-0.5 shrink-0 text-warm-400" />
@@ -1231,14 +1248,18 @@ export default function AddOrderPage() {
       <Segmented compact options={RTO_MODES} value={c.rtoMode ?? RTO_MODES[0]} onChange={(m) => setC({ rtoMode: m })} />
       {c.rtoMode === RTO_MODES[1] && (
         <div className="mt-5">
-          <PartyFields party={rto} set={(p) => setRto((x) => ({ ...x, ...p }))} nameLabel="Name" windowLabel={null} hid={hid} req={req}
-            showErrors={showErrors} floorLift={false} advancedDefaultOpen={advancedDefaultOpen}
-            locationCode={<F label="Location Code" value={rto.locationCode ?? ''} placeholder="eg, Williamstown"
-              options={pickup.options.filter((o) => o.value !== OTHER_ADDRESS)}
-              onChange={(code) => {
-                const st = stores.find((s) => s.code === code)
-                setRto(st ? { ...st.party, locationCode: code } : (x) => ({ ...x, locationCode: code }))
-              }} />} />
+          {addressLayout === 'builderV2' ? (
+            <AddressCard party={rto} missing={missingOf(rto, 'rto')} onEdit={() => setAddrEdit({ role: 'rto', idx: 0 })} />
+          ) : (
+            <PartyFields party={rto} set={(p) => setRto((x) => ({ ...x, ...p }))} nameLabel="Name" windowLabel={null} hid={hid} req={req}
+              showErrors={showErrors} floorLift={false} advancedDefaultOpen={advancedDefaultOpen}
+              locationCode={<F label="Location Code" value={rto.locationCode ?? ''} placeholder="eg, Williamstown"
+                options={pickup.options.filter((o) => o.value !== OTHER_ADDRESS)}
+                onChange={(code) => {
+                  const st = stores.find((s) => s.code === code)
+                  setRto(st ? { ...st.party, locationCode: code } : (x) => ({ ...x, locationCode: code }))
+                }} />} />
+          )}
         </div>
       )}
     </SectionCard>
@@ -1287,8 +1308,12 @@ export default function AddOrderPage() {
                   className="shrink-0 text-warm-400 transition-colors hover:text-brand-500"><CircleMinus size={17} /></button>
               )}
             </div>
-            <PartyFields party={d} set={set} nameLabel="Customer Name" windowLabel="Delivery" requireContact hid={hid} req={req} showErrors={showErrors}
-              advancedDefaultOpen={advancedDefaultOpen} />
+            {addressLayout === 'builderV2' ? (
+              <AddressCard party={d} missing={missingOf(d, 'to')} onEdit={() => setAddrEdit({ role: 'to', idx: i })} />
+            ) : (
+              <PartyFields party={d} set={set} nameLabel="Customer Name" windowLabel="Delivery" requireContact hid={hid} req={req} showErrors={showErrors}
+                advancedDefaultOpen={advancedDefaultOpen} />
+            )}
             {/* customs clearance only applies once this address crosses a border from Ship From — shown
                 right by the country that triggers it, not as a blanket Handling toggle */}
             {!hid('clearanceRequired') && sender.country && d.country && d.country !== sender.country && (
@@ -1309,6 +1334,30 @@ export default function AddOrderPage() {
         </button>
       )}
     </SectionCard>
+  )
+
+  /** the "Card addresses" layout's edit popup — one Modal for whichever address is open */
+  const addrEditParty = addrEdit ? (addrEdit.role === 'from' ? sender : addrEdit.role === 'rto' ? rto : allDrops[addrEdit.idx]) : null
+  const addrEditSet = (p: Partial<Party>) => {
+    if (!addrEdit) return
+    if (addrEdit.role === 'from') setSender((x) => ({ ...x, ...p }))
+    else if (addrEdit.role === 'rto') setRto((x) => ({ ...x, ...p }))
+    else if (addrEdit.idx === 0) setReceiver((x) => ({ ...x, ...p }))
+    else setDrop(addrEdit.idx - 1, p)
+  }
+  const addressEditModal = (
+    <Modal open={!!addrEdit} wide
+      title={addrEdit ? `Edit ${addrEdit.role === 'from' ? 'Ship From' : addrEdit.role === 'rto' ? 'RTO' : 'Ship To'}${addrEdit.role === 'to' && allDrops.length > 1 ? ` · Address ${addrEdit.idx + 1}` : ''}` : ''}
+      onClose={() => setAddrEdit(null)}
+      footer={<Button onClick={() => setAddrEdit(null)}>Done</Button>}>
+      {addrEdit && addrEditParty && (
+        <div className="pb-4 pt-2">
+          <PartyBlock grouped party={addrEditParty} set={addrEditSet}
+            nameLabel={addrEdit.role === 'to' ? 'Customer Name' : addrEdit.role === 'rto' ? 'Name' : 'Sender Name'}
+            requireContact={addrEdit.role !== 'from'} hid={hid} variant={addrEdit.role === 'rto' ? 'rto' : 'full'} />
+        </div>
+      )}
+    </Modal>
   )
 
   const declarations = (
@@ -1710,24 +1759,13 @@ export default function AddOrderPage() {
   const pct = Math.round((filledCount / allReq.length) * 100)
 
   return (
+    <BuilderCtx.Provider value={builder}>
+    <ShowErrorsCtx.Provider value={showErrors}>
     <div>
-      <PageHeader title={isFtl ? 'Add FTL Consignment' : 'Add Consignment'} right={
-        <button type="button" onClick={() => setBuilderOpen(true)}
-          title="Choose which fields appear on this form, their order and labels"
-          className="inline-flex items-center gap-1.5 rounded-md border border-warm-300 bg-surface px-3 py-1.5 text-[12.5px] font-bold text-ink-2 hover:bg-warm-50">
-          <SlidersHorizontal size={14} /> Customize Form
-        </button>
-      } />
-      {builderOpen && createPortal(
-        <div className="fixed inset-0 z-50 flex justify-end">
-          <div className="absolute inset-0 bg-ink/20" onClick={() => setBuilderOpen(false)} />
-          <div className="relative h-full w-[380px] max-w-[90vw] bg-surface shadow-2xl">
-            <FormBuilderDrawer open onClose={() => setBuilderOpen(false)} cfg={fieldCfg} onChange={applyFieldCfg}
-              onReset={() => setFieldCfg(resetFieldConfig())} behavior={behavior} />
-          </div>
-        </div>,
-        document.body,
-      )}
+      {/* no edit entry point here — a merchant only ever inherits the tenant's form setup,
+          configured from the console's "Edit consignment form" (LocalConsignments/AddConsignmentV2.tsx) */}
+      <PageHeader title={isFtl ? 'Add FTL Consignment' : 'Add Consignment'} />
+      {addressLayout === 'builderV2' && addressEditModal}
       {fromPr && (
         <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-line bg-info-bg px-4 py-2.5 text-[13px] text-ink">
           <Truck size={15} className="shrink-0 text-info-fg" />
@@ -1801,5 +1839,7 @@ export default function AddOrderPage() {
         <Button onClick={proceed}>{isBlind ? 'Reserve Vehicle' : 'Create Consignment'}</Button>
       </div>
     </div>
+    </ShowErrorsCtx.Provider>
+    </BuilderCtx.Provider>
   )
 }
