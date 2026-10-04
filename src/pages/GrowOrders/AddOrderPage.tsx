@@ -58,6 +58,7 @@ import {
   ChipToggle, Fld, Grid, InlineToggle, SectionCard, Segmented, SubHead, UnitBox,
 } from '../../components/consignmentForm'
 import { money, OTHER_ADDRESS, partyLine, partyOk, prWindow, storeOptionLabel } from './utils'
+import { earliestWindow, pickupPolicy } from '../../growOrders/pickupSlots'
 import { useReceiverBook, usePickupLocations, type BookEntry } from './pickupLocations'
 import {
   ADDITIONAL_SERVICES, DEFAULT_FTL_SERVICE, DRAFT_KEY, FTL_SERVICE_CODES, PARCEL_SERVICES, clearDraftKeys,
@@ -810,6 +811,11 @@ export default function AddOrderPage() {
   const receiverBook = useReceiverBook(db.orders, signedIn?.isCsr ? (merchant?.code ?? null) : undefined)
   const fromList = !!senderStore && senderStore !== OTHER_ADDRESS
   const allDrops = [receiver, ...drops]
+  /* Dedicate Truck with no Ship To given at all: a reserved vehicle booking,
+     not a consignment. `proceed()` branches on this — it creates a
+     GrowPickupRequest (blind) instead of a GrowOrder, same record the old
+     Pickup Requests → Create Pickup Request → FTL path used to create. */
+  const isBlind = isFtl && !partyOk(receiver) && drops.length === 0
 
   /* ---- derived booking numbers ---- */
   const totals = useMemo(() => ({
@@ -844,14 +850,17 @@ export default function AddOrderPage() {
   const effectiveRef = effectiveOrder
 
   /* ------------------------------------------------ completion + validation */
-  const consignmentReq = [...(signedIn?.isCsr ? [!!onBehalfOf] : []), filled(effectiveOrder), !!c.consignmentType]
+  /* A blind reservation becomes a GrowPickupRequest, not a GrowOrder — none of
+     Consignment Details, RTO, Documents or Payment apply to it; only Ship
+     From and the vehicle/service fields (pieceReq) do. */
+  const consignmentReq = isBlind ? [] : [...(signedIn?.isCsr ? [!!onBehalfOf] : []), filled(effectiveOrder), !!c.consignmentType]
   /* a Location Master row may be sparse and is not the merchant's to retype */
   const fromReq = fromList ? [filled(sender.name), filled(sender.line1)]
     : [sender.name, sender.line1, sender.country, sender.city, sender.state].map(filled)
   /* Dedicate Truck bookings assign drops to vehicles by capacity, not a precise
      address up front — Ship To stays available to enter, just never blocking. */
   const toReq = isFtl ? [] : allDrops.flatMap((d) => [d.name, d.contactNumber, d.line1, d.country, d.city, d.state].map(filled))
-  const rtoReq = c.rtoMode === RTO_MODES[0] ? [true] : [rto.name, rto.line1, rto.country, rto.city, rto.state].map(filled)
+  const rtoReq = isBlind ? [] : c.rtoMode === RTO_MODES[0] ? [true] : [rto.name, rto.line1, rto.country, rto.city, rto.state].map(filled)
   const pieceReq = isFtl
     ? [!!ftlService, vehicles.length > 0, uncovered.length === 0,
       ...rows.map((r) => !!r.vehicleType && r.count >= 1 && r.loadKg > 0 && r.addressIdx.length > 0), noDg]
@@ -863,10 +872,10 @@ export default function AddOrderPage() {
      every CSR-created order links to a purchase order instead, regardless of the
      target merchant's own terms. */
   const poLinked = !!signedIn?.isCsr || merchant?.postpaidTerms === 'po'
-  const paymentReq = !poLinked && merchant?.postpaidTerms === 'none' ? []
+  const paymentReq = isBlind ? [] : !poLinked && merchant?.postpaidTerms === 'none' ? []
     : poLinked ? [!!selectedPo]
     : [!!c.paymentMode, c.paymentMode !== 'Card' || cardOk]
-  const docsReq = (merchant?.requiredDocuments ?? []).map((d) => !!docs[d.code])
+  const docsReq = isBlind ? [] : (merchant?.requiredDocuments ?? []).map((d) => !!docs[d.code])
   const allReq = [...consignmentReq, ...fromReq, ...toReq, ...rtoReq, ...pieceReq, ...skuReq, ...carrierReq, ...paymentReq, ...docsReq]
   const filledCount = allReq.filter(Boolean).length
   const canSubmit = filledCount === allReq.length
@@ -1038,6 +1047,28 @@ export default function AddOrderPage() {
       return
     }
     persistTypedSender()
+    /* Dedicate Truck with no Ship To at all: reserve the vehicle directly as a
+       GrowPickupRequest — no consignment is created. Same record, same backend
+       action (`createBlindPickup`) the old Pickup Requests → Create Pickup
+       Request → FTL path used; this is just the other door into it. */
+    if (isBlind) {
+      const win = sender.windowStart && sender.windowEnd
+        ? { startAt: sender.windowStart, endAt: sender.windowEnd }
+        : earliestWindow(new Date(), pickupPolicy(merchant?.code ?? null))
+      const pr = growOrderActions.createBlindPickup({
+        storeCode: draftStoreCode, shipmentType: 'FTL',
+        expectedPieces: null, expectedWeightKg: actualLoad || null,
+        vehicleType, vehicleUnit: units, ftlServiceType: ftlService,
+        shipFrom: fromList ? null : sender, shipTo: null,
+        contactName: sender.name, contactNumber: sender.contactNumber,
+        instructions, source: 'Merchant', ...win,
+      })
+      if (!pr) { toast.error('Reserved pickups are turned off for this account.'); return }
+      clearDraftKeys()
+      toast.success(`Pickup Request ${pr.number} reserved · ${units} × ${vehicleType}`)
+      nav(`/grow/orders/pickups/${pr.id}`)
+      return
+    }
     const draft = buildDraft()
     const pickupId = fromPr?.id ?? null
     const overage = fromOverage ? { prId: fromOverage.pr.id, overageId: fromOverage.scan.id } : null
@@ -1194,6 +1225,9 @@ export default function AddOrderPage() {
                    text-[13px] font-bold text-brand-500 transition-colors hover:border-brand-500 hover:bg-brand-50/40">
         <Plus size={14} /> Add a delivery address (optional)
       </button>
+      <p className="mt-2 text-center text-[12px] text-ink-3">
+        Leaving this empty reserves the vehicle only — a Pickup Request is created, not a consignment.
+      </p>
     </div>
   )
 
@@ -1707,9 +1741,10 @@ export default function AddOrderPage() {
         {showErrors && !canSubmit && (
           <span className="text-[13px] text-brand-500">{missingCount} required field{missingCount === 1 ? '' : 's'} remaining</span>
         )}
-        <Button variant="ghost" onClick={saveForLater}>Save for Later</Button>
+        {/* a reserved vehicle has no consignment to save as a draft of */}
+        <Button variant="ghost" onClick={saveForLater} disabled={isBlind}>Save for Later</Button>
         <Button variant="outline" onClick={() => { clearDraftKeys(); nav(backTo) }}>Go Back</Button>
-        <Button onClick={proceed}>Create Consignment</Button>
+        <Button onClick={proceed}>{isBlind ? 'Reserve Vehicle' : 'Create Consignment'}</Button>
       </div>
     </div>
   )

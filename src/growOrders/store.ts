@@ -665,9 +665,11 @@ export const growOrderActions = {
         ? `Reserved vehicle booking — ${vehicleUnit ?? 1} × ${vehicleType ?? 'vehicle'}${expectedWeightKg != null ? `, ~${expectedWeightKg} kg` : ''}`
         : `Reserved pickup — ${expectedPieces ?? 0} order${expectedPieces === 1 ? '' : 's'} expected` }],
       blind: true, shipmentType, expectedPieces, expectedWeightKg,
-      /* each branch only keeps the fields its own form collected */
+      /* each branch only keeps the fields its own form collected — except
+         vehicleType, which a Parcel (LTL) blind pickup may also carry as an
+         optional hint for which vehicle the merchant would like sent */
       sizeClass: ftl ? null : sizeClass ?? null,
-      vehicleType: ftl ? vehicleType ?? null : null,
+      vehicleType: vehicleType ?? null,
       vehicleUnit: ftl ? vehicleUnit ?? 1 : null,
       ftlServiceType: ftl ? ftlServiceType ?? null : null,
       /* a typed-in collection address is kept on BOTH branches — a parcel

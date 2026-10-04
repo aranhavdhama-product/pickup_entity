@@ -224,7 +224,9 @@ export interface GrowPickupRequest {
   sizeClass: SizeClass | null
   /** FTL only — options: FTL_SERVICE_CODES in draft.ts; decides which vehicles can be picked. */
   ftlServiceType: string | null
-  /** FTL only — options: vehiclesFor(ftlServiceType) in draft.ts. */
+  /** FTL: the booked vehicle, from vehiclesFor(ftlServiceType) in draft.ts.
+   *  Parcel (blind pickup only): an optional hint for which vehicle the
+   *  merchant would like the carrier to send — never required. */
   vehicleType: string | null
   vehicleUnit: number | null
   /** A collection address that is NOT the store's own (null = the store party).
