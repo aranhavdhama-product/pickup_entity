@@ -35,7 +35,7 @@ import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ChevronDown, ChevronRight, CircleDot, CircleMinus, ClipboardList, CreditCard, FileCheck,
-  Package, Package as PackageIcon, Pencil, Plus, ScanBarcode, Truck, Undo2, User,
+  Package, Package as PackageIcon, Pencil, Plus, ScanBarcode, SlidersHorizontal, Truck, Undo2, User,
   Wallet as WalletIcon, Warehouse, X,
 } from 'lucide-react'
 import { blankParty, CURRENCY } from '../../growOrders/seed'
@@ -66,8 +66,11 @@ import {
   vehiclesOf, volKg, type ConsignmentFields, type FtlVehicle, type OrderDraft, type Parcel, type ParcelItem,
   type ParcelService,
 } from '../../growOrders/draft'
-/* the console's field registry — pure module, read-only here */
-import { fieldHidden, fieldLabel, loadFieldConfig, loadFormBehavior } from '../ConsignmentAdd/fieldConfig'
+/* the console's field registry, shared with its Form Builder drawer */
+import {
+  fieldHidden, fieldLabel, loadFieldConfig, loadFormBehavior, resetFieldConfig, saveFieldConfig,
+} from '../ConsignmentAdd/fieldConfig'
+import { FormBuilderDrawer } from '../ConsignmentAdd/FormBuilderDrawer'
 
 /* ---- option lists ---- */
 const CONSIGNMENT_TYPES = ['Forward', 'Reverse', 'Exchange', 'Transfer', 'Service']
@@ -447,27 +450,33 @@ function PhoneField({ label, required, code, number, onCode, onNumber, disabled,
  *   {Pick Up|Delivery} window · Floor Number · Lift Available
  * `locked` = a Location Master address picked from the list — shown, not retyped.
  */
-function PartyFields({ party, set, nameLabel, windowLabel, requireContact, locked, locationCode, hid, showErrors, floorLift = true, advancedDefaultOpen }: {
+function PartyFields({ party, set, nameLabel, windowLabel, requireContact, locked, locationCode, hid, req, showErrors, floorLift = true, advancedDefaultOpen }: {
   party: Party; set: (patch: Partial<Party>) => void
   nameLabel: string; windowLabel: string | null; requireContact?: boolean; locked?: boolean
-  locationCode?: ReactNode; hid: (k: string) => boolean; showErrors: boolean; floorLift?: boolean
+  locationCode?: ReactNode; hid: (k: string) => boolean
+  /** an account-configured required field, e.g. Email or Company Name (Settings → Form Fields) */
+  req?: (k: string) => boolean
+  showErrors: boolean; floorLift?: boolean
   /** whether the "Show more address details" disclosure starts open */
   advancedDefaultOpen?: boolean
 }) {
   const [moreOpen, setMoreOpen] = useState(!!advancedDefaultOpen)
   const err = (v: string | undefined, req = true) => (showErrors && req && !locked && !filled(v) ? 'Required field.' : undefined)
-  const text = (k: keyof Party, label: string, o: { required?: boolean; type?: string; placeholder?: string } = {}) => (
-    <F label={label} required={o.required} type={o.type} placeholder={o.placeholder}
-      value={String(party[k] ?? '')} disabled={locked} error={err(String(party[k] ?? ''), !!o.required)}
-      onChange={(v) => set({ [k]: v } as Partial<Party>)} />
-  )
+  const text = (k: keyof Party, label: string, o: { required?: boolean; reqKey?: string; type?: string; placeholder?: string } = {}) => {
+    const isReq = o.required || (o.reqKey ? !!req?.(o.reqKey) : false)
+    return (
+      <F label={label} required={isReq} type={o.type} placeholder={o.placeholder}
+        value={String(party[k] ?? '')} disabled={locked} error={err(String(party[k] ?? ''), isReq)}
+        onChange={(v) => set({ [k]: v } as Partial<Party>)} />
+    )
+  }
   const showMore = !hid('addrCoordinates') || (floorLift && !hid('addrFloorLift')) || (!!windowLabel && !hid('addrWindow'))
   return (
     <>
       <SubHead label="Contact Details" first />
       <Grid>
         {locationCode}
-        {!hid('addrCompanyName') && text('businessName', 'Company Name', { placeholder: 'eg, Random Company' })}
+        {!hid('addrCompanyName') && text('businessName', 'Company Name', { placeholder: 'eg, Random Company', reqKey: 'addrCompanyName' })}
         {text('name', nameLabel, { required: true, placeholder: 'eg, John Doe' })}
         {/* spans 2 grid columns — a single column left too little room for the
             country code plus a full number to show without truncating */}
@@ -476,18 +485,19 @@ function PartyFields({ party, set, nameLabel, windowLabel, requireContact, locke
             disabled={locked} error={err(party.contactNumber, !!requireContact)}
             onCode={(v) => set({ countryCode: v })} onNumber={(v) => set({ contactNumber: v })} />
         </div>
-        {!hid('addrEmail') && text('email', 'Email', { type: 'email', placeholder: 'eg, johndoe@xyz.com' })}
+        {!hid('addrEmail') && text('email', 'Email', { type: 'email', placeholder: 'eg, johndoe@xyz.com', reqKey: 'addrEmail' })}
       </Grid>
       <SubHead label="Address Details" />
       <Grid>
         {text('line1', 'Address Line 1', { required: true, placeholder: 'eg, Building No.' })}
-        {!hid('addrLines23') && <>{text('line2', 'Address Line 2', { placeholder: 'eg, Street 1 A' })}{text('line3', 'Address Line 3', { placeholder: 'eg, Behind High School' })}</>}
-        {!hid('addrLandmark') && text('landmark', 'Landmark', { placeholder: 'eg, Behind High School' })}
+        {/* the registry groups line 2 & 3 for visibility only — line 3 stays genuinely optional even when required */}
+        {!hid('addrLines23') && <>{text('line2', 'Address Line 2', { placeholder: 'eg, Street 1 A', reqKey: 'addrLines23' })}{text('line3', 'Address Line 3', { placeholder: 'eg, Behind High School' })}</>}
+        {!hid('addrLandmark') && text('landmark', 'Landmark', { placeholder: 'eg, Behind High School', reqKey: 'addrLandmark' })}
         <F label="Country" required value={party.country} disabled={locked} error={err(party.country)}
           options={opts(COUNTRIES)} placeholder="Select country" onChange={(v) => set({ country: v })} />
         <F label="Postal Code" value={party.postalCode} disabled={locked}
           options={opts(POSTCODES)} placeholder="eg, 1300" onChange={(v) => set({ postalCode: v })} />
-        {!hid('addrSuburb') && text('county', 'Suburb / County')}
+        {!hid('addrSuburb') && text('county', 'Suburb / County', { reqKey: 'addrSuburb' })}
         {text('city', 'City', { required: true })}
         <F label="State" required value={party.state} disabled={locked} error={err(party.state)}
           options={opts(STATES)} placeholder="Select state" onChange={(v) => set({ state: v })} />
@@ -499,9 +509,9 @@ function PartyFields({ party, set, nameLabel, windowLabel, requireContact, locke
           {moreOpen && (
             <div className="mt-4">
               <Grid>
-                {!hid('addrCoordinates') && <>{text('latitude', 'Latitude', { type: 'number' })}{text('longitude', 'Longitude', { type: 'number' })}</>}
+                {!hid('addrCoordinates') && <>{text('latitude', 'Latitude', { type: 'number', reqKey: 'addrCoordinates' })}{text('longitude', 'Longitude', { type: 'number', reqKey: 'addrCoordinates' })}</>}
                 {floorLift && !hid('addrFloorLift') && <>
-                  {text('floorNumber', 'Floor Number')}
+                  {text('floorNumber', 'Floor Number', { reqKey: 'addrFloorLift' })}
                   <InlineToggle label="Lift Available" checked={!!party.liftAvailable} onChange={(v) => set({ liftAvailable: v })} />
                 </>}
               </Grid>
@@ -702,11 +712,18 @@ export default function AddOrderPage() {
     && (params.get('type') === 'FTL' || pathname.endsWith('/vehicle') || pr?.shipmentType === 'FTL' || saved?.shipmentType === 'FTL')
   const overageStore = fromOverage ? stores.find((s) => s.code === fromOverage.pr.storeCode) : undefined
 
-  /* ---- the console registry: relabels + Form Builder / Base Modules hides ---- */
-  const [fieldCfg] = useState(loadFieldConfig)
+  /* ---- the console registry: relabels + Form Builder / Base Modules hides ----
+     Merchants edit fieldCfg themselves from the Form Builder opened below;
+     behavior (account-level required/hidden) is configured elsewhere (Settings
+     → Consignment Order → Form Fields) and only read here. */
+  const [fieldCfg, setFieldCfg] = useState(loadFieldConfig)
   const [behavior] = useState(loadFormBehavior)
+  const [builderOpen, setBuilderOpen] = useState(false)
+  const applyFieldCfg = (next: typeof fieldCfg) => { setFieldCfg(next); saveFieldConfig(next) }
   const hid = (key: string) => fieldHidden(key, fieldCfg, behavior)
   const lbl = (key: string) => fieldLabel(key, fieldCfg)
+  /** an optional field the account has configured as required (Settings → Form Fields) */
+  const req = (key: string) => !!behavior.required?.includes(key)
   const advancedDefaultOpen = behavior.defaultMode === 'full'
 
   /* ---- Ship From ---- */
@@ -850,17 +867,36 @@ export default function AddOrderPage() {
   const effectiveRef = effectiveOrder
 
   /* ------------------------------------------------ completion + validation */
+  /* account-configured required address fields (Settings → Form Fields), beyond
+     the five always-required core ones — mirrors PartyFields' own reqKey checks
+     so the asterisk shown there actually blocks submit. Skipped when `locked`
+     (a Location Master row is not the merchant's to retype, same as fromReq below). */
+  const partyExtraReq = (p: Party, locked?: boolean): boolean[] => locked ? [] : [
+    !req('addrCompanyName') || filled(p.businessName),
+    !req('addrEmail') || filled(p.email),
+    !req('addrLines23') || filled(p.line2),
+    !req('addrLandmark') || filled(p.landmark),
+    !req('addrSuburb') || filled(p.county),
+    !req('addrCoordinates') || (filled(p.latitude) && filled(p.longitude)),
+    !req('addrFloorLift') || filled(p.floorNumber),
+  ]
   /* A blind reservation becomes a GrowPickupRequest, not a GrowOrder — none of
      Consignment Details, RTO, Documents or Payment apply to it; only Ship
      From and the vehicle/service fields (pieceReq) do. */
-  const consignmentReq = isBlind ? [] : [...(signedIn?.isCsr ? [!!onBehalfOf] : []), filled(effectiveOrder), !!c.consignmentType]
+  const consignmentReq = isBlind ? [] : [
+    ...(signedIn?.isCsr ? [!!onBehalfOf] : []), filled(effectiveOrder), !!c.consignmentType,
+    !req('exchangeOrderNumber') || c.consignmentType !== 'Exchange' || filled(c.exchangeOrderNumber ?? ''),
+    !req('orderAmount') || (c.orderAmount ?? 0) > 0,
+  ]
   /* a Location Master row may be sparse and is not the merchant's to retype */
-  const fromReq = fromList ? [filled(sender.name), filled(sender.line1)]
+  const fromReq = (fromList ? [filled(sender.name), filled(sender.line1)]
     : [sender.name, sender.line1, sender.country, sender.city, sender.state].map(filled)
+  ).concat(partyExtraReq(sender, fromList))
   /* Dedicate Truck bookings assign drops to vehicles by capacity, not a precise
      address up front — Ship To stays available to enter, just never blocking. */
-  const toReq = isFtl ? [] : allDrops.flatMap((d) => [d.name, d.contactNumber, d.line1, d.country, d.city, d.state].map(filled))
-  const rtoReq = isBlind ? [] : c.rtoMode === RTO_MODES[0] ? [true] : [rto.name, rto.line1, rto.country, rto.city, rto.state].map(filled)
+  const toReq = isFtl ? [] : allDrops.flatMap((d) => [d.name, d.contactNumber, d.line1, d.country, d.city, d.state].map(filled).concat(partyExtraReq(d)))
+  const rtoReq = isBlind ? [] : c.rtoMode === RTO_MODES[0] ? [true]
+    : [rto.name, rto.line1, rto.country, rto.city, rto.state].map(filled).concat(partyExtraReq(rto))
   const pieceReq = isFtl
     ? [!!ftlService, vehicles.length > 0, uncovered.length === 0,
       ...rows.map((r) => !!r.vehicleType && r.count >= 1 && r.loadKg > 0 && r.addressIdx.length > 0), noDg]
@@ -1125,12 +1161,14 @@ export default function AddOrderPage() {
         <F label={lbl('consignmentType')} required value={c.consignmentType ?? 'Forward'} options={opts(CONSIGNMENT_TYPES)}
           onChange={(v) => setC({ consignmentType: v })} />
         {!hid('exchangeOrderNumber') && c.consignmentType === 'Exchange' && (
-          <F label={lbl('exchangeOrderNumber')} value={c.exchangeOrderNumber ?? ''} placeholder="eg, ABC0000" onChange={(v) => setC({ exchangeOrderNumber: v })}
+          <F label={lbl('exchangeOrderNumber')} required={req('exchangeOrderNumber')} value={c.exchangeOrderNumber ?? ''} placeholder="eg, ABC0000" onChange={(v) => setC({ exchangeOrderNumber: v })}
+            error={reqErr(!req('exchangeOrderNumber') || filled(c.exchangeOrderNumber ?? ''))}
             helper="Original order being exchanged" />
         )}
         {/* declared value of the order, not the amount to collect — stays here regardless
             of the payment method chosen below */}
-        <FNum label={lbl('orderAmount')} unit={CURRENCY} blankZero placeholder="eg, 100.22" value={c.orderAmount ?? 0} onChange={(n) => setC({ orderAmount: n || null })} />
+        <FNum label={lbl('orderAmount')} required={req('orderAmount')} unit={CURRENCY} blankZero placeholder="eg, 100.22" value={c.orderAmount ?? 0}
+          error={reqErr(!req('orderAmount') || (c.orderAmount ?? 0) > 0)} onChange={(n) => setC({ orderAmount: n || null })} />
       </Grid>
 
       {/* Handling and Instructions, one row: Dedicate Truck first, its own Service Type
@@ -1180,7 +1218,7 @@ export default function AddOrderPage() {
         <>
           <div className="mb-4"><PickupSearch options={senderOptions} onPick={pickSender} /></div>
           <PartyFields party={sender} set={(p) => setSender((x) => ({ ...x, ...p }))} nameLabel="Sender Name" windowLabel="Pick Up"
-            locked={fromList} hid={hid} showErrors={showErrors} advancedDefaultOpen={advancedDefaultOpen} />
+            locked={fromList} hid={hid} req={req} showErrors={showErrors} advancedDefaultOpen={advancedDefaultOpen} />
         </>
       )}
     </SectionCard>
@@ -1193,7 +1231,7 @@ export default function AddOrderPage() {
       <Segmented compact options={RTO_MODES} value={c.rtoMode ?? RTO_MODES[0]} onChange={(m) => setC({ rtoMode: m })} />
       {c.rtoMode === RTO_MODES[1] && (
         <div className="mt-5">
-          <PartyFields party={rto} set={(p) => setRto((x) => ({ ...x, ...p }))} nameLabel="Name" windowLabel={null} hid={hid}
+          <PartyFields party={rto} set={(p) => setRto((x) => ({ ...x, ...p }))} nameLabel="Name" windowLabel={null} hid={hid} req={req}
             showErrors={showErrors} floorLift={false} advancedDefaultOpen={advancedDefaultOpen}
             locationCode={<F label="Location Code" value={rto.locationCode ?? ''} placeholder="eg, Williamstown"
               options={pickup.options.filter((o) => o.value !== OTHER_ADDRESS)}
@@ -1249,7 +1287,7 @@ export default function AddOrderPage() {
                   className="shrink-0 text-warm-400 transition-colors hover:text-brand-500"><CircleMinus size={17} /></button>
               )}
             </div>
-            <PartyFields party={d} set={set} nameLabel="Customer Name" windowLabel="Delivery" requireContact hid={hid} showErrors={showErrors}
+            <PartyFields party={d} set={set} nameLabel="Customer Name" windowLabel="Delivery" requireContact hid={hid} req={req} showErrors={showErrors}
               advancedDefaultOpen={advancedDefaultOpen} />
             {/* customs clearance only applies once this address crosses a border from Ship From — shown
                 right by the country that triggers it, not as a blanket Handling toggle */}
@@ -1673,7 +1711,23 @@ export default function AddOrderPage() {
 
   return (
     <div>
-      <PageHeader title={isFtl ? 'Add FTL Consignment' : 'Add Consignment'} />
+      <PageHeader title={isFtl ? 'Add FTL Consignment' : 'Add Consignment'} right={
+        <button type="button" onClick={() => setBuilderOpen(true)}
+          title="Choose which fields appear on this form, their order and labels"
+          className="inline-flex items-center gap-1.5 rounded-md border border-warm-300 bg-surface px-3 py-1.5 text-[12.5px] font-bold text-ink-2 hover:bg-warm-50">
+          <SlidersHorizontal size={14} /> Customize Form
+        </button>
+      } />
+      {builderOpen && createPortal(
+        <div className="fixed inset-0 z-50 flex justify-end">
+          <div className="absolute inset-0 bg-ink/20" onClick={() => setBuilderOpen(false)} />
+          <div className="relative h-full w-[380px] max-w-[90vw] bg-surface shadow-2xl">
+            <FormBuilderDrawer open onClose={() => setBuilderOpen(false)} cfg={fieldCfg} onChange={applyFieldCfg}
+              onReset={() => setFieldCfg(resetFieldConfig())} behavior={behavior} />
+          </div>
+        </div>,
+        document.body,
+      )}
       {fromPr && (
         <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-line bg-info-bg px-4 py-2.5 text-[13px] text-ink">
           <Truck size={15} className="shrink-0 text-info-fg" />
