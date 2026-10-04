@@ -34,8 +34,8 @@ import { useContext, useEffect, useMemo, useRef, useState, type ComponentProps, 
 import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  Check, ChevronDown, ChevronLeft, ChevronUp, CircleMinus, Eye, EyeOff, Info, Lock, Package, Plus, RotateCcw,
-  Bookmark, ScanBarcode, SlidersHorizontal, Trash2, Truck, X, Crown, Flame, GlassWater, Layers, Users, Weight,
+  Check, ChevronDown, ChevronLeft, ChevronUp, CircleMinus, Eye, EyeOff, Info, Lock, Package, Pencil, Plus, RotateCcw,
+  Bookmark, ScanBarcode, SlidersHorizontal, Trash2, Truck, User, Warehouse, X, Crown, Flame, GlassWater, Layers, Users, Weight,
 } from 'lucide-react'
 import { blankParty, CURRENCY } from '../../growOrders/seed'
 import { growOrderActions, orderById, pickupRequestById, useGrowOrders } from '../../growOrders/store'
@@ -47,7 +47,7 @@ import {
 } from '../../growOrders/masters'
 import { toast } from '../../nueva/toast'
 import {
-  Button, DateInput, Input, MenuSelect, Modal, MultiSelectDropdown, Toggle, SearchInput,
+  Button, DateInput, IconButton, Input, MenuSelect, Modal, MultiSelectDropdown, Toggle, SearchInput,
 } from '../../nueva/components'
 import {
   AddMoreButton, RadioCard, RowCard, TimeBox, UnitBox,
@@ -1456,6 +1456,9 @@ export default function AddConsignmentV2({ portal = 'console' }: {
   /* "Save this address": a Ship From / merchant-side address joins your addresses (the store list), a
      customer address joins the address book — each is offered under Saved address next time */
   const [saveAddr, setSaveAddr] = useState(false)
+  /* Classic layout only: Ship From starts as a collapsed summary (Grow's own behaviour) — Ship To and
+     RTO are always expanded there too, so only Ship From needs this extra toggle. */
+  const [classicEditFrom, setClassicEditFrom] = useState(false)
   const openAddress = (role: Role, idx: number, isNew: boolean) => {
     setSaveAddr(false)
     const cur = partyOf(role, idx)
@@ -1593,8 +1596,22 @@ export default function AddConsignmentV2({ portal = 'console' }: {
         </div>
         <div className="mt-4">
           {/* the tenant's address-layout choice (editing bar, "Classic"/"Card") — a live preview here,
-              not just a Grow setting: PartyFields is the SAME component Grow's AddOrderPage renders */}
-          {addressLayout === 'default' ? (
+              not just a Grow setting: PartyFields is the SAME component Grow's AddOrderPage renders.
+              Classic matches Grow exactly: Ship From starts as a collapsed summary with a pencil to
+              expand; Ship To and RTO are always the expanded field grid, same as Grow. */}
+          {addressLayout === 'default' && role === 'from' && !classicEditFrom ? (
+            <>
+              <div className="flex items-start gap-3 rounded-lg border border-line bg-warm-25 px-4 py-3">
+                <Warehouse size={16} className="mt-0.5 shrink-0 text-warm-400" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[13px] font-bold text-ink">{p.city || p.name || <span className="font-normal text-ink-3">No pickup location yet</span>}</p>
+                  <p className="mt-0.5 flex items-center gap-1.5 truncate text-[12.5px] text-ink-3"><User size={13} className="shrink-0" /> {p.contactNumber || p.name || '—'}</p>
+                </div>
+                <IconButton icon={<Pencil size={14} />} title="Edit Ship From" onClick={() => setClassicEditFrom(true)} />
+              </div>
+              {showErrors && !done(fromReq) && <p className="mt-1 text-[12.5px] text-brand-500">Ship From is incomplete — edit it</p>}
+            </>
+          ) : addressLayout === 'default' ? (
             <PartyFields party={p} set={patchParty(role, idx)}
               nameLabel={role === 'to' ? 'Customer Name' : role === 'rto' ? 'Name' : 'Sender Name'}
               windowLabel={null} requireContact={role !== 'from'} hid={hid} req={builder.required}
