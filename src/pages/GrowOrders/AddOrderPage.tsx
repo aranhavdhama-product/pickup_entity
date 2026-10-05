@@ -984,6 +984,13 @@ export default function AddOrderPage() {
   const setItems = (i: number, f: (items: ParcelItem[]) => ParcelItem[]) =>
     setParcels((ps) => ps.map((x, j) => (j === i ? reweigh({ ...x, items: f(x.items ?? []) }, packageTypes) : x)))
   const [focusLine, setFocusLine] = useState<{ i: number; k: number } | null>(null)
+  /** which packages' Contents table is collapsed to a one-line "N SKUs" summary — keyed by
+   *  packageId so it survives reordering/removal; auto-collapses the others on Add Package
+   *  so the page doesn't keep growing as more packages pick up their own SKU lines */
+  const [collapsedContents, setCollapsedContents] = useState<Set<string>>(new Set())
+  const contentsCollapsed = (p: Parcel) => !!p.packageId && collapsedContents.has(p.packageId)
+  const collapseContents = (p: Parcel) => p.packageId && setCollapsedContents((s) => new Set(s).add(p.packageId!))
+  const expandContents = (p: Parcel) => p.packageId && setCollapsedContents((s) => { const n = new Set(s); n.delete(p.packageId!); return n })
   const addItem = (i: number) => {
     setFocusLine({ i, k: (parcels[i].items ?? []).length })
     setItems(i, (items) => [...items, blankItem()])
@@ -1524,9 +1531,22 @@ export default function AddOrderPage() {
                 )}
 
                 {/* contents — optional, nested SKU lines scoped to this package, each ONE dense row too;
-                    adding one is the row's own "Add SKU" action (hover cluster above), not a button here */}
-                {items.length > 0 && (
+                    adding one is the row's own "Add SKU" action (hover cluster above), not a button here.
+                    Collapses to a one-line "N SKUs" summary once Add Package moves on to a new one. */}
+                {items.length > 0 && (contentsCollapsed(p) ? (
                   <div className="mt-1.5 border-t border-line/60 pt-2">
+                    <button type="button" onClick={() => expandContents(p)}
+                      className="flex items-center gap-1.5 text-[12px] font-bold text-ink-3 hover:text-ink">
+                      <ChevronRight size={13} />
+                      {items.filter((it) => !isBlankItem(it)).length} SKU{items.filter((it) => !isBlankItem(it)).length === 1 ? '' : 's'}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="mt-1.5 border-t border-line/60 pt-2">
+                    <button type="button" onClick={() => collapseContents(p)}
+                      className="mb-1.5 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-ink-3 hover:text-ink">
+                      <ChevronDown size={13} /> Contents
+                    </button>
                     <div className="overflow-x-auto rounded-md border border-line/70">
                       <div style={{ gridTemplateColumns: SKU_COLS }} className="grid min-w-max gap-2 border-b border-line/70 bg-warm-25/60 px-2.5 py-1.5 text-[11px] font-bold text-ink-3">
                         <span>SKU Code</span><span>Name</span><span>Qty</span>
@@ -1574,13 +1594,23 @@ export default function AddOrderPage() {
                       })}
                     </div>
                   </div>
-                )}
+                ))}
               </div>
             )
           })}
         </div>
         <div className="mt-2">
-          <Button size="sm" variant="text" icon={<Plus size={13} />} onClick={() => setParcels((ps) => [...ps, newParcel()])}>Add Package</Button>
+          <Button size="sm" variant="text" icon={<Plus size={13} />} onClick={() => {
+            /* collapse every existing package's Contents to a "N SKUs" summary — the new
+               package is the one being worked on now, not a reason to keep scrolling past
+               everyone else's SKU lines */
+            setCollapsedContents((s) => {
+              const n = new Set(s)
+              for (const p of parcels) if ((p.items ?? []).length > 0 && p.packageId) n.add(p.packageId)
+              return n
+            })
+            setParcels((ps) => [...ps, newParcel()])
+          }}>Add Package</Button>
         </div>
         {declarations}
       </SectionCard>
