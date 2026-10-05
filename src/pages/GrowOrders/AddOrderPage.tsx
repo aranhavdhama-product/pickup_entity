@@ -998,6 +998,7 @@ export default function AddOrderPage() {
   const [collapsedContents, setCollapsedContents] = useState<Set<string>>(new Set())
   const contentsCollapsed = (p: Parcel) => !!p.packageId && collapsedContents.has(p.packageId)
   const expandContents = (p: Parcel) => p.packageId && setCollapsedContents((s) => { const n = new Set(s); n.delete(p.packageId!); return n })
+  const collapseContents = (p: Parcel) => p.packageId && setCollapsedContents((s) => new Set(s).add(p.packageId!))
   const addItem = (i: number) => {
     setFocusLine({ i, k: (parcels[i].items ?? []).length })
     setItems(i, (items) => [...items, blankItem()])
@@ -1489,7 +1490,10 @@ export default function AddOrderPage() {
                 {/* group/relative scoped to just this fields row + its overlay — not the whole
                     package block, or hovering the Contents/SKU table below would also trigger it */}
                 <div className="group relative">
-                  <div style={{ gridTemplateColumns: PKG_COLS }} className="grid min-w-max items-center gap-2 px-3 py-2.5">
+                  {/* text-[12px] matches the header row's own font-size — `ch` tracks (Weight/L/W/H)
+                      resolve against THIS element's font-size, so if it drifted from the header's,
+                      every ch-sized column would drift a little further right than the last */}
+                  <div style={{ gridTemplateColumns: PKG_COLS }} className="grid min-w-max items-center gap-2 px-3 py-2.5 text-[12px]">
                     <div title={packageTypeTitle}>
                       <MenuSelect value={packageValue(p, packageTypes)} placeholder="Select" searchable
                         options={packageTypeOpts.map((o) => o.value)} labels={(v) => packageTypeOpts.find((o) => o.value === v)?.label ?? v}
@@ -1515,6 +1519,13 @@ export default function AddOrderPage() {
                         className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[12px] font-bold text-ink-3 hover:bg-warm-100 hover:text-ink">
                         <ListPlus size={13} /> Add SKU
                       </button>
+                      {items.length > 0 && !contentsCollapsed(p) && (
+                        <button type="button" aria-label={`Collapse SKUs for Package ${i + 1}`}
+                          onClick={() => collapseContents(p)}
+                          className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[12px] font-bold text-ink-3 hover:bg-warm-100 hover:text-ink">
+                          <ChevronDown size={13} /> Collapse
+                        </button>
+                      )}
                       <button type="button" title="Duplicate package" aria-label={`Duplicate package ${i + 1}`}
                         onClick={() => setParcels((ps) => [...ps.slice(0, i + 1), clonePackage(ps[i]), ...ps.slice(i + 1)])}
                         className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-ink-3 hover:bg-warm-100 hover:text-ink">
@@ -1564,7 +1575,7 @@ export default function AddOrderPage() {
                         const bound = !!it.skuCode
                         return (
                           <div key={k} style={{ gridTemplateColumns: SKU_COLS }}
-                            className="group/sku grid min-w-max items-center gap-2 border-b border-line/70 px-2.5 py-1.5 last:border-0">
+                            className="group/sku grid min-w-max items-center gap-2 border-b border-line/70 px-2.5 py-1.5 text-[11px] last:border-0">
                             <SkuCode item={it} skus={masters.skus} onPick={(s) => pickSku(i, k, s)} onUnlink={() => setItem(i, k, { skuCode: null })}
                               autoFocus={focusLine?.i === i && focusLine.k === k} />
                             <Input value={it.name} placeholder="eg, Chair" disabled={bound} onChange={(v) => setItem(i, k, { name: v })} />
