@@ -34,12 +34,13 @@ import { useEffect, useMemo, useRef, useState, type ComponentProps, type Keyboar
 import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  ChevronDown, ChevronRight, CircleDot, CircleMinus, ClipboardList, FileCheck,
+  ChevronDown, ChevronRight, CircleDot, CircleMinus, ClipboardList, CreditCard, FileCheck,
   Package, Package as PackageIcon, Pencil, Plus, ScanBarcode, Truck, Undo2, User,
-  Warehouse, X,
+  Wallet as WalletIcon, Warehouse, X,
 } from 'lucide-react'
 import { blankParty, CURRENCY } from '../../growOrders/seed'
 import { growOrderActions, orderById, pickupRequestById, useGrowOrders } from '../../growOrders/store'
+import { finalizeOrder } from '../../growOrders/checkout'
 import type { Party, StoreLocation } from '../../growOrders/types'
 import {
   currentMerchant, ownPackageTypes, packageTypesForMerchant, useMasters, useMerchantCode,
@@ -48,7 +49,7 @@ import {
 import { ORIGIN_COUNTRIES } from '../../data/originCountries'
 import { toast } from '../../nueva/toast'
 import {
-  Button, Checkbox, DateInput, IconButton, Input, MenuSelect, Modal, MultiSelect, MultiSelectDropdown, PageHeader,
+  Button, Checkbox, DateInput, IconButton, Input, MenuSelect, Modal, MultiSelect, MultiSelectDropdown, PageHeader, Panel,
   SearchInput, StatusPill, Toggle,
 } from '../../nueva/components'
 import { DateTimeRangeInput } from '../../nueva/DateRangeFilter'
@@ -62,7 +63,7 @@ import { useReceiverBook, usePickupLocations, type BookEntry } from './pickupLoc
 import {
   ADDITIONAL_SERVICES, DEFAULT_FTL_SERVICE, DRAFT_KEY, FTL_SERVICE_CODES, PARCEL_SERVICES, clearDraftKeys,
   coerceVehicleType, ftlQuoteVehicles, ftlServiceType, setDraftSidecar, totalLoadKg, vehicleSpec, vehiclesFor,
-  vehiclesOf, type ConsignmentFields, type FtlVehicle, type OrderDraft, type Parcel, type ParcelItem,
+  vehiclesOf, volKg, type ConsignmentFields, type FtlVehicle, type OrderDraft, type Parcel, type ParcelItem,
   type ParcelService,
 } from '../../growOrders/draft'
 /* the shared form-builder engine + address layout (tenant-configured, read-only here) */
@@ -70,8 +71,28 @@ import { AddressCard, BuilderCtx, PartyBlock, ShowErrorsCtx, useFormBuilderV2 } 
 
 /* ---- option lists ---- */
 const CONSIGNMENT_TYPES = ['Forward', 'Reverse', 'Exchange', 'Transfer', 'Service']
-/* Payment itself (method picker, saved cards, PO linking, wallet balance) now lives on the
-   checkout step that follows Add Order — see CheckoutPage.tsx. */
+/** payment options for the Payment widget — a gateway pick determines the next step
+ * (redirect to that gateway) rather than collecting an amount inline; Wallet checks
+ * the merchant's pre-loaded balance against the order total instead. */
+const PAYMENT_OPTIONS = [
+  { code: 'COD', label: 'Cash on Delivery', sub: 'Collected by the driver on delivery' },
+  { code: 'Card', label: 'Card', sub: "Charged to the customer's card" },
+  { code: 'Wallet', label: 'Wallet', sub: 'Pay from your pre-loaded FarEye wallet balance' },
+  { code: 'Payment Gateway (ANZ)', label: 'Payment Gateway', sub: 'ANZ — redirects to complete payment' },
+]
+/** sample pre-loaded balance — the portal has no wallet API yet (see Wallet in the nav) */
+const WALLET_BALANCE = 1250
+/** sample saved cards — the portal has no card-vault API; a merchant can also add a new one */
+const SAVED_CARDS = [
+  { id: 'card_1', brand: 'Visa', last4: '4242', expiry: '08/27' },
+  { id: 'card_2', brand: 'Mastercard', last4: '5678', expiry: '11/26' },
+]
+/** sample purchase orders for a postpaid (po) merchant — no PO API exists yet */
+const MERCHANT_PURCHASE_ORDERS = [
+  { poNumber: 'PO-10234', totalAmount: 5000, remainingAmount: 1820 },
+  { poNumber: 'PO-10251', totalAmount: 2000, remainingAmount: 2000 },
+  { poNumber: 'PO-10267', totalAmount: 800, remainingAmount: 120 },
+]
 const RTO_MODES = ['Same As Ship From', 'Use Different Address']
 /** common instruction presets — the merchant can also type a custom one */
 const INSTRUCTION_OPTIONS = [
@@ -126,6 +147,7 @@ const newParcel = (): Parcel => ({
   items: [], itemInfo: '', quantity: 1, weight: 1, l: 10, w: 10, h: 10, weightMode: 'auto',
   trackingNumber: '', palletSpace: '', description: '',
 })
+const kg = (n: number, d = 4) => `${Number(n.toFixed(d))} kg`
 const round2 = (n: number) => Number(n.toFixed(2))
 const filled = (v: string | undefined) => !!(v ?? '').trim()
 
@@ -145,6 +167,7 @@ function reweigh(p: Parcel, types: PackageType[]): Parcel {
 }
 const clonePackage = (p: Parcel): Parcel => ({ ...p, packageId: newPackageId(), trackingNumber: '', items: (p.items ?? []).map((it) => ({ ...it })) })
 const isBlankItem = (it: ParcelItem) => !it.skuCode && !it.name.trim()
+const itemCount = (p: Parcel) => (p.items ?? []).filter((it) => !isBlankItem(it)).reduce((n, it) => n + it.quantity, 0)
 const codeFor = (p: Party) => (p.businessName || p.name || p.city || 'store')
   .toUpperCase().replace(/[^A-Z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 14) || 'STORE'
 const itemInfoOf = (p: Parcel) =>
@@ -627,6 +650,17 @@ function Facts({ items }: { items: (string | null | undefined | false)[] }) {
 
 /* --------------------------------------------------------------- summary ---- */
 
+function SummaryBlock({ title, children, onJump }: { title: string; children: ReactNode; onJump?: () => void }) {
+  return (
+    <div className="flex gap-3 border-t border-line py-3">
+      <div className="min-w-0 flex-1">
+        <p className="text-[12px] font-bold text-ink-3">{title}</p>
+        <div className="mt-0.5 text-[13px] leading-[1.5] text-ink">{children}</div>
+      </div>
+      {onJump && <button type="button" onClick={onJump} className="self-start text-[12.5px] font-bold text-brand-500 hover:text-brand-600">Edit</button>}
+    </div>
+  )
+}
 
 const jumpTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 const ICON = 'text-brand-500'
@@ -762,6 +796,13 @@ export default function AddOrderPage() {
     setInstructions(joined.slice(0, 150))
   }
 
+  /* ---- Payment: Card picks a saved card or a freshly-typed one; postpaid (po) links a PO ---- */
+  const [selectedCard, setSelectedCard] = useState('')
+  const [addingCard, setAddingCard] = useState(false)
+  const [newCard, setNewCard] = useState({ number: '', name: '', expiry: '', cvv: '' })
+  const cardOk = selectedCard !== '' || (addingCard && !!newCard.number.trim() && !!newCard.name.trim() && !!newCard.expiry.trim() && !!newCard.cvv.trim())
+  const [selectedPo, setSelectedPo] = useState('')
+
   /* ---- Documents: merchant-configured uploads (e.g. LiteExpress's Certificate of
      Movement) — keyed by the doc's code, holding just the picked file's name (this
      is a client-only prototype; nothing actually uploads). ---- */
@@ -805,6 +846,14 @@ export default function AddOrderPage() {
      Pickup Requests → Create Pickup Request → FTL path used to create. */
   const isBlind = isFtl && !partyOk(receiver) && drops.length === 0
 
+  /* ---- derived booking numbers ---- */
+  const totals = useMemo(() => ({
+    qty: parcels.reduce((n, p) => n + p.quantity, 0),
+    items: parcels.reduce((n, p) => n + p.quantity * itemCount(p), 0),
+    dead: parcels.reduce((n, p) => n + p.weight * p.quantity, 0),
+    vol: parcels.reduce((n, p) => n + volKg(p) * p.quantity, 0),
+    chargeable: parcels.reduce((n, p) => n + Math.max(p.weight, volKg(p)) * p.quantity, 0),
+  }), [parcels])
   const fromPr = pr && isFtl ? pr : undefined
   const units = vehicles.length
   const vehicleType = vehicles[0]?.vehicleType ?? ''
@@ -867,9 +916,15 @@ export default function AddOrderPage() {
   const skuReq = isFtl ? [] : skuLines.map(({ it }) => isBlankItem(it) || (filled(it.name) && it.quantity >= 1))
   /* the Services section only exists for LTL — Service Type (FTL) already picks the FTL rate */
   const carrierReq = isFtl ? [] : [!!service]
-  /* Payment (method / card / PO link) is validated on the checkout step that follows, not here */
+  /* a CSR never collects COD/Card/Wallet/Gateway details on a merchant's behalf —
+     every CSR-created order links to a purchase order instead, regardless of the
+     target merchant's own terms. */
+  const poLinked = !!signedIn?.isCsr || merchant?.postpaidTerms === 'po'
+  const paymentReq = isBlind ? [] : !poLinked && merchant?.postpaidTerms === 'none' ? []
+    : poLinked ? [!!selectedPo]
+    : [!!c.paymentMode, c.paymentMode !== 'Card' || cardOk]
   const docsReq = isBlind ? [] : (merchant?.requiredDocuments ?? []).map((d) => !!docs[d.code])
-  const allReq = [...consignmentReq, ...fromReq, ...toReq, ...rtoReq, ...pieceReq, ...skuReq, ...carrierReq, ...docsReq]
+  const allReq = [...consignmentReq, ...fromReq, ...toReq, ...rtoReq, ...pieceReq, ...skuReq, ...carrierReq, ...paymentReq, ...docsReq]
   const filledCount = allReq.filter(Boolean).length
   const canSubmit = filledCount === allReq.length
   const missingCount = allReq.length - filledCount
@@ -1022,12 +1077,13 @@ export default function AddOrderPage() {
   /* ---- the sections, one order regardless of order complexity ---- */
   const sections = ['sec-consignment', 'sec-ship-from-rto', 'sec-ship-to',
     isFtl ? 'sec-vehicle' : 'sec-package', ...(isFtl ? [] : ['sec-services']),
-    ...((merchant?.requiredDocuments?.length ?? 0) > 0 ? ['sec-documents'] : [])]
+    ...((merchant?.requiredDocuments?.length ?? 0) > 0 ? ['sec-documents'] : []),
+    ...(!poLinked && merchant?.postpaidTerms === 'none' ? [] : ['sec-payment'])]
   const doneOf: Record<string, boolean> = {
     'sec-consignment': done(consignmentReq),
     'sec-ship-from-rto': done(fromReq) && done(rtoReq), 'sec-ship-to': done(toReq),
     'sec-package': done(pieceReq) && done(skuReq), 'sec-vehicle': done(pieceReq),
-    'sec-services': done(carrierReq), 'sec-documents': done(docsReq),
+    'sec-services': done(carrierReq), 'sec-documents': done(docsReq), 'sec-payment': done(paymentReq),
   }
 
   const proceed = () => {
@@ -1064,11 +1120,20 @@ export default function AddOrderPage() {
     const draft = buildDraft()
     const pickupId = fromPr?.id ?? null
     const overage = fromOverage ? { prId: fromOverage.pr.id, overageId: fromOverage.scan.id } : null
-    /* Payment and the Shipment Summary review both live on checkout now — every
-       consignment goes there next, not just a Payment Gateway redirect. */
-    sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft))
-    setDraftSidecar({ pickupId, overage })
-    nav('/grow/orders/checkout')
+    /* Payment Gateway is the one mode that isn't settled yet — it still needs its
+       own "next page" to redirect to and capture payment. Every other mode is
+       already fully chosen here, so submitting creates the order right away; the
+       Shipment Summary rail already shows what a separate checkout review would. */
+    if (c.paymentMode === 'Payment Gateway (ANZ)') {
+      sessionStorage.setItem(DRAFT_KEY, JSON.stringify(draft))
+      setDraftSidecar({ pickupId, overage })
+      nav('/grow/orders/checkout')
+      return
+    }
+    const { redirectTo, message } = finalizeOrder(draft, { pickupId, overage, merchantCode: merchant?.code ?? null })
+    clearDraftKeys()
+    toast.success(message)
+    nav(redirectTo)
   }
   const saveForLater = () => {
     persistTypedSender()
@@ -1595,6 +1660,140 @@ export default function AddOrderPage() {
     </SectionCard>
   )
 
+  /* Invoice-billed postpaid merchants skip the Payment section entirely (excluded from
+     `sections` above) — nothing to collect at order time. PO-linked postpaid merchants,
+     and every CSR-created order regardless of the target merchant, get the PO picker
+     instead of the COD/Card/Wallet/Gateway method picker everyone else sees; Payment
+     Gateway's own "Continue" jumps straight to checkout instead of waiting on the sticky
+     footer. */
+  const paymentSection = (
+    <SectionCard id="sec-payment" title="Payment" done={doneOf['sec-payment']}
+      icon={<WalletIcon size={15} className={ICON} />}
+      caption={poLinked
+        ? "Link this order to one of the merchant's purchase orders."
+        : 'Select the payment method and continue.'}>
+      {poLinked ? (
+        <div className="max-w-sm">
+          <F label="Purchase Order" required searchable value={selectedPo} onChange={setSelectedPo}
+            placeholder={`Search ${MERCHANT_PURCHASE_ORDERS.length} purchase orders…`}
+            options={MERCHANT_PURCHASE_ORDERS.map((po) => ({
+              value: po.poNumber,
+              label: `${po.poNumber} — Remaining ${money(po.remainingAmount, CURRENCY)} of ${money(po.totalAmount, CURRENCY)}`
+                + (po.remainingAmount < svc.price ? ' (Insufficient)' : ''),
+            }))}
+            error={showErrors && !selectedPo ? 'Select a purchase order to create the consignment.' : undefined} />
+          {selectedPo && (() => {
+            const po = MERCHANT_PURCHASE_ORDERS.find((p) => p.poNumber === selectedPo)!
+            const sufficient = po.remainingAmount >= svc.price
+            return (
+              <div className="mt-3 rounded-md border border-line bg-warm-25 px-3.5 py-3">
+                <div className="flex items-center justify-between text-[13px]">
+                  <span className="text-ink-3">Remaining on {po.poNumber}</span>
+                  <span className="font-bold text-ink">{money(po.remainingAmount, CURRENCY)} of {money(po.totalAmount, CURRENCY)}</span>
+                </div>
+                {sufficient ? (
+                  <p className="mt-1.5 text-[12px] text-success-fg">Sufficient to cover this order ({money(svc.price, CURRENCY)}).</p>
+                ) : (
+                  <p className="mt-1.5 text-[12px] text-danger-fg">Insufficient — this order exceeds the remaining balance by {money(svc.price - po.remainingAmount, CURRENCY)}.</p>
+                )}
+              </div>
+            )
+          })()}
+        </div>
+      ) : (
+        <>
+          <div className="grid gap-2">
+            {PAYMENT_OPTIONS.map((opt) => {
+              const on = c.paymentMode === opt.code
+              return (
+                <button key={opt.code} type="button" onClick={() => setC({ paymentMode: opt.code })} role="radio" aria-checked={on}
+                  className={`flex items-center gap-3 rounded-md border bg-surface px-3.5 py-2.5 text-left transition-colors
+                    ${on ? 'border-brand-500 bg-brand-50/30' : 'border-line text-ink-2 hover:border-warm-300'}`}>
+                  {on
+                    ? <CircleDot size={15} className="shrink-0 text-brand-500" />
+                    : <span className="h-[15px] w-[15px] shrink-0 rounded-full border border-warm-300" />}
+                  <div className="min-w-0 flex-1">
+                    <span className="block text-[13.5px] font-bold text-ink">{opt.label}</span>
+                    <span className="block text-[12px] text-ink-3">{opt.sub}</span>
+                  </div>
+                </button>
+              )
+            })}
+          </div>
+
+          {c.paymentMode === 'Card' && (
+            <div className="mt-4">
+              <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.08em] text-ink-3">Saved cards</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {SAVED_CARDS.map((cd) => {
+                  const on = selectedCard === cd.id
+                  return (
+                    <button key={cd.id} type="button"
+                      onClick={() => { setSelectedCard(cd.id); setAddingCard(false) }} role="radio" aria-checked={on}
+                      className={`flex items-center gap-3 rounded-md border bg-surface px-3.5 py-2.5 text-left transition-colors
+                        ${on ? 'border-brand-500 bg-brand-50/30' : 'border-line text-ink-2 hover:border-warm-300'}`}>
+                      {on
+                        ? <CircleDot size={15} className="shrink-0 text-brand-500" />
+                        : <span className="h-[15px] w-[15px] shrink-0 rounded-full border border-warm-300" />}
+                      <CreditCard size={16} className="shrink-0 text-ink-3" />
+                      <div className="min-w-0 flex-1">
+                        <span className="block text-[13px] font-bold text-ink">{cd.brand} •••• {cd.last4}</span>
+                        <span className="block text-[12px] text-ink-3">Expires {cd.expiry}</span>
+                      </div>
+                    </button>
+                  )
+                })}
+                <button type="button" onClick={() => { setAddingCard(true); setSelectedCard('') }}
+                  className={`flex items-center justify-center gap-2 rounded-md border border-dashed px-3.5 py-2.5 text-[13px] font-bold transition-colors
+                    ${addingCard ? 'border-brand-500 bg-brand-50/30 text-brand-500' : 'border-warm-300 text-brand-500 hover:border-brand-500 hover:bg-brand-50/40'}`}>
+                  <Plus size={14} /> Add new card
+                </button>
+              </div>
+              {addingCard && (
+                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <F label="Card Number" value={newCard.number} placeholder="1234 5678 9012 3456"
+                    onChange={(v) => setNewCard((x) => ({ ...x, number: v }))} />
+                  <F label="Name on Card" value={newCard.name} placeholder="John Doe"
+                    onChange={(v) => setNewCard((x) => ({ ...x, name: v }))} />
+                  <F label="Expiry" value={newCard.expiry} placeholder="MM/YY"
+                    onChange={(v) => setNewCard((x) => ({ ...x, expiry: v }))} />
+                  <F label="CVV" type="password" value={newCard.cvv} placeholder="123"
+                    onChange={(v) => setNewCard((x) => ({ ...x, cvv: v }))} />
+                </div>
+              )}
+              {showErrors && !cardOk && <p className="mt-2 text-[12.5px] text-brand-500">Pick a saved card or add new card details.</p>}
+            </div>
+          )}
+
+          {c.paymentMode === 'Wallet' && (
+            <div className="mt-4 rounded-md border border-line bg-warm-25 px-3.5 py-3">
+              <div className="flex items-center justify-between text-[13px]">
+                <span className="text-ink-3">Wallet balance</span>
+                <span className="font-bold text-ink">{money(WALLET_BALANCE, CURRENCY)}</span>
+              </div>
+              {WALLET_BALANCE >= svc.price ? (
+                <p className="mt-1.5 text-[12px] text-success-fg">Sufficient balance to cover this order ({money(svc.price, CURRENCY)}).</p>
+              ) : (
+                <p className="mt-1.5 text-[12px] text-danger-fg">Insufficient balance — top up {money(svc.price - WALLET_BALANCE, CURRENCY)} more to pay with wallet.</p>
+              )}
+            </div>
+          )}
+
+          {c.paymentMode === 'Payment Gateway (ANZ)' && (
+            <div className="mt-4 rounded-md border border-line bg-warm-25 px-3.5 py-3">
+              <p className="text-[12.5px] text-ink-3">You'll be redirected to the ANZ payment gateway to complete payment before the consignment is created.</p>
+              <div className="mt-3">
+                <Button variant="outline" size="sm" onClick={proceed}>Continue &amp; Capture Payment</Button>
+              </div>
+            </div>
+          )}
+
+          {showErrors && !c.paymentMode && <p className="mt-3 text-[12.5px] text-brand-500">Select a payment method to create the consignment.</p>}
+        </>
+      )}
+    </SectionCard>
+  )
+
   const byId: Record<string, ReactNode> = {
     'sec-consignment': consignmentSection,
     /* Search-first: one combined "Ship From → Ship To" widget (RTO folded in) — 'sec-ship-to'
@@ -1603,6 +1802,7 @@ export default function AddOrderPage() {
     'sec-ship-to': addressLayout === 'searchFirst' ? null : (shipToOpen ? shipToSection : shipToPlaceholder),
     'sec-package': packageSection,
     'sec-vehicle': vehicleSection, 'sec-services': servicesSection, 'sec-documents': documentsSection,
+    'sec-payment': paymentSection,
   }
   const pct = Math.round((filledCount / allReq.length) * 100)
 
@@ -1632,10 +1832,41 @@ export default function AddOrderPage() {
         </div>
       )}
 
-      {/* full width, same as the console's Add Consignment — Shipment Summary and Payment
-          both moved to the checkout step that follows (see proceed() below) */}
-      <div className="grid min-w-0 gap-5">
-        {sections.map((id) => <div key={id} className="min-w-0">{byId[id]}</div>)}
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="grid min-w-0 gap-5">
+          {sections.map((id) => <div key={id} className="min-w-0">{byId[id]}</div>)}
+        </div>
+
+        {/* Shipment Summary rail — what is being booked and what it costs */}
+        <div className="xl:sticky xl:top-4">
+          <Panel title="Shipment Summary">
+            <div className="px-5 pb-4">
+              <SummaryBlock title="Ship From" onJump={() => jumpTo('sec-ship-from')}>{sender.name || '—'}{sender.line1 ? `, ${partyLine(sender)}` : ''}</SummaryBlock>
+              <SummaryBlock title={allDrops.length > 1 ? `Ship To (${allDrops.length} addresses)` : 'Ship To'} onJump={() => jumpTo('sec-ship-to')}>
+                {allDrops.map((d, i) => <p key={i}>{allDrops.length > 1 ? `${i + 1}. ` : ''}{d.name || '—'}{d.line1 ? `, ${partyLine(d)}` : ''}</p>)}
+              </SummaryBlock>
+              {isFtl ? (
+                <SummaryBlock title="FTL · Vehicle Details" onJump={() => jumpTo('sec-vehicle')}>
+                  {ftlService} · {units} vehicle{units === 1 ? '' : 's'} · {(actualLoad / 1000).toFixed(2)} tons
+                  {addServices.length > 0 && <p className="text-[12.5px] text-ink-3">+ {addServices.join(', ')}</p>}
+                </SummaryBlock>
+              ) : (
+                <SummaryBlock title="LTL · Packages" onJump={() => jumpTo('sec-package')}>
+                  {totals.qty} package{totals.qty === 1 ? '' : 's'} · {totals.items} SKU unit{totals.items === 1 ? '' : 's'}
+                  <p className="text-[12.5px] text-ink-3">Dead {kg(totals.dead, 2)} · Vol {kg(totals.vol, 2)} · Chargeable {kg(totals.chargeable, 2)}</p>
+                </SummaryBlock>
+              )}
+              <SummaryBlock title="Service" onJump={() => jumpTo('sec-services')}>
+                {(isFtl || service) ? `${svc.code} · ${svc.carrier}` : <span className="text-ink-3">no service selected yet</span>}
+              </SummaryBlock>
+              <div className="grid grid-cols-[1fr_auto] items-baseline gap-x-6 gap-y-1 border-t border-line pt-3 text-[13px] text-ink-2">
+                <span>Delivery</span><span className="text-right tabular-nums text-ink">{money(svc.price, CURRENCY)}</span>
+                <span className="font-bold text-ink">Total</span><span className="text-right text-[15px] font-bold tabular-nums text-ink">{money(svc.price, CURRENCY)}</span>
+                <span>ETA<span className="text-brand-500">*</span></span><span className="text-right text-ink">{svc.days} Day</span>
+              </div>
+            </div>
+          </Panel>
+        </div>
       </div>
 
       {/* sticky footer — the console's: required-fields progress left, actions right */}
@@ -1653,7 +1884,7 @@ export default function AddOrderPage() {
         {/* a reserved vehicle has no consignment to save as a draft of */}
         <Button variant="ghost" onClick={saveForLater} disabled={isBlind}>Save for Later</Button>
         <Button variant="outline" onClick={() => { clearDraftKeys(); nav(backTo) }}>Go Back</Button>
-        <Button onClick={proceed}>{isBlind ? 'Reserve Vehicle' : 'Continue to Checkout'}</Button>
+        <Button onClick={proceed}>{isBlind ? 'Reserve Vehicle' : 'Create Consignment'}</Button>
       </div>
     </div>
     </ShowErrorsCtx.Provider>
