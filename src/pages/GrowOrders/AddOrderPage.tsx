@@ -1526,7 +1526,7 @@ export default function AddOrderPage() {
                 {/* contents — optional, nested SKU lines scoped to this package, each ONE dense row too;
                     adding one is the row's own "Add SKU" action (hover cluster above), not a button here */}
                 {items.length > 0 && (
-                  <div className="mt-3 border-t border-line/60 pt-3">
+                  <div className="mt-1.5 border-t border-line/60 pt-2">
                     <div className="overflow-x-auto rounded-md border border-line/70">
                       <div style={{ gridTemplateColumns: SKU_COLS }} className="grid min-w-max gap-2 border-b border-line/70 bg-warm-25/60 px-2.5 py-1.5 text-[11px] font-bold text-ink-3">
                         <span>SKU Code</span><span>Name</span><span>Qty</span>
@@ -1545,7 +1545,7 @@ export default function AddOrderPage() {
                             <SkuCode item={it} skus={masters.skus} onPick={(s) => pickSku(i, k, s)} onUnlink={() => setItem(i, k, { skuCode: null })}
                               autoFocus={focusLine?.i === i && focusLine.k === k} />
                             <Input value={it.name} placeholder="eg, Chair" disabled={bound} onChange={(v) => setItem(i, k, { name: v })} />
-                            <Input type="number" value={String(it.quantity)} onChange={(v) => setItem(i, k, { quantity: Number(v) || 0 })} />
+                            <Input type="number" value={String(it.quantity)} onChange={(v) => setItem(i, k, { quantity: Math.max(1, Math.round(Number(v) || 1)) })} />
                             {!hid('skuDescription') && <Input value={it.description ?? ''} onChange={(v) => setItem(i, k, { description: v })} />}
                             <Input value={it.hsnCode ?? ''} disabled={bound} onChange={(v) => setItem(i, k, { hsnCode: v })} />
                             <MenuSelect value={it.originCountry ?? ''} options={ORIGIN_OPTS.map((o) => o.value)} searchable disabled={bound}
