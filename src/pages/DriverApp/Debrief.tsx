@@ -70,7 +70,8 @@ export default function DebriefScreen({ trip, planning, onBack, onComplete }: {
               {p.number}
             </SectionLabel>
             <Card pad="none">
-              <div className="px-4 py-3 text-[13px] text-[#5B6B82]">{MODE_TEXT[mode]}</div>
+              {/* the scan rule only matters for a request that brought parcels back */}
+              {p.pickedOrderIds.length > 0 && <div className="px-4 py-3 text-[13px] text-[#5B6B82]">{MODE_TEXT[mode]}</div>}
               {p.pickedOrderIds.map((id) => {
                 const hubbed = p.handover.hubScanned.includes(id)
                 const drv = p.handover.driverScanned.includes(id)
@@ -89,12 +90,12 @@ export default function DebriefScreen({ trip, planning, onBack, onComplete }: {
                 )
               })}
               {p.overages.length > 0 && (
-                <div className="flex items-center gap-2 border-t border-[#EEF1F5] px-4 py-3 text-[13px] text-[#94620F]">
+                <div className="flex items-center gap-2 border-t border-[#EEF1F5] px-4 py-3 text-[13px] text-[#94620F] first:border-t-0">
                   <PackagePlus size={16} /> {p.overages.length} overage{p.overages.length === 1 ? '' : 's'} — hand to the hub's Overage desk
                 </div>
               )}
               {!p.pickedOrderIds.length && !p.overages.length && (
-                <div className="border-t border-[#EEF1F5] px-4 py-3 text-[13px] text-[#5B6B82]">Nothing collected.</div>
+                <div className="border-t border-[#EEF1F5] px-4 py-3 text-[13px] text-[#5B6B82] first:border-t-0">Nothing collected.</div>
               )}
             </Card>
           </div>
