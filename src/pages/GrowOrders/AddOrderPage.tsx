@@ -34,7 +34,7 @@ import { useEffect, useMemo, useRef, useState, type ComponentProps, type Keyboar
 import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  ChevronDown, ChevronRight, CircleDot, CircleMinus, ClipboardList, CreditCard, FileCheck,
+  ChevronDown, ChevronRight, CircleDot, CircleMinus, ClipboardList, Copy, CreditCard, FileCheck,
   Package, Package as PackageIcon, Pencil, Plus, ScanBarcode, Truck, Undo2, User,
   Wallet as WalletIcon, Warehouse, X,
 } from 'lucide-react'
@@ -53,7 +53,6 @@ import {
   SearchInput, StatusPill, Toggle,
 } from '../../nueva/components'
 import { DateTimeRangeInput } from '../../nueva/DateRangeFilter'
-import { RepeatableList } from '../../components/consignmentRows'
 import {
   ChipToggle, Fld, Grid, InlineToggle, SectionCard, Segmented, SubHead, UnitBox,
 } from '../../components/consignmentForm'
@@ -639,13 +638,6 @@ function SkuCode({ item, skus, onPick, onUnlink, autoFocus }: {
       )}
     </div>
   )
-}
-
-/** One-line identity of a collapsed repeatable row — the console's summary facts. */
-function Facts({ items }: { items: (string | null | undefined | false)[] }) {
-  const shown = items.filter(Boolean) as string[]
-  if (!shown.length) return <span className="text-[13px] text-ink-3">Not filled in yet</span>
-  return <span className="block truncate text-[13px] text-ink-2">{shown.join('  ·  ')}</span>
 }
 
 /* --------------------------------------------------------------- summary ---- */
@@ -1414,138 +1406,135 @@ export default function AddOrderPage() {
   const packageTypeOpts = [...packageTypes.map((t) => ({ value: t.code, label: t.name })), { value: CUSTOM_PACKAGE, label: CUSTOM_PACKAGE_NAME }]
   const packageTypeTitle = packageTypes.length === 0 ? 'No presets in the Package master — enter dimensions'
     : !ownPresets ? `Showing all package types — none assigned to ${merchant?.name ?? 'this merchant'}` : undefined
-  const pkgTypeName = (p: Parcel) => packageTypeOpts.find((o) => o.value === packageValue(p, packageTypes))?.label ?? CUSTOM_PACKAGE_NAME
 
   /* Packages is the ONE list — a package's SKU contents are optional, nested
-     enrichment. A package with no SKU lines ships as-is. */
-  const [itemMoreOpen, setItemMoreOpen] = useState<Set<string>>(new Set())
-  const toggleItemMore = (key: string) => setItemMoreOpen((s) => {
-    const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n
-  })
+     enrichment. A package with no SKU lines ships as-is. Space-optimized: every package
+     is one dense row, always visible and editable — no accordion, no per-row expand.
+     Dimensions drop out of the grid template entirely when
+     the tenant hides them (not just blanked), so the row stays as narrow as it can. */
+  const PKG_COLS = `140px minmax(160px,1.3fr) 110px minmax(140px,1fr) 110px${hid('pkgDimensions') ? '' : ' 90px 90px 90px'} 64px`
+  const SKU_COLS = `minmax(120px,0.9fr) minmax(140px,1.1fr) 80px${hid('skuDescription') ? '' : ' minmax(120px,1fr)'} 110px minmax(120px,1fr)${hid('skuUnitCost') ? '' : ' 100px'}${hid('skuDimensions') ? '' : ' 230px'}${hid('skuWeight') ? '' : ' 150px'} 32px`
   const packageSection = (
     <div id="sec-package" className="scroll-mt-20">
-      <RepeatableList<Parcel>
-        title="Packages" addNoun="Package" icon={<PackageIcon size={15} className={ICON} />}
-        caption="Add the packages in this consignment. A package can ship as-is, or you can optionally list what's inside it."
-        cardLabel={(i) => `Package ${i + 1}`}
-        rows={parcels}
-        incomplete={(p) => !(p.quantity > 0 && p.weight > 0 && p.l > 0 && p.w > 0 && p.h > 0)}
-        summary={(p) => {
-          const skuCount = (p.items ?? []).filter((it) => !isBlankItem(it)).length
-          return <Facts items={[p.packageId, pkgTypeName(p), `×${p.quantity}`, `${round2(p.weight)} kg`,
-            skuCount > 0 && `${skuCount} SKU${skuCount === 1 ? '' : 's'}`]} />
-        }}
-        onAdd={() => setParcels((ps) => [...ps, newParcel()])}
-        onDuplicate={(i) => setParcels((ps) => [...ps.slice(0, i + 1), clonePackage(ps[i]), ...ps.slice(i + 1)])}
-        onRemove={(i) => setParcels((ps) => (ps.length > 1 ? ps.filter((_, j) => j !== i) : [newParcel()]))}
-        body={(p, i) => {
-          const items = p.items ?? []
-          return (
-            <>
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 lg:grid-cols-[1.4fr_0.8fr_1fr_1.8fr]">
-                <div title={packageTypeTitle}>
-                  <F label="Package Type" required value={packageValue(p, packageTypes)} options={packageTypeOpts} onChange={(v) => pickPackageType(i, v)} />
+      <SectionCard title="Packages" done={doneOf['sec-package']} icon={<PackageIcon size={15} className={ICON} />}
+        caption="Add the packages in this consignment. A package can ship as-is, or you can optionally list what's inside it.">
+        <div className="overflow-x-auto rounded-md border border-line">
+          <div style={{ gridTemplateColumns: PKG_COLS }} className="grid min-w-max gap-2 border-b border-line bg-warm-50 px-3 py-2 text-[12px] font-bold text-ink-3">
+            <span>Package</span>
+            <span>Package Type<span className="text-brand-500">*</span></span>
+            <span>Count<span className="text-brand-500">*</span></span>
+            <span>Item Info</span>
+            <span>Weight (kg)<span className="text-brand-500">*</span></span>
+            {!hid('pkgDimensions') && <><span>Length (cm)</span><span>Width (cm)</span><span>Height (cm)</span></>}
+            <span />
+          </div>
+          {parcels.map((p, i) => {
+            const items = p.items ?? []
+            return (
+              <div key={p.packageId ?? i} className="border-b border-line px-3 py-2.5 last:border-0">
+                <div style={{ gridTemplateColumns: PKG_COLS }} className="grid min-w-max items-center gap-2">
+                  <span className="truncate text-[13px] font-bold text-ink">Package {i + 1}</span>
+                  <div title={packageTypeTitle}>
+                    <MenuSelect value={packageValue(p, packageTypes)} placeholder="Select" searchable
+                      options={packageTypeOpts.map((o) => o.value)} labels={(v) => packageTypeOpts.find((o) => o.value === v)?.label ?? v}
+                      onChange={(v) => pickPackageType(i, v)} />
+                  </div>
+                  <NumBox value={p.quantity} min={1} integer onChange={(n) => setParcel(i, { quantity: n })} />
+                  <Input value={p.itemInfo} placeholder="eg, Electronics" onChange={(v) => setParcel(i, { itemInfo: v })} />
+                  <NumBox value={p.weight} unit="kg" error={reqErr(p.weight > 0)}
+                    onChange={(n) => setParcel(i, { weight: n, weightMode: 'manual' })} />
+                  {!hid('pkgDimensions') && <>
+                    <NumBox value={p.l} error={reqErr(p.l > 0)} onChange={(n) => setParcel(i, { l: n })} />
+                    <NumBox value={p.w} error={reqErr(p.w > 0)} onChange={(n) => setParcel(i, { w: n })} />
+                    <NumBox value={p.h} error={reqErr(p.h > 0)} onChange={(n) => setParcel(i, { h: n })} />
+                  </>}
+                  <div className="flex items-center justify-end gap-1">
+                    <button type="button" title="Duplicate package" aria-label={`Duplicate Package ${i + 1}`}
+                      onClick={() => setParcels((ps) => [...ps.slice(0, i + 1), clonePackage(ps[i]), ...ps.slice(i + 1)])}
+                      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-ink-3 hover:bg-warm-100 hover:text-ink">
+                      <Copy size={14} />
+                    </button>
+                    <button type="button" title="Remove package" aria-label={`Remove Package ${i + 1}`}
+                      onClick={() => setParcels((ps) => (ps.length > 1 ? ps.filter((_, j) => j !== i) : [newParcel()]))}
+                      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-warm-400 hover:bg-warm-100 hover:text-brand-500">
+                      <X size={14} />
+                    </button>
+                  </div>
                 </div>
-                <FNum label="Quantity" required value={p.quantity} min={1} integer onChange={(n) => setParcel(i, { quantity: n })} />
-                <FNum label="Weight" required value={p.weight} unit="kg" error={reqErr(p.weight > 0)}
-                  helper={p.weightMode === 'manual' ? undefined : 'Package tare + SKUs'}
-                  onChange={(n) => setParcel(i, { weight: n, weightMode: 'manual' })} />
-                {!hid('pkgDimensions') && (
-                  <Fld label="Dimensions (L × W × H)" required error={showErrors && !(p.l > 0 && p.w > 0 && p.h > 0)}>
-                    <div className="grid grid-cols-3 gap-2">
-                      <NumBox value={p.l} unit="cm" error={reqErr(p.l > 0)} onChange={(n) => setParcel(i, { l: n })} />
-                      <NumBox value={p.w} unit="cm" error={reqErr(p.w > 0)} onChange={(n) => setParcel(i, { w: n })} />
-                      <NumBox value={p.h} unit="cm" error={reqErr(p.h > 0)} onChange={(n) => setParcel(i, { h: n })} />
-                    </div>
-                  </Fld>
-                )}
-              </div>
 
-              {/* only meaningful once a package covers more than one physical unit —
-                  with a single unit there's exactly one label anyway */}
-              {!hid('scannable') && p.quantity > 1 && (
-                <div className="mt-4">
-                  <InlineToggle label="Separate label for each unit in this package"
-                    checked={!!c.scannable} onChange={(v) => setC({ scannable: v })} />
-                </div>
-              )}
-
-              {/* contents — optional, nested SKU lines scoped to this package */}
-              <div className="mt-5 border-t border-line pt-4">
-                <span className="mb-2 block text-[11px] font-bold uppercase tracking-[0.08em] text-ink-3">Contents (optional)</span>
-                {items.length === 0 ? (
-                  <p className="text-[12.5px] text-ink-3">This package can ship as-is. Add SKU lines only if you want to record what's inside.</p>
-                ) : (
-                  <div className="grid gap-2">
-                    {items.map((it, k) => {
-                      const bound = !!it.skuCode
-                      const key = `${i}-${k}`
-                      const expanded = itemMoreOpen.has(key)
-                      return (
-                        <div key={k} className="rounded-md border border-line bg-warm-25/60 px-3 py-2.5">
-                          <div className="flex items-center gap-3">
-                            <button type="button" onClick={() => toggleItemMore(key)} className="shrink-0 text-warm-400 hover:text-ink">
-                              {expanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                            </button>
-                            <div className="w-40 shrink-0">
-                              <SkuCode item={it} skus={masters.skus} onPick={(s) => pickSku(i, k, s)} onUnlink={() => setItem(i, k, { skuCode: null })}
-                                autoFocus={focusLine?.i === i && focusLine.k === k} />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <Input value={it.name} placeholder="eg, Chair" disabled={bound} onChange={(v) => setItem(i, k, { name: v })} />
-                            </div>
-                            <div className="w-20 shrink-0">
-                              <Input type="number" value={String(it.quantity)} onChange={(v) => setItem(i, k, { quantity: Number(v) || 0 })} />
-                            </div>
-                            <button type="button" onClick={() => removeItem(i, k)} aria-label="Remove SKU line"
-                              className="shrink-0 text-warm-400 transition-colors hover:text-brand-500">
-                              <X size={15} />
-                            </button>
-                          </div>
-                          {expanded && (
-                            <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-line/60 pt-3 sm:grid-cols-3 xl:grid-cols-6">
-                              <Fld label="SKU Code"><ReadBox value={it.skuCode ?? ''} /></Fld>
-                              {!hid('skuDescription') && <F label="Description" value={it.description ?? ''} onChange={(v) => setItem(i, k, { description: v })} />}
-                              <F label="HSN Code" value={it.hsnCode ?? ''} disabled={bound} onChange={(v) => setItem(i, k, { hsnCode: v })} />
-                              <F label="Origin Country" value={it.originCountry ?? ''} options={ORIGIN_OPTS} disabled={bound}
-                                onChange={(v) => setItem(i, k, { originCountry: v })} />
-                              {!hid('skuUnitCost') && <FNum label="Unit Cost" unit={CURRENCY} blankZero value={it.unitCost ?? 0} onChange={(n) => setItem(i, k, { unitCost: n })} />}
-                              {!hid('skuDimensions') && (
-                                <Fld label="Dimensions (L × B × H + UOM)" className="sm:col-span-2">
-                                  <div className="grid grid-cols-4 gap-2">
-                                    <NumBox blankZero value={it.lengthCm ?? 0} placeholder="L" onChange={(n) => setItem(i, k, { lengthCm: n })} />
-                                    <NumBox blankZero value={it.widthCm ?? 0} placeholder="B" onChange={(n) => setItem(i, k, { widthCm: n })} />
-                                    <NumBox blankZero value={it.heightCm ?? 0} placeholder="H" onChange={(n) => setItem(i, k, { heightCm: n })} />
-                                    <MenuSelect value={it.dimUom ?? 'CM'} options={DIM_UOMS} onChange={(v) => setItem(i, k, { dimUom: v })} />
-                                  </div>
-                                </Fld>
-                              )}
-                              {!hid('skuWeight') && (
-                                <Fld label="Weight (+ UOM)">
-                                  <div className="grid grid-cols-[1fr_76px] gap-2">
-                                    <NumBox blankZero value={it.weightKg} onChange={(n) => setItem(i, k, { weightKg: n })} />
-                                    <MenuSelect value={it.weightUom ?? 'KG'} options={WEIGHT_UOMS} onChange={(v) => setItem(i, k, { weightUom: v })} />
-                                  </div>
-                                </Fld>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
+                {/* only meaningful once a package covers more than one physical unit */}
+                {!hid('scannable') && p.quantity > 1 && (
+                  <div className="mt-3">
+                    <InlineToggle label="Separate label for each unit in this package"
+                      checked={!!c.scannable} onChange={(v) => setC({ scannable: v })} />
                   </div>
                 )}
-                <button type="button" onClick={() => addItem(i)}
-                  className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-warm-300 py-2.5
-                             text-[12.5px] font-bold text-brand-500 transition-colors hover:border-brand-500 hover:bg-brand-50/40">
-                  <Plus size={13} /> Add SKU
-                </button>
+
+                {/* contents — optional, nested SKU lines scoped to this package, each ONE dense row too */}
+                <div className="mt-3 border-t border-line/60 pt-3">
+                  {items.length > 0 && (
+                    <div className="mb-2 overflow-x-auto rounded-md border border-line/70">
+                      <div style={{ gridTemplateColumns: SKU_COLS }} className="grid min-w-max gap-2 border-b border-line/70 bg-warm-25/60 px-2.5 py-1.5 text-[11px] font-bold text-ink-3">
+                        <span>SKU Code</span><span>Name</span><span>Qty</span>
+                        {!hid('skuDescription') && <span>Description</span>}
+                        <span>HSN Code</span><span>Origin Country</span>
+                        {!hid('skuUnitCost') && <span>Unit Cost</span>}
+                        {!hid('skuDimensions') && <span>L × W × H + UOM</span>}
+                        {!hid('skuWeight') && <span>Weight + UOM</span>}
+                        <span />
+                      </div>
+                      {items.map((it, k) => {
+                        const bound = !!it.skuCode
+                        return (
+                          <div key={k} style={{ gridTemplateColumns: SKU_COLS }}
+                            className="grid min-w-max items-center gap-2 border-b border-line/70 px-2.5 py-1.5 last:border-0">
+                            <SkuCode item={it} skus={masters.skus} onPick={(s) => pickSku(i, k, s)} onUnlink={() => setItem(i, k, { skuCode: null })}
+                              autoFocus={focusLine?.i === i && focusLine.k === k} />
+                            <Input value={it.name} placeholder="eg, Chair" disabled={bound} onChange={(v) => setItem(i, k, { name: v })} />
+                            <Input type="number" value={String(it.quantity)} onChange={(v) => setItem(i, k, { quantity: Number(v) || 0 })} />
+                            {!hid('skuDescription') && <Input value={it.description ?? ''} onChange={(v) => setItem(i, k, { description: v })} />}
+                            <Input value={it.hsnCode ?? ''} disabled={bound} onChange={(v) => setItem(i, k, { hsnCode: v })} />
+                            <MenuSelect value={it.originCountry ?? ''} options={ORIGIN_OPTS.map((o) => o.value)} searchable disabled={bound}
+                              onChange={(v) => setItem(i, k, { originCountry: v })} />
+                            {!hid('skuUnitCost') && <NumBox blankZero unit={CURRENCY} value={it.unitCost ?? 0} onChange={(n) => setItem(i, k, { unitCost: n })} />}
+                            {!hid('skuDimensions') && (
+                              <div className="grid grid-cols-4 gap-1">
+                                <NumBox blankZero value={it.lengthCm ?? 0} placeholder="L" onChange={(n) => setItem(i, k, { lengthCm: n })} />
+                                <NumBox blankZero value={it.widthCm ?? 0} placeholder="B" onChange={(n) => setItem(i, k, { widthCm: n })} />
+                                <NumBox blankZero value={it.heightCm ?? 0} placeholder="H" onChange={(n) => setItem(i, k, { heightCm: n })} />
+                                <MenuSelect value={it.dimUom ?? 'CM'} options={DIM_UOMS} onChange={(v) => setItem(i, k, { dimUom: v })} />
+                              </div>
+                            )}
+                            {!hid('skuWeight') && (
+                              <div className="grid grid-cols-[1fr_72px] gap-1">
+                                <NumBox blankZero value={it.weightKg} onChange={(n) => setItem(i, k, { weightKg: n })} />
+                                <MenuSelect value={it.weightUom ?? 'KG'} options={WEIGHT_UOMS} onChange={(v) => setItem(i, k, { weightUom: v })} />
+                              </div>
+                            )}
+                            <button type="button" onClick={() => removeItem(i, k)} aria-label="Remove SKU line"
+                              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-warm-400 hover:bg-warm-100 hover:text-brand-500">
+                              <X size={14} />
+                            </button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                  <button type="button" onClick={() => addItem(i)}
+                    className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-warm-300 py-2
+                               text-[12.5px] font-bold text-brand-500 transition-colors hover:border-brand-500 hover:bg-brand-50/40">
+                    <Plus size={13} /> Add SKU
+                  </button>
+                </div>
               </div>
-            </>
-          )
-        }}
-        totals={declarations}
-      />
+            )
+          })}
+        </div>
+        <div className="mt-2">
+          <Button size="sm" variant="text" icon={<Plus size={13} />} onClick={() => setParcels((ps) => [...ps, newParcel()])}>Add Package</Button>
+        </div>
+        {declarations}
+      </SectionCard>
     </div>
   )
 
