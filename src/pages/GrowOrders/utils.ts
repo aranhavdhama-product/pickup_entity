@@ -334,9 +334,11 @@ export function prOutcomeWords(p: GrowPickupRequest): string {
   return parts.join(' · ')
 }
 
-/** Orders collected under `p` that were booked into a DIFFERENT request. */
+/** Orders collected under `p` that are not among its booked orders — booked into a
+ *  DIFFERENT request, or created afterwards for one of its overage scans (such an
+ *  order points at `p` but was never in `orderIds`). Same rule as the console detail. */
 export const prExtraOrders = (p: GrowPickupRequest, orders: GrowOrder[]) =>
-  orders.filter((o) => o.pickedInRequestId === p.id && o.pickupRequestId !== p.id)
+  orders.filter((o) => o.pickedInRequestId === p.id && !p.orderIds.includes(o.id))
 
 /** Reconciliation only exists once the handover has been attempted. */
 export const prReconciled = (p: GrowPickupRequest) => p.status === 'Completed' || p.status === 'Pickup Failed'
