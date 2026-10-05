@@ -725,7 +725,7 @@ export default function AddConsignmentV2({ portal = 'console' }: {
   /* ---- the console registry + the on-canvas builder engine (ConsignmentAdd/formBuilderV2.tsx) ---- */
   const {
     behavior, editing, showHidden, setShowHidden, hid, lbl, builder: rawBuilder, addressLayout,
-    setDraftLayout, startEditing: startEditingRules, cancelEditing, saveEditing: saveEditingRules, resetRules,
+    startEditing: startEditingRules, cancelEditing, saveEditing: saveEditingRules, resetRules,
   } = useFormBuilderV2({
     merchantMode, extraFields: V2_FIELDS, formLocked: FORM_LOCKED, notRequirable: NOT_REQUIRABLE,
     defaultMore: DEFAULT_MORE, groupKeys: GROUP_KEYS, movableExtra, forceHidden: (k) => merchantMode && MERCHANT_OFF.has(k),
@@ -1599,7 +1599,7 @@ export default function AddConsignmentV2({ portal = 'console' }: {
               not just a Grow setting: PartyFields is the SAME component Grow's AddOrderPage renders.
               Classic matches Grow exactly: Ship From starts as a collapsed summary with a pencil to
               expand; Ship To and RTO are always the expanded field grid, same as Grow. */}
-          {addressLayout === 'default' && role === 'from' && !classicEditFrom ? (
+          {addressLayout === 'typeFirst' && role === 'from' && !classicEditFrom ? (
             <>
               <div className="flex items-start gap-3 rounded-lg border border-line bg-warm-25 px-4 py-3">
                 <Warehouse size={16} className="mt-0.5 shrink-0 text-warm-400" />
@@ -1611,7 +1611,7 @@ export default function AddConsignmentV2({ portal = 'console' }: {
               </div>
               {showErrors && !done(fromReq) && <p className="mt-1 text-[12.5px] text-brand-500">Ship From is incomplete — edit it</p>}
             </>
-          ) : addressLayout === 'default' ? (
+          ) : addressLayout === 'typeFirst' ? (
             <PartyFields party={p} set={patchParty(role, idx)}
               nameLabel={role === 'to' ? 'Customer Name' : role === 'rto' ? 'Name' : 'Sender Name'}
               windowLabel={null} requireContact={role !== 'from'} hid={hid} req={builder.required}
@@ -1621,7 +1621,7 @@ export default function AddConsignmentV2({ portal = 'console' }: {
             <AddressCard party={p} missing={missingOf(p, role)} onEdit={() => openAddress(role, idx, false)}
               tag={facility ? 'Hub' : at >= 0 ? book[at].tag ?? 'Saved' : role === 'from' && fromList ? 'Saved' : filled(p.name) ? 'New' : undefined} />
           )}
-          {editing && addressLayout === 'builderV2' && <p className="mt-2 text-[12px] text-ink-3">Open the address (✎ or New address) to customise its fields.</p>}
+          {editing && addressLayout === 'searchFirst' && <p className="mt-2 text-[12px] text-ink-3">Open the address (✎ or New address) to customise its fields.</p>}
           {((role === 'from' && fromKindBad) || (role === 'to' && idx === 0 && toKindBad)) && (
             <ErrLine className="mt-2">{src === 'facilities' ? 'Pick a hub — this end has no pickup / delivery leg.' : 'Pick an address — this end has a pickup / delivery leg.'}</ErrLine>
           )}
@@ -2537,25 +2537,14 @@ export default function AddConsignmentV2({ portal = 'console' }: {
           the eye hides it. <Lock size={11} className="inline" /> fields are needed by the system. Saved changes apply to this form.
         </p>
       </div>
-      {/* which Ship From / Ship To / RTO layout merchants (Grow) and this form render — a live preview,
-          not just a Grow setting: flipping it swaps the section below right away */}
-      <div className="flex shrink-0 items-center gap-1.5 rounded-md border border-line bg-surface p-0.5"
-        title="Classic = the plain field grid; Card = address summary cards with an edit popup">
-        <button type="button" onClick={() => setDraftLayout('default')} aria-pressed={addressLayout === 'default'}
-          className={`rounded px-2.5 py-1 text-[12px] font-bold transition-colors ${addressLayout === 'default' ? 'bg-warm-100 text-ink' : 'text-ink-3 hover:text-ink'}`}>
-          Classic addresses
-        </button>
-        <button type="button" onClick={() => setDraftLayout('builderV2')} aria-pressed={addressLayout === 'builderV2'}
-          className={`rounded px-2.5 py-1 text-[12px] font-bold transition-colors ${addressLayout === 'builderV2' ? 'bg-warm-100 text-ink' : 'text-ink-3 hover:text-ink'}`}>
-          Card addresses
-        </button>
-      </div>
+      {/* the Ship From/To/RTO WIDGET itself (type-first vs search-first) is set from ONE place —
+          Settings → Consignment Order → Widgets — not here; this bar edits field-level rules only */}
       <button type="button" onClick={() => setShowHidden((v) => !v)} aria-pressed={showHidden}
         title={showHidden ? 'Hide the hidden fields' : 'Show the hidden fields'} aria-label={showHidden ? 'Hide the hidden fields' : 'Show the hidden fields'}
         className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-line bg-surface text-ink-2 hover:bg-warm-50 hover:text-ink">
         {showHidden ? <Eye size={16} /> : <EyeOff size={16} />}
       </button>
-      <Button variant="ghost" icon={<RotateCcw size={14} />} onClick={() => { resetRules(); setDraftGoods('sku'); setDraftLayout('default') }}>Reset to default</Button>
+      <Button variant="ghost" icon={<RotateCcw size={14} />} onClick={() => { resetRules(); setDraftGoods('sku') }}>Reset to default</Button>
       <Button variant="outline" onClick={cancelEditing}>Cancel</Button>
       <Button onClick={saveEditing}>Save changes</Button>
     </div>

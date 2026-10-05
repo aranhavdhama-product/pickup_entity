@@ -19,6 +19,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button, Checkbox, PageHeader, SequenceList, Tabs, type SeqItem } from '../../nueva/components'
 import { toast } from '../../nueva/toast'
+import { RadioCard } from '../../components/consignmentForm'
 import {
   DEFAULT_CONSIGNMENT_MODULE_CONFIG, useConsignmentModuleConfig, writeConsignmentModuleConfig,
   type ConsignmentModuleConfig as Config,
@@ -34,7 +35,17 @@ import {
 } from '../ConsignmentAdd/fieldConfig'
 import { OptionSelect, SectionCard, SettingRow, ToggleField } from './settingsRows'
 
-const TABS = ['General', 'Date Filter', 'Table Configuration', 'On Page Filters', 'Form Fields']
+const TABS = ['General', 'Date Filter', 'Table Configuration', 'On Page Filters', 'Form Fields', 'Widgets']
+
+/* ---- Widgets (2026-10-05): the Ship From / Ship To / RTO widget BOTH order forms render — a
+   single tenant-wide choice, not a per-form setting. Read by the console form
+   (LocalConsignments/AddConsignmentV2.tsx) and Grow's AddOrderPage alike via
+   ConsignmentAdd/formBuilderV2.tsx's useFormBuilderV2(); this is the only place it's set. */
+type AddressWidget = NonNullable<FormBehavior['addressWidget']>
+const ADDRESS_WIDGET_OPTIONS: { value: AddressWidget; label: string; sub: string }[] = [
+  { value: 'typeFirst', label: 'Type-first', sub: 'A plain field grid for a parcel / CEP merchant typing a fresh address on most orders.' },
+  { value: 'searchFirst', label: 'Search-first', sub: 'An address summary card with a search-first edit popup, for a B2B account whose orders repeat the same handful of customers.' },
+]
 
 /* ---- Form Fields (2026-09-25): which optional consignment-form fields are shown, required or
    hidden — stored in the SAME `fe-consignment-form-behavior` mirror the console Base Modules page
@@ -74,12 +85,16 @@ export default function ConsignmentOrderSettings() {
   const [rules, setRules] = useState<FormRules>(savedRules)
   const rulesDirty = JSON.stringify(rules) !== JSON.stringify(savedRules)
   const noRules = rules.hidden.length === 0 && rules.required.length === 0
-  const dirty = !same(draft, stored) || rulesDirty
+  const [savedAddressWidget, setSavedAddressWidget] = useState<AddressWidget>(() => loadFormBehavior().addressWidget ?? 'typeFirst')
+  const [addressWidget, setAddressWidget] = useState<AddressWidget>(savedAddressWidget)
+  const widgetDirty = addressWidget !== savedAddressWidget
+  const dirty = !same(draft, stored) || rulesDirty || widgetDirty
   const save = () => {
     writeConsignmentModuleConfig(draft)
     /* read-modify-write: the console Base Modules page owns the other keys of this mirror */
-    cacheFormBehavior({ ...loadFormBehavior(), hidden: rules.hidden, required: rules.required })
+    cacheFormBehavior({ ...loadFormBehavior(), hidden: rules.hidden, required: rules.required, addressWidget })
     setSavedRules(rules)
+    setSavedAddressWidget(addressWidget)
     toast.success('Settings saved successfully')
   }
   /* the store turns an empty column list back into the defaults — block that save instead */
@@ -98,11 +113,14 @@ export default function ConsignmentOrderSettings() {
         onBack={() => navigate('/local/settings')}
         right={(
           <div className="flex items-center gap-2">
-            <Button variant="ghost" disabled={same(draft, DEFAULT_CONSIGNMENT_MODULE_CONFIG) && noRules}
-              onClick={() => { setDraft(DEFAULT_CONSIGNMENT_MODULE_CONFIG); setRules({ hidden: [], required: [] }); toast.info('Defaults restored — Save to apply') }}>
+            <Button variant="ghost" disabled={same(draft, DEFAULT_CONSIGNMENT_MODULE_CONFIG) && noRules && addressWidget === 'typeFirst'}
+              onClick={() => {
+                setDraft(DEFAULT_CONSIGNMENT_MODULE_CONFIG); setRules({ hidden: [], required: [] }); setAddressWidget('typeFirst')
+                toast.info('Defaults restored — Save to apply')
+              }}>
               Restore defaults
             </Button>
-            <Button variant="outline" onClick={() => { setDraft(stored); setRules(savedRules) }} disabled={!dirty}>Reset</Button>
+            <Button variant="outline" onClick={() => { setDraft(stored); setRules(savedRules); setAddressWidget(savedAddressWidget) }} disabled={!dirty}>Reset</Button>
             <Button disabled={!dirty || noColumns} onClick={save}>
               Save Settings
             </Button>
@@ -189,6 +207,17 @@ export default function ConsignmentOrderSettings() {
                 </SectionCard>
               )
             })}
+
+            {tab === 5 && (
+              <SectionCard title="Ship From / Ship To / RTO Widget"
+                hint="One choice for every order form — the merchant portal and the console's Add Consignment both render whichever widget is selected here.">
+                <div className="grid gap-2.5 py-1 sm:grid-cols-2">
+                  {ADDRESS_WIDGET_OPTIONS.map((o) => (
+                    <RadioCard key={o.value} label={o.label} sub={o.sub} checked={addressWidget === o.value} onClick={() => setAddressWidget(o.value)} />
+                  ))}
+                </div>
+              </SectionCard>
+            )}
           </>
         )}
       </div>

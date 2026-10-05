@@ -3,20 +3,19 @@
  * LocalConsignments/AddConsignmentV2.tsx, extracted 2026-10-04 so Grow's AddOrderPage can
  * consume the SAME engine and the SAME PartyBlock/AddressCard address layout).
  *
- * Two tenant-level settings live here, both layered over the base registry (fieldConfig.ts):
- *  - FormRulesV2 — per-field hidden / required / relabel / "More information" placement, edited
- *    live from AddConsignmentV2's "Edit consignment form" (the only place with an edit entry
- *    point; Grow only ever reads these passively — a merchant never edits).
- *  - AddressLayout — 'default' (Grow's own PartyFields grid) or 'builderV2' (this file's
- *    PartyBlock/AddressCard cards) for Ship From / Ship To / RTO, chosen by the tenant in the
- *    same editing bar.
- *
  * `useFormBuilderV2` is the engine: given a consumer's own field catalogue extensions (V2-only
  * fields, extra locks, extra "not requirable"/"default more" sets), it resolves hide/require/
- * relabel/disclosure for any key. Both AddConsignmentV2.tsx (full editing) and AddOrderPage.tsx
- * (merchantMode — passive, no editing) call it; `Builder` is exposed via BuilderCtx so FieldTools
- * / BuilderLabel / Configurable / PartyBlock / AddressCard (all defined once, here) work
- * identically in either file.
+ * relabel/disclosure for any key, from FormRulesV2 (edited live from AddConsignmentV2's "Edit
+ * consignment form") layered over the base registry (fieldConfig.ts). `Builder` is exposed via
+ * BuilderCtx so FieldTools / BuilderLabel / Configurable / PartyBlock / AddressCard (all defined
+ * once, here) work identically in AddConsignmentV2.tsx and Grow's AddOrderPage.tsx.
+ *
+ * The Ship From / Ship To / RTO WIDGET itself — 'typeFirst' (Grow's own PartyFields grid, built
+ * for a parcel/CEP merchant) or 'searchFirst' (this file's PartyBlock/AddressCard cards, built
+ * for a B2B account with repeat customers) — is a single tenant-wide choice, `behavior.
+ * addressWidget` (fieldConfig.ts), set from ONE place: the local app's Settings → Consignment
+ * Order → Widgets tab (LocalSettings/ConsignmentOrderSettings.tsx). Neither order form offers its
+ * own switch for it — both just read `behavior.addressWidget` through this hook's `addressLayout`.
  */
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
 import { ChevronDown, ChevronUp, Eye, EyeOff, Info, Lock, MapPinned, Pencil } from 'lucide-react'
@@ -65,11 +64,8 @@ function asRules(raw: unknown): FormRulesV2 {
 function loadRulesV2(): FormRulesV2 { try { return asRules(JSON.parse(localStorage.getItem(FORM_RULES_V2_KEY) ?? '{}')) } catch { return {} } }
 function saveRulesV2(r: FormRulesV2) { try { localStorage.setItem(FORM_RULES_V2_KEY, JSON.stringify(asRules(r))) } catch { /* private mode */ } }
 
-/* --------------------------------------------------------------------- address layout choice */
-export type AddressLayout = 'default' | 'builderV2'
-export const ADDRESS_LAYOUT_KEY = 'fe-consignment-form-v2-address-layout'
-function loadAddressLayout(): AddressLayout { try { return localStorage.getItem(ADDRESS_LAYOUT_KEY) === 'builderV2' ? 'builderV2' : 'default' } catch { return 'default' } }
-function saveAddressLayout(v: AddressLayout) { try { localStorage.setItem(ADDRESS_LAYOUT_KEY, v) } catch { /* private mode */ } }
+/** re-exported so the Settings page and either order form share one name for the two widgets */
+export type AddressLayout = NonNullable<FormBehavior['addressWidget']>
 
 export const ADDRESS_LIFT: FieldDef = { key: 'addrLift', defaultLabel: 'Lift Available', section: 'Address details', tier: 'advanced', apiPath: 'address.liftAvailable' }
 /** the base address fields that are grouped for visibility/rename purposes everywhere */
@@ -141,8 +137,6 @@ export function useFormBuilderV2(options: {
   const [behavior] = useState<FormBehavior>(loadFormBehavior)
   const [savedRules, setSavedRules] = useState<FormRulesV2>(loadRulesV2)
   const [draftRules, setDraftRules] = useState<FormRulesV2>({})
-  const [savedLayout, setSavedLayout] = useState<AddressLayout>(loadAddressLayout)
-  const [draftLayout, setDraftLayout] = useState<AddressLayout>('default')
   const [editing, setEditing] = useState(false)
   const [showHidden, setShowHidden] = useState(true)
 
@@ -154,7 +148,8 @@ export function useFormBuilderV2(options: {
     return out
   }, [savedRules, behavior])
   const rules = merchantMode ? merchantRules : editing ? draftRules : savedRules
-  const addressLayout = merchantMode ? savedLayout : editing ? draftLayout : savedLayout
+  /* set once, centrally, from Settings → Consignment Order → Widgets — neither form edits it */
+  const addressLayout: AddressLayout = behavior.addressWidget ?? 'typeFirst'
 
   const lockOf = (k: string): FieldLock => (byKeyMandatory(k) ? 'system' : formLocked.has(k) ? 'form' : null)
   const baseHidden = (k: string) => !!fieldCfg[k]?.hidden || behavior.hidden.includes(k)
@@ -180,18 +175,17 @@ export function useFormBuilderV2(options: {
     editing, lock: lockOf, requirable, ownHidden, isHidden, hiddenWith, required: need, inMore, label: lbl, set: setRule,
     known: (k) => fieldDef.has(k), movable: movableFn, grouped: (k) => groupKeys.has(k),
   }
-  const startEditing = () => { setDraftRules(savedRules); setDraftLayout(savedLayout); setEditing(true) }
+  const startEditing = () => { setDraftRules(savedRules); setEditing(true) }
   const cancelEditing = () => setEditing(false)
   const saveEditing = () => {
     saveRulesV2(draftRules); setSavedRules(asRules(draftRules))
-    saveAddressLayout(draftLayout); setSavedLayout(draftLayout)
     setEditing(false)
   }
   const resetRules = () => setDraftRules({})
 
   return {
     fieldCfg, behavior, editing, showHidden, setShowHidden, hid, lbl, builder, rules,
-    addressLayout, setDraftLayout, startEditing, cancelEditing, saveEditing, resetRules,
+    addressLayout, startEditing, cancelEditing, saveEditing, resetRules,
   }
 }
 

@@ -168,11 +168,21 @@ export interface FormBehavior {
    * Form Fields tab). Honoured by the Grow merchant order form; the console Add form keeps
    * staging's own required set. Absent on a staging row = none. */
   required?: string[]
+  /** which Ship From / Ship To / RTO widget BOTH order forms render (the local app's Consignment
+   * Order → Widgets tab, 2026-10-05): 'typeFirst' — a plain field grid, built for a parcel/CEP
+   * merchant typing a fresh address most orders (Grow's original layout); 'searchFirst' — an
+   * address summary card with a search-first edit popup, built for a B2B account whose orders
+   * repeat the same handful of customers (Aranhav's layout). One tenant-wide choice, read by the
+   * console form (LocalConsignments/AddConsignmentV2.tsx) and Grow's AddOrderPage alike — neither
+   * form offers its own switch; this settings page is the only place it's set. */
+  addressWidget?: 'typeFirst' | 'searchFirst'
 }
 
-export const DEFAULT_FORM_BEHAVIOR: FormBehavior = { defaultMode: 'simplified', identifier: 'both', hidden: [] }
+export const DEFAULT_FORM_BEHAVIOR: FormBehavior = { defaultMode: 'simplified', identifier: 'both', hidden: [], addressWidget: 'typeFirst' }
 
 const BEHAVIOR_KEY = 'fe-consignment-form-behavior'
+
+const asAddressWidget = (v: unknown): FormBehavior['addressWidget'] => (v === 'searchFirst' ? 'searchFirst' : 'typeFirst')
 
 export function loadFormBehavior(): FormBehavior {
   try {
@@ -182,6 +192,7 @@ export function loadFormBehavior(): FormBehavior {
       ...DEFAULT_FORM_BEHAVIOR, ...parsed,
       hidden: Array.isArray(parsed.hidden) ? parsed.hidden : [],
       required: Array.isArray(parsed.required) ? parsed.required.filter((k): k is string => typeof k === 'string') : [],
+      addressWidget: asAddressWidget(parsed.addressWidget),
     }
   } catch {
     return DEFAULT_FORM_BEHAVIOR
@@ -189,8 +200,14 @@ export function loadFormBehavior(): FormBehavior {
 }
 
 export function cacheFormBehavior(b: FormBehavior) {
-  /* a writer that does not know `required` (console Base Modules, the staging fetch) keeps the local rules */
-  const next = b.required === undefined ? { ...b, required: loadFormBehavior().required } : b
+  /* a writer that does not know `required`/`addressWidget` (console Base Modules, the staging
+     fetch) keeps whatever this settings page last set for them */
+  const prior = loadFormBehavior()
+  const next: FormBehavior = {
+    ...b,
+    required: b.required === undefined ? prior.required : b.required,
+    addressWidget: b.addressWidget === undefined ? prior.addressWidget : b.addressWidget,
+  }
   try { localStorage.setItem(BEHAVIOR_KEY, JSON.stringify(next)) } catch { /* private mode */ }
 }
 

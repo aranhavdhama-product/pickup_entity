@@ -1214,7 +1214,7 @@ export default function AddOrderPage() {
       icon={<Warehouse size={15} className={ICON} />}
       caption="Provide the pickup address and contact details for this consignment."
       action={editFrom ? saveSenderToggle : undefined}>
-      {addressLayout === 'builderV2' ? (
+      {addressLayout === 'searchFirst' ? (
         <>
           <div className="mb-4"><PickupSearch options={senderOptions} onPick={pickSender} /></div>
           <AddressCard party={sender} missing={missingOf(sender, 'from')} onEdit={() => setAddrEdit({ role: 'from', idx: 0 })} />
@@ -1248,7 +1248,7 @@ export default function AddOrderPage() {
       <Segmented compact options={RTO_MODES} value={c.rtoMode ?? RTO_MODES[0]} onChange={(m) => setC({ rtoMode: m })} />
       {c.rtoMode === RTO_MODES[1] && (
         <div className="mt-5">
-          {addressLayout === 'builderV2' ? (
+          {addressLayout === 'searchFirst' ? (
             <AddressCard party={rto} missing={missingOf(rto, 'rto')} onEdit={() => setAddrEdit({ role: 'rto', idx: 0 })} />
           ) : (
             <PartyFields party={rto} set={(p) => setRto((x) => ({ ...x, ...p }))} nameLabel="Name" windowLabel={null} hid={hid} req={req}
@@ -1308,7 +1308,7 @@ export default function AddOrderPage() {
                   className="shrink-0 text-warm-400 transition-colors hover:text-brand-500"><CircleMinus size={17} /></button>
               )}
             </div>
-            {addressLayout === 'builderV2' ? (
+            {addressLayout === 'searchFirst' ? (
               <AddressCard party={d} missing={missingOf(d, 'to')} onEdit={() => setAddrEdit({ role: 'to', idx: i })} />
             ) : (
               <PartyFields party={d} set={set} nameLabel="Customer Name" windowLabel="Delivery" requireContact hid={hid} req={req} showErrors={showErrors}
@@ -1765,7 +1765,7 @@ export default function AddOrderPage() {
       {/* no edit entry point here — a merchant only ever inherits the tenant's form setup,
           configured from the console's "Edit consignment form" (LocalConsignments/AddConsignmentV2.tsx) */}
       <PageHeader title={isFtl ? 'Add FTL Consignment' : 'Add Consignment'} />
-      {addressLayout === 'builderV2' && addressEditModal}
+      {addressLayout === 'searchFirst' && addressEditModal}
       {fromPr && (
         <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-line bg-info-bg px-4 py-2.5 text-[13px] text-ink">
           <Truck size={15} className="shrink-0 text-info-fg" />
