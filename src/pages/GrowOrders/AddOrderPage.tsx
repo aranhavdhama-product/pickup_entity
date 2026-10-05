@@ -34,7 +34,7 @@ import { useEffect, useMemo, useRef, useState, type ComponentProps, type Keyboar
 import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  ChevronDown, ChevronRight, CircleDot, CircleMinus, ClipboardList, Copy, CreditCard, FileCheck,
+  CheckCircle2, ChevronDown, ChevronRight, CircleDot, CircleMinus, ClipboardList, Copy, CreditCard, FileCheck,
   Package, Package as PackageIcon, Plus, ScanBarcode, Truck, Undo2, User,
   Wallet as WalletIcon, Warehouse, X,
 } from 'lucide-react'
@@ -1229,37 +1229,24 @@ export default function AddOrderPage() {
      Simplified-only), the pencil reveals the full PartyFields form. Search-first: always the
      address-card + edit-popup. Shared by both the 3-widget (Type-first) and combined
      (Search-first) compositions below. */
+  /* Search-first only now — Type-first builds its own compact grid directly in
+     shipFromSection below, and its own editing form there too. */
   const shipFromContent = (
     <>
-      {addressLayout === 'searchFirst' ? (
-        <>
-          <div className="mb-4"><PickupSearch options={senderOptions} onPick={pickSender} /></div>
-          <AddressCard party={sender} missing={missingOf(sender, 'from')} onEdit={() => setAddrEdit({ role: 'from', idx: 0 })} />
-        </>
-      ) : !editFrom ? (
-        <>
-          {/* the picker itself now lives in the card's own header (see shipFromSection) —
-              the body is just the RTO flag + the compact address, full width */}
-          <AddressCard party={sender} missing={missingOf(sender, 'from')} onEdit={() => setEditFrom(true)} />
-          {showErrors && !done(fromReq) && <p className="mt-1 text-[12.5px] text-brand-500">Ship From is incomplete — edit it</p>}
-        </>
-      ) : (
-        <>
-          <div className="mb-4"><PickupSearch options={senderOptions} onPick={pickSender} /></div>
-          <PartyFields party={sender} set={(p) => setSender((x) => ({ ...x, ...p }))} nameLabel="Sender Name" windowLabel="Pick Up"
-            locked={fromList} hid={hid} req={req} showErrors={showErrors} advancedDefaultOpen={advancedDefaultOpen} />
-        </>
-      )}
+      <div className="mb-4"><PickupSearch options={senderOptions} onPick={pickSender} /></div>
+      <AddressCard party={sender} missing={missingOf(sender, 'from')} onEdit={() => setAddrEdit({ role: 'from', idx: 0 })} />
     </>
   )
   /* RTO is never its own widget in either layout, and the flag itself is a single compact
-     switch now, not a page-width Segmented control (two long option labels). */
+     switch now, not a page-width Segmented control (two long option labels). Framed as
+     "same as" (checked = same, the common case) rather than "different", matching the
+     original RTO_MODES wording. */
   const rtoToggle = (
     <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-[12.5px] font-bold text-ink-2">
       <Undo2 size={13} className="shrink-0 text-ink-3" />
-      RTO uses a different address
-      <Toggle checked={(c.rtoMode ?? RTO_MODES[0]) === RTO_MODES[1]}
-        onChange={(v) => setC({ rtoMode: v ? RTO_MODES[1] : RTO_MODES[0] })} />
+      RTO address same as Ship From
+      <Toggle checked={(c.rtoMode ?? RTO_MODES[0]) === RTO_MODES[0]}
+        onChange={(v) => setC({ rtoMode: v ? RTO_MODES[0] : RTO_MODES[1] })} />
     </label>
   )
   const rtoExpanded = c.rtoMode !== RTO_MODES[1] ? null : (
@@ -1280,21 +1267,44 @@ export default function AddOrderPage() {
   )
 
   /* Ship From — its own widget (Type-first only; Search-first embeds shipFromContent in the
-     combined card below instead). The picker itself rides in the header's own action
-     slot when compact — space that would otherwise just sit empty — so the body opens
-     with the RTO flag directly under it, then the compact address, full width. */
-  const shipFromSection = (
+     combined card below instead). Compact state: a bespoke 2-column grid — column 1 stacks
+     the header text, the picker and the RTO flag in three rows; column 2 is the address
+     card, spanning beside all three. Editing drops the grid for a plain full-width form. */
+  const shipFromSection = editFrom ? (
     <SectionCard id="sec-ship-from" title="Ship From" done={done(fromReq) && done(rtoReq)}
       icon={<Warehouse size={15} className={ICON} />}
       caption="Provide the pickup address and contact details for this consignment."
-      action={editFrom
-        ? saveSenderToggle
-        : <div className="w-64"><PickupSearch options={senderOptions} onPick={pickSender} /></div>}>
-      {!editFrom && <div className="mb-4">{rtoToggle}</div>}
-      {shipFromContent}
-      {editFrom && <div className="mt-4">{rtoToggle}</div>}
+      action={saveSenderToggle}>
+      <div className="mb-4"><PickupSearch options={senderOptions} onPick={pickSender} /></div>
+      <PartyFields party={sender} set={(p) => setSender((x) => ({ ...x, ...p }))} nameLabel="Sender Name" windowLabel="Pick Up"
+        locked={fromList} hid={hid} req={req} showErrors={showErrors} advancedDefaultOpen={advancedDefaultOpen} />
+      <div className="mt-4">{rtoToggle}</div>
       {rtoExpanded}
     </SectionCard>
+  ) : (
+    <section id="sec-ship-from" className="scroll-mt-20 rounded-xl border border-line bg-surface shadow-ds-1 transition-all hover:border-warm-300">
+      <div className="grid grid-cols-1 gap-x-6 gap-y-4 px-6 py-5 sm:grid-cols-2">
+        <div className="sm:col-start-1 sm:row-start-1">
+          <h2 className="flex items-center gap-2 text-[15px] font-bold text-ink">
+            <Warehouse size={15} className={ICON} />
+            Ship From
+            {done(fromReq) && done(rtoReq) && <CheckCircle2 size={15} className="text-success-fg" />}
+          </h2>
+          <p className="mt-0.5 text-[12px] text-ink-3">Provide the pickup address and contact details for this consignment.</p>
+        </div>
+        <div className="sm:col-start-1 sm:row-start-2">
+          <PickupSearch options={senderOptions} onPick={pickSender} />
+        </div>
+        <div className="sm:col-start-1 sm:row-start-3">
+          {rtoToggle}
+        </div>
+        <div className="sm:col-start-2 sm:row-start-1 sm:row-span-3">
+          <AddressCard party={sender} missing={missingOf(sender, 'from')} onEdit={() => setEditFrom(true)} />
+        </div>
+      </div>
+      {showErrors && !done(fromReq) && <p className="px-6 pb-3 text-[12.5px] text-brand-500">Ship From is incomplete — edit it</p>}
+      {rtoExpanded && <div className="px-6 pb-5">{rtoExpanded}</div>}
+    </section>
   )
 
   /* Ship From — one full-width widget regardless of layout now that RTO folds into it;
