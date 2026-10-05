@@ -35,7 +35,7 @@ import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   CheckCircle2, ChevronDown, ChevronRight, CircleDot, CircleMinus, ClipboardList, Copy, CreditCard, FileCheck,
-  Package, Package as PackageIcon, Plus, ScanBarcode, Truck, Undo2, User,
+  ListPlus, Package, Package as PackageIcon, Plus, ScanBarcode, Truck, Undo2, User,
   Wallet as WalletIcon, Warehouse, X,
 } from 'lucide-react'
 import { blankParty, CURRENCY } from '../../growOrders/seed'
@@ -1487,6 +1487,11 @@ export default function AddOrderPage() {
                     <MiniNumBox value={p.h} placeholder="H" unit="cm" error={reqErr(p.h > 0)} onChange={(n) => setParcel(i, { h: n })} />
                   </>}
                   <div className="flex items-center justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                    <button type="button" title="Add SKU" aria-label={`Add SKU to Package ${i + 1}`}
+                      onClick={() => addItem(i)}
+                      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-ink-3 hover:bg-warm-100 hover:text-ink">
+                      <ListPlus size={13} />
+                    </button>
                     <button type="button" title="Duplicate package" aria-label={`Duplicate package ${i + 1}`}
                       onClick={() => setParcels((ps) => [...ps.slice(0, i + 1), clonePackage(ps[i]), ...ps.slice(i + 1)])}
                       className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-ink-3 hover:bg-warm-100 hover:text-ink">
@@ -1508,10 +1513,11 @@ export default function AddOrderPage() {
                   </div>
                 )}
 
-                {/* contents — optional, nested SKU lines scoped to this package, each ONE dense row too */}
-                <div className="mt-3 border-t border-line/60 pt-3">
-                  {items.length > 0 && (
-                    <div className="mb-2 overflow-x-auto rounded-md border border-line/70">
+                {/* contents — optional, nested SKU lines scoped to this package, each ONE dense row too;
+                    adding one is the row's own "Add SKU" action (hover cluster above), not a button here */}
+                {items.length > 0 && (
+                  <div className="mt-3 border-t border-line/60 pt-3">
+                    <div className="overflow-x-auto rounded-md border border-line/70">
                       <div style={{ gridTemplateColumns: SKU_COLS }} className="grid min-w-max gap-2 border-b border-line/70 bg-warm-25/60 px-2.5 py-1.5 text-[11px] font-bold text-ink-3">
                         <span>SKU Code</span><span>Name</span><span>Qty</span>
                         {!hid('skuDescription') && <span>Description</span>}
@@ -1557,9 +1563,8 @@ export default function AddOrderPage() {
                         )
                       })}
                     </div>
-                  )}
-                  <Button size="sm" variant="text" icon={<Plus size={13} />} onClick={() => addItem(i)}>Add SKU</Button>
-                </div>
+                  </div>
+                )}
               </div>
             )
           })}
