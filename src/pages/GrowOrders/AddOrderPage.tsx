@@ -1238,16 +1238,9 @@ export default function AddOrderPage() {
         </>
       ) : !editFrom ? (
         <>
-          {/* stretched: the picker and the compact address side by side, not stacked —
-              there's no neighbouring RTO card left to share the row with */}
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-            <div className="sm:w-[300px] sm:shrink-0">
-              <PickupSearch options={senderOptions} onPick={pickSender} />
-            </div>
-            <div className="min-w-0 flex-1">
-              <AddressCard party={sender} missing={missingOf(sender, 'from')} onEdit={() => setEditFrom(true)} />
-            </div>
-          </div>
+          {/* the picker itself now lives in the card's own header (see shipFromSection) —
+              the body is just the RTO flag + the compact address, full width */}
+          <AddressCard party={sender} missing={missingOf(sender, 'from')} onEdit={() => setEditFrom(true)} />
           {showErrors && !done(fromReq) && <p className="mt-1 text-[12.5px] text-brand-500">Ship From is incomplete — edit it</p>}
         </>
       ) : (
@@ -1260,13 +1253,11 @@ export default function AddOrderPage() {
     </>
   )
   /* RTO is never its own widget in either layout, and the flag itself is a single compact
-     switch now, not a page-width Segmented control (two long option labels). Type-first
-     puts the flag in the card's own header — there's no address below it to show unless
-     RTO differs, so the default case costs the body no height at all. */
+     switch now, not a page-width Segmented control (two long option labels). */
   const rtoToggle = (
     <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-[12.5px] font-bold text-ink-2">
       <Undo2 size={13} className="shrink-0 text-ink-3" />
-      Different RTO
+      RTO uses a different address
       <Toggle checked={(c.rtoMode ?? RTO_MODES[0]) === RTO_MODES[1]}
         onChange={(v) => setC({ rtoMode: v ? RTO_MODES[1] : RTO_MODES[0] })} />
     </label>
@@ -1289,14 +1280,19 @@ export default function AddOrderPage() {
   )
 
   /* Ship From — its own widget (Type-first only; Search-first embeds shipFromContent in the
-     combined card below instead). The RTO flag rides in the header's own action slot —
-     space that would otherwise just sit empty when not mid-edit. */
+     combined card below instead). The picker itself rides in the header's own action
+     slot when compact — space that would otherwise just sit empty — so the body opens
+     with the RTO flag directly under it, then the compact address, full width. */
   const shipFromSection = (
     <SectionCard id="sec-ship-from" title="Ship From" done={done(fromReq) && done(rtoReq)}
       icon={<Warehouse size={15} className={ICON} />}
       caption="Provide the pickup address and contact details for this consignment."
-      action={<div className="flex items-center gap-3">{editFrom && saveSenderToggle}{rtoToggle}</div>}>
+      action={editFrom
+        ? saveSenderToggle
+        : <div className="w-64"><PickupSearch options={senderOptions} onPick={pickSender} /></div>}>
+      {!editFrom && <div className="mb-4">{rtoToggle}</div>}
       {shipFromContent}
+      {editFrom && <div className="mt-4">{rtoToggle}</div>}
       {rtoExpanded}
     </SectionCard>
   )
