@@ -1412,28 +1412,28 @@ export default function AddOrderPage() {
      is one dense row, always visible and editable — no accordion, no per-row expand.
      Dimensions drop out of the grid template entirely when
      the tenant hides them (not just blanked), so the row stays as narrow as it can. */
-  const PKG_COLS = `140px minmax(160px,1.3fr) 110px minmax(140px,1fr) 110px${hid('pkgDimensions') ? '' : ' 90px 90px 90px'} 64px`
-  const SKU_COLS = `minmax(120px,0.9fr) minmax(140px,1.1fr) 80px${hid('skuDescription') ? '' : ' minmax(120px,1fr)'} 110px minmax(120px,1fr)${hid('skuUnitCost') ? '' : ' 100px'}${hid('skuDimensions') ? '' : ' 230px'}${hid('skuWeight') ? '' : ' 150px'} 32px`
+  /* no row label (Package 1/2/…) — order alone tells rows apart, same as the reference;
+     each field is only as wide as its content needs (3 digits for L/W/H, 2-3 for weight) */
+  const PKG_COLS = `minmax(130px,170px) 56px minmax(90px,1fr) 84px${hid('pkgDimensions') ? '' : ' 44px 44px 68px'} 56px`
+  const SKU_COLS = `minmax(100px,120px) minmax(100px,140px) 52px${hid('skuDescription') ? '' : ' minmax(90px,120px)'} minmax(80px,100px) minmax(90px,120px)${hid('skuUnitCost') ? '' : ' 64px'}${hid('skuDimensions') ? '' : ' 150px'}${hid('skuWeight') ? '' : ' 96px'} 32px`
   const packageSection = (
     <div id="sec-package" className="scroll-mt-20">
       <SectionCard title="Packages" done={doneOf['sec-package']} icon={<PackageIcon size={15} className={ICON} />}
         caption="Add the packages in this consignment. A package can ship as-is, or you can optionally list what's inside it.">
         <div className="overflow-x-auto rounded-md border border-line">
           <div style={{ gridTemplateColumns: PKG_COLS }} className="grid min-w-max gap-2 border-b border-line bg-warm-50 px-3 py-2 text-[12px] font-bold text-ink-3">
-            <span>Package</span>
             <span>Package Type<span className="text-brand-500">*</span></span>
             <span>Count<span className="text-brand-500">*</span></span>
             <span>Item Info</span>
             <span>Weight (kg)<span className="text-brand-500">*</span></span>
-            {!hid('pkgDimensions') && <><span>Length (cm)</span><span>Width (cm)</span><span>Height (cm)</span></>}
+            {!hid('pkgDimensions') && <><span>L</span><span>W</span><span>H</span></>}
             <span />
           </div>
           {parcels.map((p, i) => {
             const items = p.items ?? []
             return (
-              <div key={p.packageId ?? i} className="border-b border-line px-3 py-2.5 last:border-0">
+              <div key={p.packageId ?? i} className="group border-b border-line px-3 py-2.5 last:border-0">
                 <div style={{ gridTemplateColumns: PKG_COLS }} className="grid min-w-max items-center gap-2">
-                  <span className="truncate text-[13px] font-bold text-ink">Package {i + 1}</span>
                   <div title={packageTypeTitle}>
                     <MenuSelect value={packageValue(p, packageTypes)} placeholder="Select" searchable
                       options={packageTypeOpts.map((o) => o.value)} labels={(v) => packageTypeOpts.find((o) => o.value === v)?.label ?? v}
@@ -1444,20 +1444,20 @@ export default function AddOrderPage() {
                   <NumBox value={p.weight} unit="kg" error={reqErr(p.weight > 0)}
                     onChange={(n) => setParcel(i, { weight: n, weightMode: 'manual' })} />
                   {!hid('pkgDimensions') && <>
-                    <NumBox value={p.l} error={reqErr(p.l > 0)} onChange={(n) => setParcel(i, { l: n })} />
-                    <NumBox value={p.w} error={reqErr(p.w > 0)} onChange={(n) => setParcel(i, { w: n })} />
-                    <NumBox value={p.h} error={reqErr(p.h > 0)} onChange={(n) => setParcel(i, { h: n })} />
+                    <NumBox value={p.l} placeholder="L" error={reqErr(p.l > 0)} onChange={(n) => setParcel(i, { l: n })} />
+                    <NumBox value={p.w} placeholder="W" error={reqErr(p.w > 0)} onChange={(n) => setParcel(i, { w: n })} />
+                    <NumBox value={p.h} placeholder="H" unit="cm" error={reqErr(p.h > 0)} onChange={(n) => setParcel(i, { h: n })} />
                   </>}
-                  <div className="flex items-center justify-end gap-1">
-                    <button type="button" title="Duplicate package" aria-label={`Duplicate Package ${i + 1}`}
+                  <div className="flex items-center justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                    <button type="button" title="Duplicate package" aria-label={`Duplicate package ${i + 1}`}
                       onClick={() => setParcels((ps) => [...ps.slice(0, i + 1), clonePackage(ps[i]), ...ps.slice(i + 1)])}
-                      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-ink-3 hover:bg-warm-100 hover:text-ink">
-                      <Copy size={14} />
+                      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-ink-3 hover:bg-warm-100 hover:text-ink">
+                      <Copy size={13} />
                     </button>
-                    <button type="button" title="Remove package" aria-label={`Remove Package ${i + 1}`}
+                    <button type="button" title="Remove package" aria-label={`Remove package ${i + 1}`}
                       onClick={() => setParcels((ps) => (ps.length > 1 ? ps.filter((_, j) => j !== i) : [newParcel()]))}
-                      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-warm-400 hover:bg-warm-100 hover:text-brand-500">
-                      <X size={14} />
+                      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-warm-400 hover:bg-warm-100 hover:text-brand-500">
+                      <X size={13} />
                     </button>
                   </div>
                 </div>
@@ -1487,7 +1487,7 @@ export default function AddOrderPage() {
                         const bound = !!it.skuCode
                         return (
                           <div key={k} style={{ gridTemplateColumns: SKU_COLS }}
-                            className="grid min-w-max items-center gap-2 border-b border-line/70 px-2.5 py-1.5 last:border-0">
+                            className="group/sku grid min-w-max items-center gap-2 border-b border-line/70 px-2.5 py-1.5 last:border-0">
                             <SkuCode item={it} skus={masters.skus} onPick={(s) => pickSku(i, k, s)} onUnlink={() => setItem(i, k, { skuCode: null })}
                               autoFocus={focusLine?.i === i && focusLine.k === k} />
                             <Input value={it.name} placeholder="eg, Chair" disabled={bound} onChange={(v) => setItem(i, k, { name: v })} />
@@ -1498,7 +1498,7 @@ export default function AddOrderPage() {
                               onChange={(v) => setItem(i, k, { originCountry: v })} />
                             {!hid('skuUnitCost') && <NumBox blankZero unit={CURRENCY} value={it.unitCost ?? 0} onChange={(n) => setItem(i, k, { unitCost: n })} />}
                             {!hid('skuDimensions') && (
-                              <div className="grid grid-cols-4 gap-1">
+                              <div className="grid grid-cols-[1fr_1fr_1fr_44px] gap-1">
                                 <NumBox blankZero value={it.lengthCm ?? 0} placeholder="L" onChange={(n) => setItem(i, k, { lengthCm: n })} />
                                 <NumBox blankZero value={it.widthCm ?? 0} placeholder="B" onChange={(n) => setItem(i, k, { widthCm: n })} />
                                 <NumBox blankZero value={it.heightCm ?? 0} placeholder="H" onChange={(n) => setItem(i, k, { heightCm: n })} />
@@ -1506,14 +1506,14 @@ export default function AddOrderPage() {
                               </div>
                             )}
                             {!hid('skuWeight') && (
-                              <div className="grid grid-cols-[1fr_72px] gap-1">
+                              <div className="grid grid-cols-[1fr_44px] gap-1">
                                 <NumBox blankZero value={it.weightKg} onChange={(n) => setItem(i, k, { weightKg: n })} />
                                 <MenuSelect value={it.weightUom ?? 'KG'} options={WEIGHT_UOMS} onChange={(v) => setItem(i, k, { weightUom: v })} />
                               </div>
                             )}
                             <button type="button" onClick={() => removeItem(i, k)} aria-label="Remove SKU line"
-                              className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-warm-400 hover:bg-warm-100 hover:text-brand-500">
-                              <X size={14} />
+                              className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-warm-400 opacity-0 transition-opacity hover:bg-warm-100 hover:text-brand-500 group-hover/sku:opacity-100 group-focus-within/sku:opacity-100">
+                              <X size={13} />
                             </button>
                           </div>
                         )
