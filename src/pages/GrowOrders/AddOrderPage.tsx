@@ -351,6 +351,32 @@ function NumBox({ value, onChange, unit, integer, min = 0, blankZero, error, dis
 function FNum({ label, required, className = '', helper, ...p }: ComponentProps<typeof NumBox> & { label: string; required?: boolean; className?: string; helper?: ReactNode }) {
   return <Fld label={label} required={required} error={!!p.error} helper={helper} className={className}><NumBox {...p} /></Fld>
 }
+/** NumBox's px-3 padding is comfortable for a labelled field but eats most of a column
+ * sized in characters — this is the same shell with a quarter of the padding, so a
+ * `Nch`-wide grid track actually shows close to N digits (dense tables: Packages/SKU). */
+function MiniNumBox({ value, onChange, unit, error, placeholder }: {
+  value: number; onChange: (n: number) => void; unit?: string; error?: string; placeholder?: string
+}) {
+  const [typed, setTyped] = useState<{ text: string; of: number } | null>(null)
+  const text = typed && typed.of === value ? typed.text : (value === 0 ? '' : String(value))
+  const commit = (v: string) => {
+    const n = v.trim() === '' ? 0 : Number(v)
+    const next = Number.isFinite(n) ? n : value
+    setTyped({ text: v, of: next })
+    if (next !== value) onChange(next)
+  }
+  return (
+    <div className={`flex h-8 items-center rounded-md border bg-surface transition-shadow
+      focus-within:border-brand-500 focus-within:ring-[3px] focus-within:ring-brand-500/20
+      ${error ? 'border-brand-500' : 'border-warm-300'}`}>
+      <input type="number" value={text} placeholder={placeholder} onChange={(e) => commit(e.target.value)}
+        className="h-full w-full min-w-0 flex-1 rounded-md bg-transparent px-1 text-center text-[13px] tabular-nums text-ink
+                   placeholder:text-warm-400 focus:outline-none
+                   [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" />
+      {unit && <span className="flex h-full shrink-0 items-center rounded-r-[5px] border-l border-warm-200 bg-warm-50 px-1 text-[10px] font-bold uppercase text-ink-3">{unit}</span>}
+    </div>
+  )
+}
 
 /**
  * One merchant-configured document — a picked file's NAME only (this is a
@@ -1414,8 +1440,10 @@ export default function AddOrderPage() {
      the tenant hides them (not just blanked), so the row stays as narrow as it can. */
   /* no row label (Package 1/2/…) — order alone tells rows apart, same as the reference;
      each field is only as wide as its content needs (3 digits for L/W/H, 2-3 for weight) */
-  const PKG_COLS = `minmax(130px,170px) 56px minmax(90px,1fr) 84px${hid('pkgDimensions') ? '' : ' 44px 44px 68px'} 56px`
-  const SKU_COLS = `minmax(100px,120px) minmax(100px,140px) 52px${hid('skuDescription') ? '' : ' minmax(90px,120px)'} minmax(80px,100px) minmax(90px,120px)${hid('skuUnitCost') ? '' : ' 64px'}${hid('skuDimensions') ? '' : ' 150px'}${hid('skuWeight') ? '' : ' 96px'} 32px`
+  /* weight (4ch + kg tag), L/W (3ch, no unit), H (3ch + shared cm tag) — literal character
+     widths via MiniNumBox, not NumBox, whose own px-3 padding ate most of a narrow column */
+  const PKG_COLS = `minmax(130px,170px) 56px minmax(90px,1fr) 8ch${hid('pkgDimensions') ? '' : ' 3ch 3ch 6ch'} 56px`
+  const SKU_COLS = `minmax(100px,120px) minmax(100px,140px) 52px${hid('skuDescription') ? '' : ' minmax(90px,120px)'} minmax(80px,100px) minmax(90px,120px)${hid('skuUnitCost') ? '' : ' 7ch'}${hid('skuDimensions') ? '' : ' 120px'}${hid('skuWeight') ? '' : ' 80px'} 32px`
   const packageSection = (
     <div id="sec-package" className="scroll-mt-20">
       <SectionCard title="Packages" done={doneOf['sec-package']} icon={<PackageIcon size={15} className={ICON} />}
@@ -1441,12 +1469,12 @@ export default function AddOrderPage() {
                   </div>
                   <NumBox value={p.quantity} min={1} integer onChange={(n) => setParcel(i, { quantity: n })} />
                   <Input value={p.itemInfo} placeholder="eg, Electronics" onChange={(v) => setParcel(i, { itemInfo: v })} />
-                  <NumBox value={p.weight} unit="kg" error={reqErr(p.weight > 0)}
+                  <MiniNumBox value={p.weight} unit="kg" error={reqErr(p.weight > 0)}
                     onChange={(n) => setParcel(i, { weight: n, weightMode: 'manual' })} />
                   {!hid('pkgDimensions') && <>
-                    <NumBox value={p.l} placeholder="L" error={reqErr(p.l > 0)} onChange={(n) => setParcel(i, { l: n })} />
-                    <NumBox value={p.w} placeholder="W" error={reqErr(p.w > 0)} onChange={(n) => setParcel(i, { w: n })} />
-                    <NumBox value={p.h} placeholder="H" unit="cm" error={reqErr(p.h > 0)} onChange={(n) => setParcel(i, { h: n })} />
+                    <MiniNumBox value={p.l} placeholder="L" error={reqErr(p.l > 0)} onChange={(n) => setParcel(i, { l: n })} />
+                    <MiniNumBox value={p.w} placeholder="W" error={reqErr(p.w > 0)} onChange={(n) => setParcel(i, { w: n })} />
+                    <MiniNumBox value={p.h} placeholder="H" unit="cm" error={reqErr(p.h > 0)} onChange={(n) => setParcel(i, { h: n })} />
                   </>}
                   <div className="flex items-center justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
                     <button type="button" title="Duplicate package" aria-label={`Duplicate package ${i + 1}`}
@@ -1496,18 +1524,18 @@ export default function AddOrderPage() {
                             <Input value={it.hsnCode ?? ''} disabled={bound} onChange={(v) => setItem(i, k, { hsnCode: v })} />
                             <MenuSelect value={it.originCountry ?? ''} options={ORIGIN_OPTS.map((o) => o.value)} searchable disabled={bound}
                               onChange={(v) => setItem(i, k, { originCountry: v })} />
-                            {!hid('skuUnitCost') && <NumBox blankZero unit={CURRENCY} value={it.unitCost ?? 0} onChange={(n) => setItem(i, k, { unitCost: n })} />}
+                            {!hid('skuUnitCost') && <MiniNumBox unit={CURRENCY} value={it.unitCost ?? 0} onChange={(n) => setItem(i, k, { unitCost: n })} />}
                             {!hid('skuDimensions') && (
-                              <div className="grid grid-cols-[1fr_1fr_1fr_44px] gap-1">
-                                <NumBox blankZero value={it.lengthCm ?? 0} placeholder="L" onChange={(n) => setItem(i, k, { lengthCm: n })} />
-                                <NumBox blankZero value={it.widthCm ?? 0} placeholder="B" onChange={(n) => setItem(i, k, { widthCm: n })} />
-                                <NumBox blankZero value={it.heightCm ?? 0} placeholder="H" onChange={(n) => setItem(i, k, { heightCm: n })} />
+                              <div className="grid grid-cols-[3ch_3ch_3ch_40px] gap-1">
+                                <MiniNumBox value={it.lengthCm ?? 0} placeholder="L" onChange={(n) => setItem(i, k, { lengthCm: n })} />
+                                <MiniNumBox value={it.widthCm ?? 0} placeholder="B" onChange={(n) => setItem(i, k, { widthCm: n })} />
+                                <MiniNumBox value={it.heightCm ?? 0} placeholder="H" onChange={(n) => setItem(i, k, { heightCm: n })} />
                                 <MenuSelect value={it.dimUom ?? 'CM'} options={DIM_UOMS} onChange={(v) => setItem(i, k, { dimUom: v })} />
                               </div>
                             )}
                             {!hid('skuWeight') && (
-                              <div className="grid grid-cols-[1fr_44px] gap-1">
-                                <NumBox blankZero value={it.weightKg} onChange={(n) => setItem(i, k, { weightKg: n })} />
+                              <div className="grid grid-cols-[4ch_40px] gap-1">
+                                <MiniNumBox value={it.weightKg} onChange={(n) => setItem(i, k, { weightKg: n })} />
                                 <MenuSelect value={it.weightUom ?? 'KG'} options={WEIGHT_UOMS} onChange={(v) => setItem(i, k, { weightUom: v })} />
                               </div>
                             )}
@@ -1520,11 +1548,7 @@ export default function AddOrderPage() {
                       })}
                     </div>
                   )}
-                  <button type="button" onClick={() => addItem(i)}
-                    className="flex w-full items-center justify-center gap-2 rounded-lg border border-dashed border-warm-300 py-2
-                               text-[12.5px] font-bold text-brand-500 transition-colors hover:border-brand-500 hover:bg-brand-50/40">
-                    <Plus size={13} /> Add SKU
-                  </button>
+                  <Button size="sm" variant="text" icon={<Plus size={13} />} onClick={() => addItem(i)}>Add SKU</Button>
                 </div>
               </div>
             )
