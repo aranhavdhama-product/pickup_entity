@@ -1207,13 +1207,12 @@ export default function AddOrderPage() {
     ? <span className="flex items-center gap-2 text-[12.5px] font-bold text-ink-2">Save address <Toggle checked={saveSender} onChange={setSaveSender} /></span>
     : undefined
 
-  /* Ship From — a compact location card + edit pencil by default (was Simplified-only);
-     the pencil reveals the full PartyFields form, same as it always did on edit. */
-  const shipFromSection = (
-    <SectionCard id="sec-ship-from" title="Ship From" done={done(fromReq)}
-      icon={<Warehouse size={15} className={ICON} />}
-      caption="Provide the pickup address and contact details for this consignment."
-      action={editFrom ? saveSenderToggle : undefined}>
+  /* Ship From's fields only — Type-first: a compact location card + edit pencil by default (was
+     Simplified-only), the pencil reveals the full PartyFields form. Search-first: always the
+     address-card + edit-popup. Shared by both the 3-widget (Type-first) and combined
+     (Search-first) compositions below. */
+  const shipFromContent = (
+    <>
       {addressLayout === 'searchFirst' ? (
         <>
           <div className="mb-4"><PickupSearch options={senderOptions} onPick={pickSender} /></div>
@@ -1238,13 +1237,21 @@ export default function AddOrderPage() {
             locked={fromList} hid={hid} req={req} showErrors={showErrors} advancedDefaultOpen={advancedDefaultOpen} />
         </>
       )}
+    </>
+  )
+  /* Ship From — its own widget (Type-first only; Search-first embeds shipFromContent in the
+     combined card below instead). */
+  const shipFromSection = (
+    <SectionCard id="sec-ship-from" title="Ship From" done={done(fromReq)}
+      icon={<Warehouse size={15} className={ICON} />}
+      caption="Provide the pickup address and contact details for this consignment."
+      action={editFrom ? saveSenderToggle : undefined}>
+      {shipFromContent}
     </SectionCard>
   )
 
-  const rtoSection = (
-    <SectionCard id="sec-rto" title="Return To Origin (RTO)" done={done(rtoReq)}
-      icon={<Undo2 size={15} className={ICON} />}
-      caption="Provide the return-to-origin address and contact details for this consignment.">
+  const rtoContent = (
+    <>
       <Segmented compact options={RTO_MODES} value={c.rtoMode ?? RTO_MODES[0]} onChange={(m) => setC({ rtoMode: m })} />
       {c.rtoMode === RTO_MODES[1] && (
         <div className="mt-5">
@@ -1262,13 +1269,22 @@ export default function AddOrderPage() {
           )}
         </div>
       )}
+    </>
+  )
+  /* RTO — its own widget (Type-first only; Search-first embeds rtoContent under Ship From in the
+     combined card below instead, same as Aranhav's layout does). */
+  const rtoSection = (
+    <SectionCard id="sec-rto" title="Return To Origin (RTO)" done={done(rtoReq)}
+      icon={<Undo2 size={15} className={ICON} />}
+      caption="Provide the return-to-origin address and contact details for this consignment.">
+      {rtoContent}
     </SectionCard>
   )
 
   /* side by side while both are in their compact state (the common case) — cuts page
      height since a collapsed Ship From card and the RTO segmented control are both
      narrow. Either expanding to a full address form drops back to full-width stacking
-     so the 4-column field grid isn't squeezed into a half-width column. */
+     so the 4-column field grid isn't squeezed into a half-width column. Type-first only. */
   const shipFromRtoRow = (
     <div id="sec-ship-from-rto" className={`scroll-mt-20 grid gap-5 ${!editFrom && c.rtoMode !== RTO_MODES[1] ? 'lg:grid-cols-2 lg:items-stretch' : ''}`}>
       {shipFromSection}
@@ -1277,8 +1293,8 @@ export default function AddOrderPage() {
   )
 
   /* collapsed by default on a dedicated-truck booking — see shipToOpen above */
-  const shipToPlaceholder = (
-    <div id="sec-ship-to" className="scroll-mt-20">
+  const shipToPlaceholderContent = (
+    <>
       <button type="button" onClick={() => setShipToOpen(true)}
         className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-warm-300 py-4
                    text-[13px] font-bold text-brand-500 transition-colors hover:border-brand-500 hover:bg-brand-50/40">
@@ -1287,13 +1303,12 @@ export default function AddOrderPage() {
       <p className="mt-2 text-center text-[12px] text-ink-3">
         Leaving this empty reserves the vehicle only — a Pickup Request is created, not a consignment.
       </p>
-    </div>
+    </>
   )
+  const shipToPlaceholder = <div id="sec-ship-to" className="scroll-mt-20">{shipToPlaceholderContent}</div>
 
-  const shipToSection = (
-    <SectionCard id="sec-ship-to" title="Ship To" done={doneOf['sec-ship-to']}
-      icon={<User size={15} className={ICON} />}
-      caption="Provide the delivery address and contact details to ensures accurate delivery and proper communication with the recipient.">
+  const shipToContent = (
+    <>
       {allDrops.map((d, i) => {
         const set = i === 0 ? (p: Partial<Party>) => setReceiver((x) => ({ ...x, ...p })) : (p: Partial<Party>) => setDrop(i - 1, p)
         return (
@@ -1333,6 +1348,35 @@ export default function AddOrderPage() {
           <Plus size={14} /> Add another delivery address
         </button>
       )}
+    </>
+  )
+  /* Ship To — its own widget (Type-first only). */
+  const shipToSection = (
+    <SectionCard id="sec-ship-to" title="Ship To" done={doneOf['sec-ship-to']}
+      icon={<User size={15} className={ICON} />}
+      caption="Provide the delivery address and contact details to ensures accurate delivery and proper communication with the recipient.">
+      {shipToContent}
+    </SectionCard>
+  )
+
+  /* Search-first: ONE "Ship From → Ship To" widget, RTO folded under Ship From — Aranhav's B2B
+     layout, built for an account whose orders repeat the same handful of customers. The inner
+     ids keep the Shipment Summary's jump-links working even though there's no separate card. */
+  const addressesCombinedSection = (
+    <SectionCard id="sec-ship-from-rto" title="Ship From → Ship To" done={done(fromReq) && done(rtoReq) && done(toReq)}
+      icon={<Warehouse size={15} className={ICON} />}
+      caption="Pick a saved address or add a new one.">
+      <div className="grid gap-y-8 lg:grid-cols-2">
+        <div id="sec-ship-from" className="min-w-0 lg:pr-8">
+          <SubHead label="Ship From" first />
+          {shipFromContent}
+          <div className="mt-7">{rtoContent}</div>
+        </div>
+        <div id="sec-ship-to" className="min-w-0 border-t border-line pt-8 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
+          <SubHead label="Ship To" first />
+          {shipToOpen ? shipToContent : shipToPlaceholderContent}
+        </div>
+      </div>
     </SectionCard>
   )
 
@@ -1751,8 +1795,12 @@ export default function AddOrderPage() {
   )
 
   const byId: Record<string, ReactNode> = {
-    'sec-consignment': consignmentSection, 'sec-ship-from-rto': shipFromRtoRow,
-    'sec-ship-to': shipToOpen ? shipToSection : shipToPlaceholder, 'sec-package': packageSection,
+    'sec-consignment': consignmentSection,
+    /* Search-first: one combined "Ship From → Ship To" widget (RTO folded in) — 'sec-ship-to'
+       renders nothing of its own, it's already inside the combined card. */
+    'sec-ship-from-rto': addressLayout === 'searchFirst' ? addressesCombinedSection : shipFromRtoRow,
+    'sec-ship-to': addressLayout === 'searchFirst' ? null : (shipToOpen ? shipToSection : shipToPlaceholder),
+    'sec-package': packageSection,
     'sec-vehicle': vehicleSection, 'sec-services': servicesSection, 'sec-documents': documentsSection,
     'sec-payment': paymentSection,
   }

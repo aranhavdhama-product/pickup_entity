@@ -1768,7 +1768,32 @@ export default function AddConsignmentV2({ portal = 'console' }: {
         : 'Leave empty to schedule the pickup later from Shipments'}</p>
     </div>
   ) : null
-  const partiesSection = (
+  /* Ship To's own content — Add delivery address button + scheduling toggle — shared by both
+     the combined (Search-first) and 3-widget (Type-first) compositions below. */
+  const shipToWidgetContent = (
+    <>
+      {allDrops.map((_, i) => (
+        <div key={i} className={i > 0 ? 'mt-8 border-t border-warm-200 pt-6' : ''}>
+          {addressSlot('to', i, allDrops.length > 1 ? `Ship To · Address ${i + 1}` : 'Ship To', i > 0 ? (
+            <button type="button" aria-label={`Remove address ${i + 1}`} onClick={() => removeDrop(i - 1)}
+              className="text-ink-3 transition-colors hover:text-brand-500"><CircleMinus size={16} /></button>
+          ) : undefined)}
+          {windowCells('to', i)}
+        </div>
+      ))}
+      {/* scheduling is about the DELIVERY — asked beside its window */}
+      {!hid('schedulingConfirmation') && (
+        <div className="mt-5"><Configurable fieldKey="schedulingConfirmation">
+          <InlineSwitch label={lbl('schedulingConfirmation')} title={SWITCH_HINTS.schedulingConfirmation} checked={!!c.schedulingConfirmation} onChange={(v) => setC({ schedulingConfirmation: v })} />
+        </Configurable></div>
+      )}
+      {/* multi-drop is a dedicated-truck booking: every address needs a vehicle */}
+      {(isFtl || (merchantMode && mode === 'ftl')) && <div className="mt-6"><AddMoreButton label="Add delivery address" onClick={() => setDrops((ds) => [...ds, blankParty()])} /></div>}
+    </>
+  )
+  /* Search-first: ONE "Ship From → Ship To" widget, RTO folded under Ship From — built for a B2B
+     account whose orders repeat the same handful of customers. */
+  const partiesCombined = (
     <FormCard id="sec-parties" title="Ship From → Ship To"
       caption={ctype === 'Transfer' ? 'Stock moving between two facilities — pick a hub at each end.'
         : merchantMode ? 'Pick a saved address or add a new one.' : 'Pick a saved address or add a new one — Shipment legs decide whether each end is an address or a hub.'}>
@@ -1785,29 +1810,37 @@ export default function AddConsignmentV2({ portal = 'console' }: {
           {typeRule.rto && c.rtoMode === RTO_MODES[1] && <div className="mt-7">{addressSlot('rto', 0, 'Return To Origin (RTO) address')}</div>}
         </div>
         <div className="min-w-0 border-t border-warm-200 pt-8 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
-          {allDrops.map((_, i) => (
-            <div key={i} className={i > 0 ? 'mt-8 border-t border-warm-200 pt-6' : ''}>
-              {addressSlot('to', i, allDrops.length > 1 ? `Ship To · Address ${i + 1}` : 'Ship To', i > 0 ? (
-                <button type="button" aria-label={`Remove address ${i + 1}`} onClick={() => removeDrop(i - 1)}
-                  className="text-ink-3 transition-colors hover:text-brand-500"><CircleMinus size={16} /></button>
-              ) : undefined)}
-              {windowCells('to', i)}
-            </div>
-          ))}
-          {/* scheduling is about the DELIVERY — asked beside its window */}
-          {!hid('schedulingConfirmation') && (
-            <div className="mt-5"><Configurable fieldKey="schedulingConfirmation">
-              <InlineSwitch label={lbl('schedulingConfirmation')} title={SWITCH_HINTS.schedulingConfirmation} checked={!!c.schedulingConfirmation} onChange={(v) => setC({ schedulingConfirmation: v })} />
-            </Configurable></div>
-          )}
-          {/* multi-drop is a dedicated-truck booking: every address needs a vehicle */}
-          {(isFtl || (merchantMode && mode === 'ftl')) && <div className="mt-6"><AddMoreButton label="Add delivery address" onClick={() => setDrops((ds) => [...ds, blankParty()])} /></div>}
+          {shipToWidgetContent}
         </div>
       </div>
       {!merchantMode && legsLine}
       {addressModal}
     </FormCard>
   )
+  /* Type-first: Ship From / RTO / Ship To as THREE separate widgets — Grow's own layout, built for
+     a parcel/CEP merchant. No FormCard title here: addressSlot's own SubTitle is the heading, so
+     the card chrome doesn't duplicate it. */
+  const partiesThreeWidgets = (
+    <div id="sec-parties" className="grid gap-5">
+      <div className={`grid gap-5 ${typeRule.rto ? 'lg:grid-cols-2 lg:items-stretch' : ''}`}>
+        <FormCard>
+          {addressSlot('from', 0, 'Ship From')}
+          {merchantMode ? merchantPickupWindow : windowCells('from', 0)}
+        </FormCard>
+        {typeRule.rto && (
+          <FormCard>
+            <InlineSwitch label="RTO address same as Ship From address" title="If it can't be delivered, it comes back to the Ship From address"
+              checked={(c.rtoMode ?? RTO_MODES[0]) === RTO_MODES[0]} onChange={(same) => setC({ rtoMode: same ? RTO_MODES[0] : RTO_MODES[1] })} />
+            {c.rtoMode === RTO_MODES[1] && <div className="mt-7">{addressSlot('rto', 0, 'Return To Origin (RTO) address')}</div>}
+          </FormCard>
+        )}
+      </div>
+      <FormCard>{shipToWidgetContent}</FormCard>
+      {!merchantMode && legsLine}
+      {addressModal}
+    </div>
+  )
+  const partiesSection = addressLayout === 'searchFirst' ? partiesCombined : partiesThreeWidgets
 
   /* ------------------------------------------------------------ handling — asked on the GOODS (owner,
      2026-09-29: "barcode labels should be asked at package level"): what the goods are like, whether every
