@@ -1452,7 +1452,9 @@ export default function AddOrderPage() {
      px-3 padding ate most of a narrow column regardless of its track width. No per-cell
      "cm"/"kg" tags either (the header already says so) — those were quietly stealing
      width back from the one thing meant to be narrow. */
-  const PKG_COLS = `minmax(130px,170px) 56px minmax(160px,280px) 9ch${hid('pkgDimensions') ? '' : ' 5ch 5ch 9ch'} 56px`
+  /* actions are a floating hover overlay now (see the row below), not a reserved column —
+     three labelled buttons never fit a fixed-width track without fighting H's "cm" tag */
+  const PKG_COLS = `minmax(130px,170px) 56px minmax(160px,280px) 9ch${hid('pkgDimensions') ? '' : ' 5ch 5ch 9ch'}`
   const SKU_COLS = `minmax(100px,120px) minmax(100px,140px) 52px${hid('skuDescription') ? '' : ' minmax(90px,120px)'} minmax(80px,100px) minmax(90px,120px)${hid('skuUnitCost') ? '' : ' 7ch'}${hid('skuDimensions') ? '' : ' 120px'}${hid('skuWeight') ? '' : ' 80px'} 32px`
   const packageSection = (
     <div id="sec-package" className="scroll-mt-20">
@@ -1465,12 +1467,11 @@ export default function AddOrderPage() {
             <span>Item Info</span>
             <span>Weight<span className="text-brand-500">*</span></span>
             {!hid('pkgDimensions') && <><span>L</span><span>W</span><span>H</span></>}
-            <span />
           </div>
           {parcels.map((p, i) => {
             const items = p.items ?? []
             return (
-              <div key={p.packageId ?? i} className="group border-b border-line last:border-0">
+              <div key={p.packageId ?? i} className="group relative border-b border-line last:border-0">
                 <div style={{ gridTemplateColumns: PKG_COLS }} className="grid min-w-max items-center gap-2 px-3 py-2.5">
                   <div title={packageTypeTitle}>
                     <MenuSelect value={packageValue(p, packageTypes)} placeholder="Select" searchable
@@ -1486,21 +1487,26 @@ export default function AddOrderPage() {
                     <MiniNumBox value={p.w} placeholder="W" error={reqErr(p.w > 0)} onChange={(n) => setParcel(i, { w: n })} />
                     <MiniNumBox value={p.h} placeholder="H" unit="cm" error={reqErr(p.h > 0)} onChange={(n) => setParcel(i, { h: n })} />
                   </>}
-                  <div className="flex items-center justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-                    <button type="button" title="Add SKU" aria-label={`Add SKU to Package ${i + 1}`}
+                </div>
+                {/* a floating overlay, not a reserved column — three labelled actions never fit a
+                    fixed-width track without crowding H's "cm" tag; pointer-events-none on the
+                    positioning wrapper keeps it from blocking clicks on the row while hidden */}
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center">
+                  <div className="pointer-events-auto flex items-center gap-1 rounded-l-md border border-line bg-surface py-1 pl-2.5 pr-2.5 opacity-0 shadow-ds-1 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                    <button type="button" aria-label={`Add SKU to Package ${i + 1}`}
                       onClick={() => addItem(i)}
-                      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-ink-3 hover:bg-warm-100 hover:text-ink">
-                      <ListPlus size={13} />
+                      className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[12px] font-bold text-ink-3 hover:bg-warm-100 hover:text-ink">
+                      <ListPlus size={13} /> Add SKU
                     </button>
-                    <button type="button" title="Duplicate package" aria-label={`Duplicate package ${i + 1}`}
+                    <button type="button" aria-label={`Duplicate package ${i + 1}`}
                       onClick={() => setParcels((ps) => [...ps.slice(0, i + 1), clonePackage(ps[i]), ...ps.slice(i + 1)])}
-                      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-ink-3 hover:bg-warm-100 hover:text-ink">
-                      <Copy size={13} />
+                      className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[12px] font-bold text-ink-3 hover:bg-warm-100 hover:text-ink">
+                      <Copy size={13} /> Duplicate
                     </button>
-                    <button type="button" title="Remove package" aria-label={`Remove package ${i + 1}`}
+                    <button type="button" aria-label={`Remove package ${i + 1}`}
                       onClick={() => setParcels((ps) => (ps.length > 1 ? ps.filter((_, j) => j !== i) : [newParcel()]))}
-                      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-warm-400 hover:bg-warm-100 hover:text-brand-500">
-                      <X size={13} />
+                      className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[12px] font-bold text-warm-400 hover:bg-warm-100 hover:text-brand-500">
+                      <X size={13} /> Remove
                     </button>
                   </div>
                 </div>
