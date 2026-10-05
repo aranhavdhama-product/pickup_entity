@@ -422,8 +422,8 @@ effects (a cancelled/rescheduled PR leaving its trip) flow through `onPickupRequ
   (every dialog, re-attempt and auto window pass the where); hub operating days are DERIVED from the
   hub's Holiday Master policy (weekly offs + working hours, staging's shape — research
   `2026-09-25-staging-holiday-master.md`). Holiday Master page = `/local/settings/masters/service_order/holiday-master`
-  (tabs Holiday Policies · Holidays, persisted by ServiceOrderMasters, read back by key); the "Pickup days
-  follow" row sits in the settings page's Booking rules card, with a "Hub holidays → Holiday master" row. Dialogs show one caption naming the source and
+  (tabs Holiday Policies · Holidays, persisted by ServiceOrderMasters, read back by key); the "Pickup days"
+  row sits under More options in the settings page's Booking rules card, with a "Hub holidays → Holiday master" row. Dialogs show one caption naming the source and
   grey holidays with a "Holiday · name" tooltip.**
   **`mode` (owner, 2026-09-24): `manual` (default) = merchants/ops book; `auto` = a request is
   raised the moment a consignment is created on the date `autoPickup` computes
@@ -434,18 +434,30 @@ effects (a cancelled/rescheduled PR leaving its trip) flow through `onPickupRequ
   `autoPickupWindowFor()` else the fallback rule; in auto mode the settings page asks ONLY
   auto-relevant options — add-to-existing, merchant-cancel and merchant rules are manual-only; `dateRule`
   same-day | next-business-day | days-after-order, `daysAfterOrder`, `slot`, `pickupDays`; `autoPickupWindow()` / `autoPickupSummary()` in `pickupSlots.ts`; the legacy
-  `autoCreateOnConsignment` is derived from it). `/local/settings/pickup` (owner, 2026-09-25 "improve
-  settings UI") = five cards in ONE row grammar (13px bold label + one 12px hint left, control in a fixed
-  260px column, rows `border-line` py-4, 24px between cards): Pickup module switch (off = nothing else) ·
-  How requests are raised (two equal mode cards, "Selected" check, border-ink + warm-50) · Auto / Manual
-  pickup options (the chosen mode's rows only) · Booking rules (shared) · Pickup attempts; a sticky footer
-  Cancel (revert to saved) · Save with an "Unsaved changes" caption — no "Restore defaults". Other keys keep
-  their stored values and stay editable on the console's Base Modules → Pickup Request twin. In auto mode every manual booking control is
+  `autoCreateOnConsignment` is derived from it). `/local/settings/pickup` (owner, 2026-10-05 "simplify the pickups
+  setting"; before: five cards, 2026-09-25) reads in the order a person decides, in plain words, ONE row grammar
+  (13px bold label + ONE 12px hint ≤ 90 chars saying what happens, no truncation, control in a fixed 260px column,
+  rows `border-line` py-4, 24px between cards; copy + hints in the pure `LocalSettings/pickupSummary.ts`): the
+  header switch **Pickups on / off** (off = the summary only) → a **Summary** card, 2–5 plain sentences built live
+  from the draft (`pickupSummary()`; e.g. "Merchants and ops book pickups themselves. Pickups can be booked up to 7
+  days ahead; same-day bookings close at 12:00. Failed pickups follow the Reason Policy."; auto says the event, the
+  stored `dateRule` + slot, shipper choice / confirmation) → **Who books pickups** (two equal cards **Manual** |
+  **Automatic**, border-ink + warm-50 + a check) → ONLY that mode's card: **Automatic pickups** = Book the pickup when
+  (`triggerEvent`, titles only, hint = what "fired" means locally) · Shipper chooses the pickup time
+  (`userSelectsWindow`; off-hint states the stored date rule) · More options: Shipper confirms the time
+  (`slotConfirmation`); **Manual pickups** = Book a pickup before its consignments exist (`blindAllowed`, shows as LTL
+  blind / FTL blind) → **Booking rules** (shared; caption differs by mode) = Book up to N days ahead
+  (`bookingHorizonDays`) · Same-day cut-off (`sameDayCutoff`) · More options: Pickup days (`pickupDaysSource`: Pickup
+  address and hub | Hub only) + Hub holidays → Holiday master → **When a pickup fails** (one header action → Reason
+  Policy). Switches say On / Off. `MoreOptions` (`settingsRows.tsx`) opens by itself when one of its settings is not
+  at its default, so a changed setting is never hidden. Sticky footer Cancel (revert to saved) · Save with an
+  "Unsaved changes" caption — no "Restore defaults". Other keys (`dateRule`, `slot`, `pickupDays`, …) keep their
+  stored values and stay editable on the console's Base Modules → Pickup Request twin. In auto mode every manual booking control is
   replaced by an "Auto pickup · rule" pill: Schedule Pickup (console + Grow), Book Pickup
   (Grow view), Create Pickup (console Pickup page), Add + Eligible consignments (Grow Pickup Requests).
-  **Manual card = "Manual pickup requests"** (2026-09-25); its one option `manualPickup.blindAllowed` (default true, "Reserved (blind) pickups" Yes/No) — `blindPickupsAllowed(cfg)` hides console Create Pickup + Grow Add and makes `createBlindPickup` return null (no write); existing Reserved requests stay readable.
-  **Pickup attempts = Reason Policy (owner, 2026-09-25):** `/local/settings/pickup` shows ONE "Pickup attempts" row
-  (both modes) whose **Reason policy** button → `/local/settings/masters/service_order/reason-master?tab=reason-policy`
+  **Manual card = "Manual pickups"**; its one option `manualPickup.blindAllowed` (default true) — `blindPickupsAllowed(cfg)` hides console Create Pickup + Grow Add and makes `createBlindPickup` return null (no write); existing blind requests stay readable.
+  **Pickup attempts = Reason Policy (owner, 2026-09-25):** `/local/settings/pickup` shows ONE "When a pickup fails" card
+  (both modes) whose **Reason Policy** button → `/local/settings/masters/service_order/reason-master?tab=reason-policy`
   (`SubMasterPage` reads `?tab=<slug>`); no attempts input — the cap lives on the rule, staging-style: When =
   Always | **Before attempt N** (form: `Attempt` 1–5, default 3, shown via FieldDef `showWhen`; the row stores
   `when: 'Before attempt 3'` + `attempt`). Pickup reasons + rules live in `src/growOrders/reasonPolicy.ts` (mastersTree
