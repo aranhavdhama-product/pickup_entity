@@ -24,7 +24,7 @@ export default function LocalSettings() {
           desc="Columns, filters and their order on the Pending for Planning listing."
           onClick={() => navigate('/local/columns')} />
         <ListCard icon={<Truck size={18} />} title="Pickup module"
-          desc="Enable or disable the module, and choose auto or manual pickup requests."
+          desc="Turn pickups on or off, choose who books them and set the booking rules."
           onClick={() => navigate('/local/settings/pickup')} />
         <ListCard icon={<SlidersHorizontal size={18} />} title="General Settings"
           desc="Account-wide defaults: order view, splitting, scanning, task type and inbound stage."
