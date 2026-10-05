@@ -12,7 +12,7 @@
  * The chosen method is remembered per merchant (`merchantSettings.defaultPayMethod`).
  * Ledger: `growOrders/ledger.ts` (`recordPayment`, `settlePayments`, `walletOf`).
  */
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Banknote, CalendarClock, Check, CreditCard, Wallet } from 'lucide-react'
 import { Button, Input, MenuSelect, Modal } from '../../nueva/components'
@@ -119,10 +119,11 @@ export function PaymentSheet({ amount, currency, allowCod = false, allowPayLater
     : method === 'Card'
       ? { method, last4: digits(raw).slice(-4), ready: digits(raw).length >= 13 && !!name.trim() && expiryOk(exp), reason: 'Enter the card number, name and a valid expiry' }
       : { method, ready: true }
-  /* report every render's choice to the parent (cheap; parent keeps it in a ref/state) */
+  /* report the choice to the parent whenever it changes — in an effect, so the
+     parent is never updated before it has mounted (it was a render-time microtask) */
   const key = `${choice.method}|${choice.ready}|${choice.last4 ?? ''}`
-  const [sent, setSent] = useState('')
-  if (sent !== key) { setSent(key); queueMicrotask(() => onChange(choice)) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- `key` is the choice's identity
+  useEffect(() => { onChange(choice) }, [key])
 
   const setMethod = (m: PayMethod) => {
     setMethodState(m)
