@@ -681,7 +681,7 @@ function BookingCard({ group: g, stores, conflict, onDrop, control }: {
             <div key={o.id} className="flex items-center gap-3 border-b border-line px-4 py-1.5 text-[13px] last:border-0 hover:bg-warm-50">
               <span className="w-[120px] shrink-0 truncate font-bold text-ink">{o.orderNumber}</span>
               <span className="min-w-0 flex-1 truncate text-ink-2">{o.receiver.name}</span>
-              <span className="shrink-0 text-ink-3">{o.pkg.weightKg} kg</span>
+              <span className="shrink-0 text-ink-3">{(o.pkg.weightKg || 0).toFixed(1)} kg</span>
               <button type="button" aria-label={`Remove ${o.orderNumber} from this booking`}
                 title="Remove from this booking" onClick={() => onDrop(o.id)}
                 className="-mr-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-ink-3 hover:bg-warm-100 hover:text-ink">

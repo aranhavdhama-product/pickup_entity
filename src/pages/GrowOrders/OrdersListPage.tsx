@@ -215,6 +215,7 @@ export default function OrdersListPage() {
     return [
       {
         label: 'Modify Shipment Details', icon: <Pencil size={14} />, disabled: sel.length !== 1,
+        reason: sel.length !== 1 ? 'Select one shipment' : undefined,
         /* a draft resumes the stepper; a submitted shipment opens its own page */
         onClick: sel.length === 1
           ? () => nav(sel[0].draft ? `/grow/orders/add?draft=${sel[0].orderId}` : `/grow/orders/${sel[0].orderId}`)
@@ -222,14 +223,18 @@ export default function OrdersListPage() {
       },
       ...(manualPickup ? [{
         label: 'Schedule Pickup', icon: <Truck size={14} />, disabled: !bookable,
+        /* disabled items say why (tooltip), like the pickup actions */
+        reason: bookable ? undefined : 'Only paid shipments in Created or Ready To Ship, not yet on a pickup request',
         onClick: bookable ? () => setBooking({ rows: sel, clear }) : undefined,
       }] : []),
       {
         label: 'Initiate Return to Origin', icon: <RotateCcw size={14} />, disabled: !rtoable,
+        reason: rtoable ? undefined : 'Drafts, closed shipments and shipments already returning cannot start a return',
         onClick: rtoable ? () => { planningActions.initiateRto(ids); done(`Return to origin initiated for ${plural(ids.length)}.`) } : undefined,
       },
       {
         label: 'Print Label', icon: <Printer size={14} />, disabled: anyDraft,
+        reason: anyDraft ? 'A draft has no label yet' : undefined,
         onClick: anyDraft ? undefined : () => toast.info('Demo only — label generation is a platform service, not a local one.'),
       },
       {
@@ -238,6 +243,7 @@ export default function OrdersListPage() {
       },
       {
         label: 'Cancel Shipment', icon: <X size={14} />, disabled: !cancellable,
+        reason: cancellable ? undefined : lockedByPickup ? CONTACT_SUPPORT : 'Delivered or cancelled shipments cannot be cancelled',
         onClick: !cancellable
           ? (lockedByPickup ? () => toast.info(CONTACT_SUPPORT) : undefined)
           : () => {

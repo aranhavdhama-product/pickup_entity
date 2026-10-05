@@ -118,7 +118,12 @@ export default function LocalInbound() {
         }}>Forward to {r.forwardTo}</Button>
       )
     }
-    if (!r.hubOverageId) return <span className="text-[12px] text-ink-3">Resolve on the PR</span>
+    if (!r.hubOverageId) {
+      /* a driver's overage scan is resolved on its pickup request — link straight to it */
+      return r.prId
+        ? <Link to={`/local/pickup/${r.prId}`} onClick={(e) => e.stopPropagation()} className="text-[12px] font-bold text-brand-500 hover:text-brand-600">Resolve on {r.prNumber} →</Link>
+        : <span className="text-[12px] text-ink-3">Resolve on the PR</span>
+    }
     const id = r.hubOverageId
     return (
       <div className="flex items-center gap-1.5">

@@ -134,7 +134,7 @@ export function prActionState(action: PrAction, p: PrFacts, ctx: PrActionCtx): P
       const g = blocked(beforeDispatch(p, 'split'), merchant ? merchantGate(p, ctx.cfg.merchantCancelUntil, 'split') : null)
       if (g) return g
       if (!SPLITTABLE_PR_STATUSES.includes(p.status)) return no(`${p.status} requests cannot be split`)
-      return canSplitPr(p) ? ok : no('one consignment — nothing to split')
+      return canSplitPr(p) ? ok : no('Only one consignment — nothing to split')
     }
 
     case 'assignCarrier': {

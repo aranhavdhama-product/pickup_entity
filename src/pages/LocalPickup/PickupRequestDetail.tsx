@@ -190,7 +190,8 @@ function Detail({ pr, back }: { pr: GrowPickupRequest; back: () => void }) {
   const extras = db.orders.filter((o) => o.pickedInRequestId === pr.id && !pr.orderIds.includes(o.id))
   const picked = new Set(pr.pickedOrderIds)
   const rowState = (o: GrowOrder): { label: string; tone: Tone } => {
-    if (picked.has(o.id)) return { label: pr.orderIds.includes(o.id) ? 'Picked' : 'Picked here (booked elsewhere)', tone: 'success' }
+    /* an order created for one of this request's overage scans points here but was never booked elsewhere */
+    if (picked.has(o.id)) return { label: pr.orderIds.includes(o.id) || o.pickupRequestId === pr.id ? 'Picked' : 'Picked here (booked elsewhere)', tone: 'success' }
     if (o.pickedInRequestId && o.pickedInRequestId !== pr.id) {
       return { label: `Picked in ${prById.get(o.pickedInRequestId)?.number ?? 'another PR'}`, tone: 'info' }
     }
@@ -286,7 +287,7 @@ function Detail({ pr, back }: { pr: GrowPickupRequest; back: () => void }) {
   {!on && (
     <div className="rounded-md border border-line bg-warm-25 px-4 py-2.5 text-[13px] text-ink-2">
       The Pickup module is disabled for this account — this request stays readable, actions are withheld.{' '}
-      <Link to="/console/settings/base-modules" className="font-bold text-brand-500">Base Modules settings</Link>
+      <Link to="/local/settings/pickup" className="font-bold text-brand-500">Pickup settings</Link>
     </div>
   )}
 
@@ -335,7 +336,7 @@ function Detail({ pr, back }: { pr: GrowPickupRequest; back: () => void }) {
       <Panel title="Pickup outcome">
         <p className="flex items-start gap-1.5 px-5 pb-1 pt-1 text-[12px] text-ink-3">
           <Info size={13} className="mt-[1px] shrink-0" />
-          A shipment can have two parents — the request it was booked under and the request it was picked in — which is why this list is flat, not a tree.
+          A shipment booked on one pickup request and picked up on another shows on both.
         </p>
 
         <OutcomeSection title="Booked" count={booked.length}

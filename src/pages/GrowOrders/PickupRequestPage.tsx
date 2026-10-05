@@ -292,7 +292,7 @@ export default function PickupRequestPage({ id: idProp, onClose }: { id?: string
           return <span className="flex flex-wrap items-baseline gap-x-2">{orderLink(o)}{tag && <span className="text-[12px] text-ink-3">{tag}</span>}</span>
         } },
         { label: 'Receiver', render: (o) => o.receiver.name || '—' },
-        { label: 'Weight', align: 'right', render: (o) => `${o.pkg.weightKg} kg` },
+        { label: 'Weight', align: 'right', render: (o) => `${(o.pkg.weightKg || 0).toFixed(1)} kg` },
         { label: 'Status', render: (o) => <StatusPill label={o.status} tone={pillTone(STATUS_TONE[o.status])} /> },
         ...(removable ? [{ label: ' ', align: 'right' as const, render: (o: GrowOrder) => (
           <span onClick={(e) => e.stopPropagation()}>
@@ -374,7 +374,7 @@ export default function PickupRequestPage({ id: idProp, onClose }: { id?: string
       <Panel title="Pickup outcome">
         <p className="flex items-start gap-1.5 px-5 pb-1 pt-1 text-[12px] text-ink-3">
           <Info size={13} className="mt-[1px] shrink-0" />
-          An order can have two parents — the request it was booked under and the request it was picked in — which is why this list is flat, not a tree.
+          An order booked on one pickup request and picked up on another shows on both.
         </p>
 
         <OutcomeSection title="Booked" count={rows.length}
@@ -463,12 +463,12 @@ export default function PickupRequestPage({ id: idProp, onClose }: { id?: string
           </>}>
           <div className="flex flex-col gap-2 pb-3 text-[13px]">
             <p className="text-ink-3">Removing the last order will cancel {pr.number}. The order moves back to Ready for Pickup.</p>
-            <p className="text-ink-2">{confirmLast.orderNumber} · {confirmLast.receiver.name} — {confirmLast.pkg.weightKg} kg</p>
+            <p className="text-ink-2">{confirmLast.orderNumber} · {confirmLast.receiver.name} — {(confirmLast.pkg.weightKg || 0).toFixed(1)} kg</p>
           </div>
         </Modal>
       )}
       {cancelOpen && <CancelPickupDialog requests={[pr]} onClose={() => setCancelOpen(false)} onDone={() => setCancelOpen(false)} />}
-      {attach && <AddOrdersDialog pr={pr} orders={db.orders} onClose={() => setAttach(false)} />}
+      {attach && <AddOrdersDialog pr={pr} orders={db.orders} pointName={pickupPointName(pr, db.stores)} onClose={() => setAttach(false)} />}
       {reschedule && <ReschedulePickupDialog requests={[pr]} onClose={() => setReschedule(false)} onDone={() => setReschedule(false)} />}
       {splitting && <SplitPickupDialog pr={pr} merchantCode={merchant.code} onClose={() => setSplitting(false)} onDone={() => setSplitting(false)} />}
     </SlideOver>
@@ -537,16 +537,19 @@ export function CancelPickupDialog({ requests, onClose, onDone }: {
 /**
  * **Add orders** — the paid orders that could still join this request (the
  * store's own rule, `tabOf(o) === 'Ready for Pickup'`, the exact predicate
- * attachOrdersToPickup enforces, so nothing listed here is silently refused).
+ * attachOrdersToPickup enforces, so nothing listed here is silently refused),
+ * at THIS pickup point and parcels only — the console's Add shipments rule: the
+ * driver collects at one address, and a full vehicle is its own booking.
  * A reserved request declared how many pieces to expect, so the live counter
  * warns as soon as the selection runs past that number.
  */
-function AddOrdersDialog({ pr, orders, onClose }: {
-  pr: GrowPickupRequest; orders: GrowOrder[]; onClose: () => void
+function AddOrdersDialog({ pr, orders, pointName, onClose }: {
+  pr: GrowPickupRequest; orders: GrowOrder[]; pointName: string; onClose: () => void
 }) {
   const [q, setQ] = useState('')
   const [sel, setSel] = useState<Set<string>>(new Set())
-  const candidates = useMemo(() => orders.filter((o) => tabOf(o) === 'Ready for Pickup'), [orders])
+  const candidates = useMemo(() => orders.filter((o) => tabOf(o) === 'Ready for Pickup'
+    && o.storeCode === pr.storeCode && o.shipmentType !== 'FTL'), [orders, pr.storeCode])
   const s = q.trim().toLowerCase()
   const shown = candidates.filter((o) => !s
     || [o.orderNumber, o.receiver.name, o.receiver.businessName].some((v) => v.toLowerCase().includes(s)))
@@ -577,7 +580,7 @@ function AddOrdersDialog({ pr, orders, onClose }: {
         <Button disabled={sel.size === 0} icon={<Plus size={13} />} onClick={apply}>Add ({sel.size})</Button>
       </>}>
       <div className="flex flex-col gap-3 pb-3">
-        <p className="text-[12px] text-ink-3">Paid orders without a pickup request</p>
+        <p className="text-[12px] text-ink-3">Paid orders at {pointName} without a pickup request</p>
         <div className="flex items-center justify-between gap-3">
           {expected !== null
             ? <StatusPill label={`${onRequest} of ${expected} expected`} tone={over ? 'warning' : 'neutral'} />
@@ -593,7 +596,7 @@ function AddOrdersDialog({ pr, orders, onClose }: {
         <div className="max-h-[340px] overflow-auto rounded-md border border-line">
           {shown.length === 0 ? (
             <p className="px-3 py-5 text-[13px] text-ink-3">
-              No paid orders are waiting for a pickup — pay for an order first, then add it here.
+              No paid orders at {pointName} are waiting for a pickup — pay for an order first, then add it here.
             </p>
           ) : (
             <table className="w-full text-[13px]">
@@ -616,7 +619,7 @@ function AddOrdersDialog({ pr, orders, onClose }: {
                     </td>
                     <td className="whitespace-nowrap px-3 py-2.5 font-mono text-[12px] font-bold text-brand-500">{o.orderNumber}</td>
                     <td className="max-w-[180px] truncate px-3 py-2.5 text-ink">{o.receiver.name}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-ink-2">{o.pkg.count} · {o.pkg.weightKg} kg</td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-ink-2">{o.pkg.count} · {(o.pkg.weightKg || 0).toFixed(1)} kg</td>
                     <td className="whitespace-nowrap px-3 py-2.5 text-ink-2">{fmtDate(o.createdAt)}</td>
                   </tr>
                 ))}

@@ -28,7 +28,7 @@ export default function LoadingScreen({ trip, loaded, checklistDone, onToggle, o
             Complete the checklist first →
           </button>
         )}
-        {checklistDone && n < drops.length && <div className="mb-2 text-center text-[13px] text-[#5B6B82]">{drops.length - n} consignments still to load</div>}
+        {checklistDone && n < drops.length && <div className="mb-2 text-center text-[13px] text-[#5B6B82]">{drops.length - n} consignment{drops.length - n === 1 ? '' : 's'} still to load</div>}
         <SwipeButton label="Start Trip" disabled={!ready} onConfirm={onStart} />
       </>}
       bodyClass="px-4 pb-4"

@@ -12,7 +12,7 @@ import { canonicalService, type OrderDraft } from './draft'
 import { blankParty, CURRENCY, seed, STORES } from './seed'
 import { DEFAULT_INBOUND_HUB, inboundHubFor } from './hubs'
 import {
-  addHours, atDate, atParts, canAddOrdersTo, canReattempt, handoverReconciled, isOpenPr, localIso, nextPrStatus,
+  atDate, atParts, canAddOrdersTo, canReattempt, handoverReconciled, isOpenPr, localIso, nextPrStatus,
   PICKUP_SLOTS, PR_ENTRY_STATUS, PR_STATUSES, prHasNothingToCollect, rangesOverlap, slotFrom, SPLITTABLE_PR_STATUSES, tabOf, windowFromSlot,
 } from './tabs'
 import { blankHandover, PR_DEFAULTS, SIZE_CLASSES } from './types'
@@ -1114,7 +1114,9 @@ export const growOrderActions = {
   reattemptPickupRequest(prId: string): GrowPickupRequest | null {
     const cur = db.pickupRequests.find((p) => p.id === prId)
     if (!cur || !canReattempt(cur)) return null
-    const durH = Math.max(1, Math.round((atDate(cur.endAt).getTime() - atDate(cur.startAt).getTime()) / 3_600_000))
+    /* the failed window's length to the MINUTE — rounding to whole hours turned a
+       13:00–23:30 window into 13:00–00:00, an overnight retry nobody asked for */
+    const durMin = Math.max(60, Math.round((atDate(cur.endAt).getTime() - atDate(cur.startAt).getTime()) / 60_000))
     /* the NEXT BUSINESS DAY after the failed window, same time of day (spec E9);
        from today when that is already past */
     const time = atParts(cur.startAt)[1] || '09:00'
@@ -1123,7 +1125,7 @@ export const growOrderActions = {
     const nextDay = (from: Date) => localIso(nextBusinessDay(from, policy)).slice(0, 10)
     let startAt = `${nextDay(atDate(cur.startAt))}T${time}`
     if (atDate(startAt) < new Date()) startAt = `${nextDay(new Date())}T${time}`
-    const win = pickupWindow({ startAt, endAt: addHours(startAt, durH) })
+    const win = pickupWindow({ startAt, endAt: localIso(new Date(atDate(startAt).getTime() + durMin * 60_000)) })
     const createdAt = new Date().toISOString()
     const attempt = cur.attempt + 1
     const ready = new Set(db.orders.filter((o) => cur.orderIds.includes(o.id) && tabOf(o) === 'Ready for Pickup').map((o) => o.id))

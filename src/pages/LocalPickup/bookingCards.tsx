@@ -115,7 +115,7 @@ export function SplitPickupDialog({ pr, merchantCode, onClose, onDone }: {
               <Checkbox checked={sel.has(o.id)} onChange={() => toggle(o.id)} />
               <span className="w-40 shrink-0 font-mono text-[12px] font-bold text-ink">{o.orderNumber}</span>
               <span className="min-w-0 flex-1 truncate text-ink-2">{o.receiver.name || '—'}</span>
-              <span className="shrink-0 text-ink-3">{o.pkg?.weightKg ?? 0} kg</span>
+              <span className="shrink-0 text-ink-3">{(o.pkg?.weightKg || 0).toFixed(1)} kg</span>
             </div>
           ))}
         </div>

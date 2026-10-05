@@ -152,8 +152,9 @@ export function AddToRouteDialog({ prIds, initialWay, onClose, onDone }: {
       {way === 2 && (
         <p className="py-4 text-[13px] text-ink-2">
           The routing engine plans a <b>new route</b> for {open.length === 1 ? 'this collection' : `these ${open.length} collections`}
-          {' '}from {hubLabel(prHub, db.stores)}, on the pickup window's date, with a driver assigned — the same step as
-          Pending For Planning → Plan pickup request for routing. The requests become Planned and Assigned.
+          {' '}from {hubLabel(prHub, db.stores)}, on the pickup window's date — the same step as
+          Pending For Planning → Plan pickup request for routing. The route starts Un-assigned and the requests
+          become Planned; assign a driver in Control Tower → Trips.
         </p>
       )}
 

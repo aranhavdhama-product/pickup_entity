@@ -43,11 +43,13 @@ export function openTripsOf(trips: LocalTrip[], driver: string): LocalTrip[] {
 
 /** The trip Home is about: running → waiting for debrief → next to start today. */
 /*  With nothing today, the NEXT Yet-to-start trip on any later date — the
-    prototype's clock is a demo clock, so it can be started now. */
+    prototype's clock is a demo clock, so it can be started now. A trip started
+    that way stays the current one (running, then waiting for debrief) whatever
+    its date, so Home can always resume it. */
 export function currentTrip(trips: LocalTrip[], driver: string): LocalTrip | undefined {
   const open = openTripsOf(trips, driver)
   const mine = open.filter((t) => t.date <= today())
-  return mine.find((t) => t.status === 'In Transit') ?? mine.find((t) => t.status === 'Yet to debrief') ?? mine[0]
+  return open.find((t) => t.status === 'In Transit') ?? open.find((t) => t.status === 'Yet to debrief') ?? mine[0]
     ?? open.find((t) => t.status === 'Yet to start')
 }
 
