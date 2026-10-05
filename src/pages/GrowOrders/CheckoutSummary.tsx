@@ -107,19 +107,22 @@ export function CheckoutSummary({ draft, currency, remarks, paymentMode, codAmou
         </MGrid>
       </Card>
 
-      <Card title="Ship From" onEdit={onEditOrder}>
-        <PartyFields p={draft.sender} windowLabel="Pickup window" window={windowText(draft.sender.windowStart, draft.sender.windowEnd)} />
-      </Card>
+      {/* the two ends side by side — one glance, half the scroll */}
+      <div className="grid items-start gap-4 lg:grid-cols-2">
+        <Card title="Ship From" onEdit={onEditOrder}>
+          <PartyFields p={draft.sender} windowLabel="Pickup window" window={windowText(draft.sender.windowStart, draft.sender.windowEnd)} />
+        </Card>
 
-      <Card title="Ship To" onEdit={onEditOrder}>
-        <div className="flex flex-col gap-5">
-          {drops.map((d, i) => (
-            <PartyFields key={i} p={d} title={drops.length > 1 ? `Delivery address ${i + 1}` : undefined}
-              windowLabel="Delivery window" window={windowText(d.windowStart, d.windowEnd)} />
-          ))}
-          {rto && <div className="border-t border-line pt-4"><PartyFields p={rto} title="Return to origin" /></div>}
-        </div>
-      </Card>
+        <Card title="Ship To" onEdit={onEditOrder}>
+          <div className="flex flex-col gap-5">
+            {drops.map((d, i) => (
+              <PartyFields key={i} p={d} title={drops.length > 1 ? `Delivery address ${i + 1}` : undefined}
+                windowLabel="Delivery window" window={windowText(d.windowStart, d.windowEnd)} />
+            ))}
+            {rto && <div className="border-t border-line pt-4"><PartyFields p={rto} title="Return to origin" /></div>}
+          </div>
+        </Card>
+      </div>
 
       {showVehicles && (
         <Card title="Vehicles" onEdit={onEditOrder}>

@@ -238,8 +238,8 @@ Product changes layered on the replica (deliberate departures from the live port
   module: off · manual optional · auto-ask required · auto-rule shown) · Package & SKU · **Handling** (the console's:
   six category chips · toggles · Tags, + Grow's **Load type** Shared | Full vehicle, default Shared) · **Service &
   instructions** (Label Format · instructions · VAS in the lane's currency) · **Service Type LAST**
-  (`serviceCards.ServiceTypeChooser hideMode`: the lane's rate cards show at once, vehicle cards with count steppers
-  for Full vehicle, which also allows extra drops). The console form's saved customisation (`fe-consignment-form-v2-rules`:
+  (`serviceCards.ServiceTypeChooser hideMode`: the lane's rate cards show at once — two per row by default, the builder's
+  Services choice — vehicle cards with count steppers for Full vehicle, which also allows extra drops). The console form's saved customisation (`fe-consignment-form-v2-rules`:
   hidden · labels · More · Required) applies to Grow too (owner, 2026-09-29), plus the Form Fields tab's Required —
   unless the Grow portal form changes that field for Grow (2026-10-05, "Form setup" under Add Consignment v2).
   Sticky footer = the estimate · Go Back · Save for later · Continue to checkout (DRAFT_KEY → `/grow/orders/checkout`,
@@ -315,6 +315,20 @@ Product changes layered on the replica (deliberate departures from the live port
   asks is kept on Modify) and shown as **Additional details** in the console view and in the Grow view's Consignment
   details (Grow shows only fields its form shows). Entry points: the form's "Edit consignment form", and
   Settings → Consignment Order → Form Fields → **Customise the forms**.
+  **Builder v2 (2026-10-05, owner: "it has to be easy to use")** — click-to-select, the Apple inspector pattern: the
+  preview's fields are click targets (dashed frame, brand frame when selected; state as tags on the frame: Grow · Hidden ·
+  More · Format · lock), and a SIDE PANEL (sticky beside the preview from 1280 px, floating over it below) shows the
+  selected field's settings in plain words — Name on the form · Show on the form · Required · Put under "More" · What can
+  be typed (the Format editor, live, with Try it) · Remove field (own fields) · Use the console setting (Grow). Nothing
+  selected = **Form settings**: Addresses (Saved address cards | Fields on the form) · How goods are entered (moved here
+  from the package card) · Services (Grow: Grid | List), then **Fields** — every field by card in one searchable list
+  with a show / hide switch, + Add field (the dialog asks where). The old per-label icon tools and the Format dialog
+  are gone; Esc / Done closes a field. **Layout** = `formSetup.loadLayout/saveLayout` (`fe-consignment-form-v2-layout`,
+  Grow's differences in `…-layout-grow`): **Fields on the form** = each address typed in the card under a search of the
+  saved ones (name · number · address · company), CONTACT DETAILS / ADDRESS DETAILS in four columns, More address
+  details, "Save this address" (kept when the consignment is submitted or saved for later); the two ends stack (Ship From
+  above Ship To); a hub end stays a picker + card. Grow's **Grid** = the lane's services as compact radio cards two per
+  row (name + carrier · rate + Est. N days, nothing preselected, nothing collapses), `serviceCards.ServiceTypeChooser layout`.
 - **Service Type has no Load type** (owner, 2026-09-29): `draft.loadTypeOf` returns `'both'` for every
   service, so Shared / Full vehicle is the booking's free choice on every form (the old form's Load type is no
   longer locked; Grow's service cards list every service in both modes); the Load type column / filter / form

@@ -135,10 +135,10 @@ export function useSplitPayment({ amount, currency, allowCod }: { amount: number
   const postpaid = settings.business.paymentType === 'Postpaid'
   const balance = useMemo(() => walletOf(ledger, currency).balance, [ledger, currency])
   const allowed = METHOD_ORDER.filter((m) => m === 'Wallet' || m === 'Card' || (m === 'Pay later' && postpaid) || (m === 'COD' && allowCod))
-  /* the remembered method starts ticked; a fresh merchant starts with none */
+  /* the remembered method starts ticked; a fresh merchant starts with the wallet (as the one-method sheet did) */
   const [pickedRaw, setPicked] = useState<PayMethod[]>(() => {
     const pref = settings.defaultPayMethod as PayMethod
-    return allowed.includes(pref) ? [pref] : []
+    return allowed.includes(pref) ? [pref] : ['Wallet']
   })
   const [typed, setTyped] = useState<Amounts>({})
   const [raw, setRaw] = useState('') // card digits — component state only, never persisted
