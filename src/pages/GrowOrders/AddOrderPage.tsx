@@ -457,9 +457,9 @@ function PhoneField({ label, required, code, number, onCode, onNumber, disabled,
   return (
     <Fld label={label} required={required} error={!!error}>
       <div className="flex min-w-0">
-        <div className="w-[88px] shrink-0 [&>div]:rounded-r-none [&>div>button]:relative [&>div>button]:rounded-r-none [&>div>button]:focus:z-10">
+        <div className="w-[72px] shrink-0 [&>div]:rounded-r-none [&>div>button]:relative [&>div>button]:rounded-r-none [&>div>button]:focus:z-10">
           {disabled ? <ReadBox value={code || '+63'} />
-            : <MenuSelect value={code || '+63'} options={DIAL_CODES} searchable
+            : <MenuSelect value={code || '+63'} options={DIAL_CODES} searchable menuWidth={220}
                 labels={(v) => `${DIAL_COUNTRY[v] ?? ''} ${v}`.trim()} renderValue={(v) => v} onChange={onCode} />}
         </div>
         <div className="-ml-px min-w-0 flex-1 [&>input]:relative [&>input]:rounded-l-none [&>input]:focus:z-10">

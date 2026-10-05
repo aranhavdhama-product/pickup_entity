@@ -113,13 +113,16 @@ export function Select({
  * Select untouched.
  */
 export function MenuSelect({
-  value, placeholder = 'Select', options = [], onChange, size = 'sm', labels, searchable, creatable, disabled, renderOption, renderValue,
+  value, placeholder = 'Select', options = [], onChange, size = 'sm', labels, searchable, creatable, disabled, renderOption, renderValue, menuWidth,
 }: {
   value?: string; placeholder?: string; options?: string[]; onChange?: (v: string) => void; size?: 'sm' | 'lg'; labels?: (v: string) => string; searchable?: boolean; creatable?: boolean; disabled?: boolean
   /** optional rich (multi-line) rendering of a menu option; `labels` still drives search and the fallback text */
   renderOption?: (v: string, active: boolean) => ReactNode
   /** optional rich rendering of the selected value inside the closed trigger */
   renderValue?: (v: string) => ReactNode
+  /** floor for the open popup's width, in px — for a narrow trigger (e.g. a country-code
+   *  pill) whose option labels run longer than the trigger itself */
+  menuWidth?: number
 }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
@@ -133,11 +136,12 @@ export function MenuSelect({
   const openMenu = () => {
     const r = ref.current?.getBoundingClientRect()
     if (!r) return
+    const width = Math.max(r.width, menuWidth ?? 0)
     const below = window.innerHeight - r.bottom
     const up = below < 200 && r.top > below
     setPos(up
-      ? { bottom: window.innerHeight - r.top + 4, left: r.left, width: r.width, maxHeight: Math.min(240, r.top - 12) }
-      : { top: r.bottom + 4, left: r.left, width: r.width, maxHeight: Math.min(240, below - 12) })
+      ? { bottom: window.innerHeight - r.top + 4, left: r.left, width, maxHeight: Math.min(240, r.top - 12) }
+      : { top: r.bottom + 4, left: r.left, width, maxHeight: Math.min(240, below - 12) })
     setQ('')
     setOpen(true)
   }
