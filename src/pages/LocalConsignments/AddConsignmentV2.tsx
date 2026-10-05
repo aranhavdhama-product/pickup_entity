@@ -34,8 +34,8 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState, type C
 import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  Check, ChevronDown, ChevronLeft, ChevronUp, CircleMinus, Eye, EyeOff, Info, Lock, MapPinned, Package, Pencil, Plus, RotateCcw,
-  Bookmark, ScanBarcode, SlidersHorizontal, Trash2, Truck, X, Crown, Flame, GlassWater, Layers, Users, Weight, Monitor, Store, Asterisk, Regex, ListCollapse,
+  Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleMinus, Info, Lock, MapPinned, Package, Pencil, Plus, RotateCcw,
+  Bookmark, ScanBarcode, SlidersHorizontal, Trash2, Truck, X, Crown, Flame, GlassWater, Layers, Users, Weight, Monitor, Store,
 } from 'lucide-react'
 import { blankParty, CURRENCY } from '../../growOrders/seed'
 import { growOrderActions, orderById, pickupRequestById, useGrowOrders } from '../../growOrders/store'
@@ -64,10 +64,11 @@ import {
   vehiclesOf, type ConsignmentFields, type CustomFieldValue, type FtlVehicle, type OrderDraft, type Parcel, type ParcelItem, type VasLine,
 } from '../../growOrders/draft'
 import {
-  CUSTOM_FIELD_CARDS, CUSTOM_FIELD_KINDS, DEFAULT_GOODS_SETTING, FORMAT_PRESETS, formatError, formatMessage, formatSummary, growRules, isCustomKey,
-  loadCustomFields, loadGoodsSetting, loadRules, newCustomKey, patternError, saveCustomFields, saveGoodsSetting, saveRules, withoutKeys,
-  type CustomFieldCard, type CustomFieldDef, type CustomFieldKind, type FieldFormat, type FieldRuleV2, type FormatPreset, type FormRulesV2,
-  type GoodsSetting,
+  CUSTOM_FIELD_CARDS, CUSTOM_FIELD_KINDS, DEFAULT_GOODS_SETTING, DEFAULT_LAYOUT, FORMAT_PRESETS, formatError, formatMessage, formatSummary, growRules,
+  isCustomKey, loadCustomFields, loadGoodsSetting, loadLayout, loadRules, newCustomKey, patternError, saveCustomFields, saveGoodsSetting, saveLayout,
+  saveRules, withoutKeys,
+  type CustomFieldCard, type CustomFieldDef, type CustomFieldKind, type FieldFormat, type FieldRuleV2, type FormatPreset, type FormLayout,
+  type FormRulesV2, type GoodsSetting,
 } from './formSetup'
 import { usePickupModuleConfig } from '../../config/pickupModule'
 import { hubVehicleTypes } from '../../config/vehicleConfig'
@@ -491,9 +492,11 @@ function SFld({ label, required, info, error, errorNow, helper, className = '', 
   const msg = (showErrors || errorNow) && error && !editing ? (typeof error === 'string' ? error : 'Required field.') : null
   const tip = msg ?? (typeof helper === 'string' ? helper : undefined)
   const faded = editing && !!fieldKey && b!.isHidden(fieldKey)
-  const configurable = editing && !!fieldKey && !b!.lock(fieldKey)
+  /* while editing, a field the builder knows is ONE click target \u2014 its settings open in the side panel */
+  const pickable = editing && !!fieldKey && b!.known(fieldKey)
   return (
-    <div className={`min-w-0 ${className} ${configurable ? 'rounded-md outline-dashed outline-1 outline-offset-[5px] outline-warm-300' : ''}`}>
+    <div data-field={pickable ? fieldKey : undefined}
+      className={`relative min-w-0 ${className} ${pickable ? pickFrame(b!.selected === fieldKey, !!b!.lock(fieldKey!)) : ''}`}>
       {editing
         ? <BuilderLabel label={label} fieldKey={fieldKey} required={required} />
         : (
@@ -510,6 +513,7 @@ function SFld({ label, required, info, error, errorNow, helper, className = '', 
           </p>
         )}
       </div>
+      {pickable && <PickHit k={fieldKey!} label={label ?? ''} />}
     </div>
   )
 }
@@ -527,7 +531,12 @@ function SFld({ label, required, info, error, errorNow, helper, className = '', 
  * 2026-10-05 — the builder edits ONE of two forms (`./formSetup`): the Console form, or the Grow portal form
  * (`?edit=grow`: the merchant form itself is the preview; Grow follows the console field by field until a field is
  * changed for Grow). Per field it adds **Format** (what may be typed — a preset or a regular expression), and each
- * of three cards takes the account's own fields (**+ Add field**: Text · Number · Date · List · Yes / No). */
+ * of three cards takes the account's own fields (**+ Add field**: Text · Number · Date · List · Yes / No).
+ *
+ * 2026-10-05 (v2, owner: "it has to be easy to use"): the preview is click-to-select, the way an Apple inspector
+ * works — click a field, its settings open in the SIDE PANEL in plain words (name · Show · Required · Under More
+ * details · What can be typed · Remove); nothing selected = Form settings (how addresses, goods and services are
+ * shown) + every field in one searchable list with a show / hide switch. The labels only carry state chips. */
 /** the form's own checks require these — locked like the system's mandatory fields */
 /** grouped keys drive several controls — hide / require together, no single label to rename */
 const GROUP_KEYS = new Set(['addrLines23', 'addrCoordinates', 'addrFloorLift', 'addrWindow', 'skuDimensions', 'skuWeight', 'pkgDimensions'])
@@ -580,17 +589,19 @@ interface Builder {
   inMore: (k: string) => boolean
   label: (k: string) => string
   set: (k: string, patch: FieldRuleV2) => void
-  /** Format (2026-10-05): which keys take one, the rule, its message for a value, and the editor */
+  /** Format (2026-10-05): which keys take one, the rule, and its message for a value */
   formatable: (k: string) => boolean
   format: (k: string) => FieldFormat | undefined
   formatError: (k: string, v: string | undefined | null) => string | null
-  editFormat: (k: string) => void
   /** the account's own field, if `k` is one — removable */
   custom: (k: string) => CustomFieldDef | undefined
   removeCustom: (k: string) => void
   /** Grow form: changed for Grow (differs from the console form) — and back to the console's setting */
   overridden: (k: string) => boolean
   revert: (k: string) => void
+  /** the field whose settings the side panel shows (click-to-select) */
+  selected: string | null
+  select: (k: string | null) => void
 }
 const BuilderCtx = createContext<Builder | null>(null)
 /** false until the first Add Order attempt — then every missing field says so */
@@ -610,113 +621,85 @@ function ErrLine({ children, className = '' }: { children: ReactNode; className?
   return useContext(ShowErrorsCtx) ? <p className={`text-[12px] text-danger-fg ${className}`}>{children}</p> : null
 }
 
-/** Required · Hide for one key (no label) — shared by BuilderLabel and Configurable. */
-/* 2026-10-05: the field tools are compact icons (their words in the tooltip) so a label keeps its room */
-const toolIcon = (on: boolean) => `inline-flex h-6 w-6 items-center justify-center rounded-md border transition-colors
-  disabled:cursor-not-allowed disabled:opacity-40 ${on ? 'border-ink bg-warm-50 text-ink' : 'border-transparent text-ink-3 hover:bg-warm-100 hover:text-ink'}`
-/** Format · (Grow form) the "Grow" marker — shared by locked and configurable fields */
-function FormatAndGrowTools({ k, disabled }: { k: string; disabled?: boolean }) {
+/* ---- the builder's preview (2026-10-05 v2): click-to-select. A field the builder knows is ONE click target; its
+   settings open in the side panel. Its label keeps only state chips, so nothing is cut short. ---- */
+/** the dashed frame of a pickable field — brand when selected; a locked field only on hover */
+const pickFrame = (selected: boolean, locked: boolean) => `rounded-md outline-offset-[5px] ${selected
+  ? 'outline outline-2 outline-brand-500'
+  : locked ? 'hover:outline-dashed hover:outline-1 hover:outline-warm-400' : 'outline-dashed outline-1 outline-warm-300 hover:outline-warm-500'}`
+/** the invisible button over a field in the preview — a click (or Enter) opens its settings */
+function PickHit({ k, label }: { k: string; label: string }) {
   const b = useContext(BuilderCtx)!
-  const f = b.format(k)
   return (
-    <>
-      {b.overridden(k) && (
-        <Tip text="Changed for Grow — click to use the console form's setting"><button type="button" onClick={() => b.revert(k)}
-          className="inline-flex h-6 items-center gap-1 rounded-full bg-brand-50 px-1.5 text-[11px] font-bold text-brand-600 hover:bg-brand-100">
-          Grow<RotateCcw size={10} />
-        </button></Tip>
-      )}
-      {b.formatable(k) && (
-        <Tip text={f ? `Format: ${formatSummary(f)}` : 'Format — check what is typed'}><button type="button" aria-pressed={!!f} onClick={() => b.editFormat(k)} disabled={disabled}
-          aria-label="Format" className={toolIcon(!!f)}>
-          <Regex size={14} />
-        </button></Tip>
-      )}
-    </>
+    <button type="button" aria-label={`Change ${label || b.label(k)}`} aria-pressed={b.selected === k}
+      onClick={(e) => { e.stopPropagation(); b.select(k) }}
+      className="absolute -inset-[5px] z-10 cursor-pointer rounded-md focus:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-500/30" />
   )
 }
-function FieldTools({ k }: { k: string }) {
+const CHIP = 'inline-flex h-[18px] shrink-0 items-center rounded-full px-1.5 text-[11px] leading-none'
+/** What is set on a field, in words — beside its label in the preview and on its row in the side panel. */
+function FieldChips({ k, className = '', hideHidden = false, overlay = false }: {
+  k: string; className?: string
+  /** the side panel's list says "hidden" with its switch */
+  hideHidden?: boolean
+  /** in the preview: tags sitting on the field's frame (top right), so the label keeps its full width */
+  overlay?: boolean
+}) {
   const b = useContext(BuilderCtx)!
   const lock = b.lock(k)
-  if (lock) {
+  const f = b.format(k)
+  if (overlay) {
+    const tags = [b.overridden(k) && 'Grow', b.isHidden(k) ? 'Hidden' : b.inMore(k) && 'More', f && 'Format'].filter(Boolean) as string[]
+    if (!tags.length && !lock) return null
     return (
-      <span className="ml-auto inline-flex shrink-0 items-center gap-0.5">
-        <FormatAndGrowTools k={k} />
-        <Tip text={lock === 'system' ? 'Needed by the system — always shown and required' : 'This form needs it — always shown'}><span
-          aria-label={lock === 'system' ? 'Required by the system' : 'Needed by this form'}
-          className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-ink-3"><Lock size={12} /></span></Tip>
+      <span aria-hidden className="pointer-events-none absolute -top-[14px] right-1 z-20 inline-flex items-center gap-1">
+        {tags.map((t) => (
+          <span key={t} className={`${CHIP} border ${t === 'Grow' ? 'border-brand-100 bg-brand-50 font-bold text-brand-600' : 'border-line bg-surface text-ink-2'}`}>{t}</span>
+        ))}
+        {lock && <span className="inline-flex h-[18px] w-[18px] items-center justify-center rounded-full border border-line bg-surface text-warm-400"><Lock size={10} /></span>}
       </span>
     )
   }
-  const parent = b.hiddenWith(k)
-  const own = b.ownHidden(k)
-  const custom = b.custom(k)
   return (
-    <span className="ml-auto inline-flex shrink-0 items-center gap-0.5">
-      {parent && !own && <Tip text={`Hidden with ${b.label(parent)}`}><span className="mr-1 max-w-[96px] truncate text-[11px] text-ink-3">Hidden with {b.label(parent)}</span></Tip>}
-      <FormatAndGrowTools k={k} disabled={own || !!parent} />
-      {b.requirable(k) && (
-        <Tip text={b.required(k) ? 'Required — click to make it optional' : 'Make required'}><button type="button" aria-pressed={b.required(k)} onClick={() => b.set(k, { required: !b.required(k) })}
-          disabled={own || !!parent}
-          aria-label="Required"
-          className={toolIcon(b.required(k))}>
-          <Asterisk size={14} />
-        </button></Tip>
-      )}
-      {movable(k) && (
-        <Tip text={b.required(k) ? 'A required field stays in the main form' : b.inMore(k) ? 'In More information — click to bring it back' : 'Move to More information'}><button type="button" aria-pressed={b.inMore(k)} onClick={() => b.set(k, { more: !b.inMore(k) })}
-          disabled={own || !!parent || b.required(k)}
-          aria-label="More information" className={toolIcon(b.inMore(k))}>
-          <ListCollapse size={14} />
-        </button></Tip>
-      )}
-      <Tip text={own ? `Show this field on the ${b.portal === 'grow' ? 'Grow portal' : 'console'} form` : `Hide this field on the ${b.portal === 'grow' ? 'Grow portal' : 'console'} form`}><button type="button" aria-pressed={own} onClick={() => b.set(k, { hidden: !own })}
-        aria-label={own ? 'Show field' : 'Hide field'}
-        className={`inline-flex h-6 w-6 items-center justify-center rounded-md hover:bg-warm-100 ${own ? 'text-warm-400' : 'text-ink-2'}`}>
-        {own ? <EyeOff size={14} /> : <Eye size={14} />}
-      </button></Tip>
-      {custom && (
-        <Tip text="Remove this field — saved consignments keep their answer"><button type="button" onClick={() => b.removeCustom(k)}
-          aria-label={`Remove ${b.label(k)}`}
-          className="inline-flex h-6 w-6 items-center justify-center rounded-md text-ink-3 hover:bg-warm-100 hover:text-brand-500">
-          <Trash2 size={13} />
-        </button></Tip>
-      )}
+    <span className={`inline-flex shrink-0 items-center gap-1 ${className}`}>
+      {b.overridden(k) && <span className={`${CHIP} bg-brand-50 font-bold text-brand-600`}>Grow</span>}
+      {b.isHidden(k) ? !hideHidden && <span className={`${CHIP} bg-warm-100 text-ink-3`}>Hidden</span>
+        : b.inMore(k) && <span className={`${CHIP} bg-warm-100 text-ink-2`}>More</span>}
+      {f && <Tip text={formatSummary(f)}><span className={`${CHIP} bg-warm-100 text-ink-2`}>Format</span></Tip>}
+      {lock && <Tip text={lock === 'system' ? 'Needed by the system — always shown and required' : 'This form needs it — always shown'}>
+        <span aria-label="Locked" className="inline-flex h-[18px] w-4 items-center justify-center text-warm-400"><Lock size={11} /></span>
+      </Tip>}
     </span>
   )
 }
-/** The edit-mode label row: rename in place (single-key fields), then the tools; locked / fixed fields say so. */
+/** The edit-mode label row: the label as the form shows it, then its chips; a field the builder does not know says so. */
 function BuilderLabel({ label, fieldKey, required }: { label?: string; fieldKey?: string; required?: boolean }) {
   const b = useContext(BuilderCtx)!
   const star = required && <span className="text-danger-fg">&nbsp;*</span>
   if (!fieldKey || !b.known(fieldKey)) {
     return (
-      <div className="mb-1.5 flex min-h-6 items-center gap-1 text-[13px] leading-5 text-ink">
+      <div className="mb-1.5 flex min-h-5 items-center gap-1 text-[13px] leading-5 text-ink">
         <span className="min-w-0 truncate" title={label}>{label}{star}</span>
-        <span className="ml-auto inline-flex shrink-0"><Tip text="Part of the form — not configurable"><Lock size={11} className="text-warm-300" /></Tip></span>
+        <span className="ml-auto inline-flex shrink-0"><Tip text="Part of the form — always shown"><Lock size={11} className="text-warm-300" /></Tip></span>
       </div>
     )
   }
-  const renamable = !GROUP_KEYS.has(fieldKey)
   return (
-    <div className="mb-1.5 flex min-h-6 items-center gap-1.5 text-[13px] leading-5 text-ink">
-      {renamable
-        ? <input aria-label={`Rename ${label}`} value={b.label(fieldKey)} onChange={(e) => b.set(fieldKey, { label: e.target.value })}
-            className="-mx-1 min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 text-[13px] text-ink hover:border-warm-300 focus:border-brand-500 focus:outline-none" />
-        : <span className="min-w-0 flex-1 truncate" title="Grouped with its neighbours — not renamable">{label}</span>}
-      {star}
-      <FieldTools k={fieldKey} />
+    <div className="mb-1.5 flex min-h-5 items-center text-[13px] leading-5 text-ink">
+      <span className="min-w-0 truncate" title={label}>{label || b.label(fieldKey)}</span>{star}
+      <FieldChips k={fieldKey} overlay />
     </div>
   )
 }
-/** Edit-mode frame for a non-field control (a switch): its tools above it. */
+/** Edit-mode frame for a non-field control (a switch, a chip, the VAS block): its chips above it, one click target. */
 function Configurable({ fieldKey, children }: { fieldKey: string; children: ReactNode }) {
   const b = useContext(BuilderCtx)
   if (!b?.editing) return <>{children}</>
   return (
-    <div className="rounded-md outline-dashed outline-1 outline-offset-[5px] outline-warm-300">
-      <div className="mb-1.5 flex min-h-6 items-center"><FieldTools k={fieldKey} /></div>
+    <div data-field={fieldKey} className={`relative ${pickFrame(b.selected === fieldKey, false)}`}>
+      <FieldChips k={fieldKey} overlay />
       <div className={b.isHidden(fieldKey) ? 'pointer-events-none opacity-40' : ''}>{children}</div>
+      <PickHit k={fieldKey} label={b.label(fieldKey)} />
     </div>
   )
 }
@@ -861,11 +844,14 @@ function DateTimeCell({ label, at, onChange, fallbackTime }: { label: string; at
  * optional ones, each in the main grid or the "More information" fold by its placement (builder).
  * `variant="rto"` = the return address: Contact + Postal Code required, no coordinates / floor.
  */
-function PartyBlock({ party, set, nameLabel, requireContact, hid, variant = 'full', grouped = false }: {
+function PartyBlock({ party, set, nameLabel, requireContact, hid, variant = 'full', grouped = false, wide = false }: {
   party: Party; set: (patch: Partial<Party>) => void; nameLabel: string
   requireContact?: boolean; hid: (k: string) => boolean; variant?: 'full' | 'rto'
   /** the popup: the same order under two quiet headings, Contact then Address */
   grouped?: boolean
+  /** on the form itself (the builder's "Fields on the form"): the headings as CONTACT DETAILS / ADDRESS DETAILS,
+      four columns, "More address details" below */
+  wide?: boolean
 }) {
   const rto = variant === 'rto'
   const b = useContext(BuilderCtx)
@@ -924,6 +910,22 @@ function PartyBlock({ party, set, nameLabel, requireContact, hid, variant = 'ful
   const waiting = who.waiting + where.waiting
   const waitingFilled = who.waitingFilled + where.waitingFilled
   const toggle = <RevealToggle open={open} onToggle={() => setOpen((v) => !v)} waiting={waiting} waitingFilled={waitingFilled} label="address details" className="mt-5" />
+  if (wide) {
+    const head = (t: string) => (
+      <div className="mb-4 flex items-center gap-3">
+        <span className="text-[12px] font-bold uppercase tracking-wide text-ink-3">{t}</span><span className="h-px flex-1 bg-warm-200" />
+      </div>
+    )
+    return (
+      <div>
+        {head('Contact details')}
+        <SGrid>{who.nodes}</SGrid>
+        <div className="mt-8">{head('Address details')}</div>
+        <SGrid>{where.nodes}</SGrid>
+        {toggle}
+      </div>
+    )
+  }
   if (grouped) {
     const head = (t: string) => (
       <div className="mb-4 flex items-center gap-3"><span className="text-[13px] font-bold text-ink-2">{t}</span><span className="h-px flex-1 bg-warm-200" /></div>
@@ -949,7 +951,9 @@ function PartyBlock({ party, set, nameLabel, requireContact, hid, variant = 'ful
 
 /** The chosen address, read back as a card: who · how to reach them · where. */
 function AddressCard({ party, missing, invalid = [], onEdit, tag }: {
-  party: Party; missing: string[]; onEdit: () => void; tag?: string
+  party: Party; missing: string[]; tag?: string
+  /** absent while the form is being edited (the address fields are set in the side panel then) */
+  onEdit?: () => void
   /** typed in the wrong format (the builder's Format rules) */
   invalid?: string[]
 }) {
@@ -975,16 +979,61 @@ function AddressCard({ party, missing, invalid = [], onEdit, tag }: {
               <p className="mt-1 text-[13px] text-ink">{[party.line1, party.line2, party.line3, party.landmark].filter((x) => filled(x)).join(', ')}</p>
               {place && <p className="text-[13px] text-ink-2">{place}</p>}
             </div>
-            <Tip text="Edit this address"><button type="button" onClick={onEdit} aria-label="Edit this address"
+            {onEdit && <Tip text="Edit this address"><button type="button" onClick={onEdit} aria-label="Edit this address"
               className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-warm-200 text-ink-2 hover:bg-warm-50 hover:text-ink">
               <Pencil size={14} />
-            </button></Tip>
+            </button></Tip>}
           </div>
         )}
       {missing.length > 0 && (showErrors
         ? <p className="mt-3 text-[12px] text-danger-fg">Missing: {missing.join(', ')}</p>
         : !empty && <p className="mt-3"><span className="rounded-full bg-warm-50 px-2 py-0.5 text-[11px] text-ink-2">Incomplete — {missing.length} to add</span></p>)}
       {invalid.length > 0 && <p className="mt-2 text-[12px] text-danger-fg">Check the format: {invalid.join(', ')}</p>}
+    </div>
+  )
+}
+
+/** One saved address the search can offer (a merchant address, an address-book entry, a hub). */
+interface AddrHit { value: string; party: Party; tag: string }
+const addrHay = (p: Party) => [p.name, p.businessName, p.contactNumber, p.email, p.line1, p.line2, p.landmark, p.city, p.state, p.postalCode]
+  .filter(Boolean).join(' ').toLowerCase()
+/**
+ * The search above an address typed on the form (the builder's "Fields on the form", owner 2026-10-05): "Search
+ * from address book by name, number, address and company name". Picking one fills the fields below.
+ */
+function AddressSearch({ hits, onPick, placeholder }: { hits: AddrHit[]; onPick: (h: AddrHit) => void; placeholder: string }) {
+  const [q, setQ] = useState('')
+  const needle = q.trim().toLowerCase()
+  const matches = useMemo(() => (needle ? hits.filter((h) => addrHay(h.party).includes(needle)) : hits), [hits, needle])
+  const shown = matches.slice(0, 8)
+  const { open, setOpen, hi, setHi, ref, popRef, pos, onKeyDown, pick } = useAutocomplete<AddrHit>(shown, (h) => { onPick(h); setQ('') })
+  return (
+    <div ref={ref} onFocus={() => { if (!open) setOpen(true) }} onKeyDown={onKeyDown}>
+      <SearchInput value={q} onChange={(v) => { setQ(v); setHi(0); setOpen(true) }} placeholder={placeholder} />
+      {open && (
+        <AcPop pos={pos} popRef={popRef}>
+          {shown.length === 0
+            ? <p className="px-3 py-2 text-[13px] text-ink-3">{needle ? `No saved address matches “${q.trim()}” — type it below.` : 'No saved addresses yet — type the address below.'}</p>
+            : shown.map((h, i) => {
+              const p = h.party
+              return (
+                <AcRow key={h.value} on={i === hi} onHover={() => setHi(i)} onPick={() => pick(h)}>
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-warm-100 text-ink-3"><MapPinned size={15} /></span>
+                  <span className="min-w-0 flex-1 py-1.5">
+                    <span className="block truncate text-[13px] font-bold text-ink">
+                      {p.name || p.businessName || 'Unnamed'}{p.businessName && p.name ? <span className="font-normal text-ink-2"> · {p.businessName}</span> : null}
+                    </span>
+                    <span className="block truncate text-[12px] text-ink-3">
+                      {[p.contactNumber, [p.line1, p.city, p.state].filter(Boolean).join(', ')].filter(Boolean).join(' · ')}
+                    </span>
+                  </span>
+                  <span className="shrink-0 rounded-full bg-warm-50 px-2 py-0.5 text-[11px] text-ink-2">{h.tag}</span>
+                </AcRow>
+              )
+            })}
+          {matches.length > shown.length && <p className="px-3 pt-1 text-[12px] text-ink-3">{matches.length - shown.length} more — keep typing</p>}
+        </AcPop>
+      )}
     </div>
   )
 }
@@ -1197,9 +1246,10 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     else delete out[k]
     return out
   })
-  /* the Format dialog and the Add field dialog (the builder opens them) */
-  const [fmtKey, setFmtKey] = useState<string | null>(null)
-  const [addCard, setAddCard] = useState<CustomFieldCard | null>(null)
+  /* the Add field dialog — opened from a card (that card) or from the side panel (null: the dialog asks where) */
+  const [addCard, setAddCard] = useState<CustomFieldCard | null | false>(false)
+  /* the side panel's selection (click-to-select in the preview) */
+  const [selKey, setSelKey] = useState<string | null>(null)
   const removeCustom = (k: string) => {
     setDraftCustom((ds) => ds.filter((d) => d.key !== k))
     setDraftRules((r) => withoutKeys(r, [k]))
@@ -1207,17 +1257,24 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   }
   const builder: Builder = {
     editing, portal: formPortal, known, lock: lockOf, requirable, ownHidden, isHidden, hiddenWith, required: need, inMore, label: lbl, set: setRule,
-    formatable, format: fmtOf, formatError: fmtErr, editFormat: setFmtKey,
+    formatable, format: fmtOf, formatError: fmtErr,
     custom: customOf, removeCustom,
     overridden: (k) => growSetup && editing && !!draftRules[k], revert: (k) => setDraftRules((r) => withoutKeys(r, [k])),
+    selected: editing ? selKey : null, select: setSelKey,
   }
   /* how goods are entered — edited with the rest of the form, saved with it (Grow may differ from the console) */
   const [savedGoods, setSavedGoods] = useState<GoodsSetting>(() => loadGoodsSetting(formPortal))
   const [draftGoods, setDraftGoods] = useState<GoodsSetting>(() => loadGoodsSetting(formPortal))
   const goodsSetting = editing ? draftGoods : savedGoods
+  /* how the form looks — addresses as cards or fields on the form; Grow's services as a grid or a list (./formSetup) */
+  const [savedLayout, setSavedLayout] = useState<FormLayout>(() => loadLayout(formPortal))
+  const [draftLayout, setDraftLayout] = useState<FormLayout>(() => loadLayout(formPortal))
+  const layout = editing ? draftLayout : savedLayout
+  /* "Fields on the form": each address is typed in the card under a search of the saved ones (the Simplified form keeps cards) */
+  const inlineAddr = layout.address === 'inline' && !simple
   const startEditing = () => {
-    setDraftRules(savedRules); setDraftCustom(savedCustom); setOtherHidden([]); setDraftGoods(savedGoods)
-    setShowErrors(false); setEditing(true)
+    setDraftRules(savedRules); setDraftCustom(savedCustom); setOtherHidden([]); setDraftGoods(savedGoods); setDraftLayout(savedLayout)
+    setSelKey(null); setShowErrors(false); setEditing(true)
   }
   /* the builder opened by URL (`?edit=`) hands back to the plain console form when it is done */
   const leaveSetup = () => {
@@ -1227,11 +1284,12 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     const q = next.toString()
     nav({ pathname, search: q ? `?${q}` : '' }, { replace: true })
   }
-  const cancelEditing = () => { setEditing(false); leaveSetup() }
+  const cancelEditing = () => { setSelKey(null); setEditing(false); leaveSetup() }
   const sameRules = (a: FormRulesV2, b: FormRulesV2) =>
     [...new Set([...Object.keys(a), ...Object.keys(b)])].every((k) => JSON.stringify(norm(k, a[k])) === JSON.stringify(norm(k, b[k])))
   const dirty = editing && (!sameRules(draftRules, growSetup ? savedGrow : savedRules)
-    || JSON.stringify(draftCustom) !== JSON.stringify(savedCustom) || draftGoods !== savedGoods)
+    || JSON.stringify(draftCustom) !== JSON.stringify(savedCustom) || draftGoods !== savedGoods
+    || JSON.stringify(draftLayout) !== JSON.stringify(savedLayout))
   const saveEditing = (then?: () => void) => {
     const removed = savedCustom.filter((d) => !draftCustom.some((x) => x.key === d.key)).map((d) => d.key)
     const added = new Set(draftCustom.filter((d) => !savedCustom.some((x) => x.key === d.key)).map((d) => d.key))
@@ -1245,8 +1303,10 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     saveRules(growSetup ? 'console' : 'grow', other)
     saveCustomFields(draftCustom)
     saveGoodsSetting(formPortal, draftGoods)
+    saveLayout(formPortal, draftLayout)
     setSavedRules(loadRules('console')); setSavedGrow(loadRules('grow')); setSavedCustom(loadCustomFields()); setSavedGoods(loadGoodsSetting(formPortal))
-    setEditing(false)
+    setSavedLayout(loadLayout(formPortal))
+    setSelKey(null); setEditing(false)
     toast.success(growSetup ? 'Grow portal form saved — merchants see it on Create Order' : 'Console form saved')
     if (then) then(); else leaveSetup()
   }
@@ -1916,6 +1976,8 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
       if (first) setTimeout(() => jumpTo(first), 60)
       return
     }
+    /* addresses typed on the form with "Save this address" on are kept now that the consignment is */
+    if (inlineAddr) keepTypedAddresses()
     if (merchantMode) {
       /* Grow: the booking goes to checkout (payment), which creates the order */
       sessionStorage.setItem(DRAFT_KEY, JSON.stringify(buildMerchantDraft()))
@@ -1945,6 +2007,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   }
 
   const saveForLater = () => {
+    if (inlineAddr) keepTypedAddresses()
     const o = growOrderActions.saveDraft(buildMerchantDraft(), resumeId ?? undefined)
     clearDraftKeys()
     toast.success(`Order ${o.orderNumber} saved to Drafts`)
@@ -2029,21 +2092,35 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
       if (role === 'from') setSenderStore(OTHER_ADDRESS)
     }
   }
+  /** "Save this address": to the address book (a customer's) or to your addresses (the store list) */
+  const keepAddress = (role: Role, idx: number) => {
+    const p = partyOf(role, idx)
+    const toBook = role === 'to' ? sourcesOf('to')[0] === 'customers' : role === 'from' ? sourcesOf('from')[0] === 'customers' : false
+    /* a name and a street are enough — the address book flags a missing postal code on the row itself */
+    if (!filled(p.name) || !filled(p.line1)) { toast.error('Add a name and the address before saving it'); return }
+    if (toBook) { addressBookActions.add({ ...p, windowStart: '', windowEnd: '' }); toast.success(`${p.name} saved to the address book`); return }
+    const stored = growOrderActions.addStore({ code: codeFor(p), name: p.businessName || p.name, party: { ...p, windowStart: '', windowEnd: '' } })
+    if (role === 'from') setSenderStore(stored.code)
+    else if (role === 'rto') setRto((x) => ({ ...x, locationCode: stored.code }))
+    else replaceParty('to', idx, { ...p, locationCode: stored.code })
+    toast.success(`${stored.name} saved to your addresses`)
+  }
   const confirmAddress = () => {
-    if (addr && saveAddr) {
-      const p = partyOf(addr.role, addr.idx)
-      const toBook = addr.role === 'to' ? sourcesOf('to')[0] === 'customers' : addr.role === 'from' ? sourcesOf('from')[0] === 'customers' : false
-      if (!partyOk(p)) toast.error('Add a name and the address before saving it')
-      else if (toBook) { addressBookActions.add({ ...p, windowStart: '', windowEnd: '' }); toast.success(`${p.name} saved to the address book`) }
-      else {
-        const stored = growOrderActions.addStore({ code: codeFor(p), name: p.businessName || p.name, party: { ...p, windowStart: '', windowEnd: '' } })
-        if (addr.role === 'from') setSenderStore(stored.code)
-        else if (addr.role === 'rto') setRto((x) => ({ ...x, locationCode: stored.code }))
-        else replaceParty('to', addr.idx, { ...p, locationCode: stored.code })
-        toast.success(`${stored.name} saved to your addresses`)
-      }
-    }
+    if (addr && saveAddr) keepAddress(addr.role, addr.idx)
     setAddr(null)
+  }
+  /* an address typed on the form (Fields on the form) is saved when the consignment is — if its switch is on */
+  const [saveTyped, setSaveTyped] = useState<Set<string>>(new Set())
+  const slotId = (role: Role, idx: number) => `${role}:${idx}`
+  const keepTypedAddresses = () => {
+    for (const id of saveTyped) {
+      const [role, i] = id.split(':') as [Role, string]
+      const idx = Number(i)
+      if (role === 'to' && idx >= allDrops.length) continue
+      if (role === 'rto' && !(typeRule.rto && c.rtoMode === RTO_MODES[1])) continue
+      if (typedHere(role, idx)) keepAddress(role, idx)
+    }
+    setSaveTyped(new Set())
   }
   const cancelAddress = () => {
     if (addr) { replaceParty(addr.role, addr.idx, addr.snapshot); if (addr.role === 'from') setSenderStore(addr.store) }
@@ -2101,16 +2178,42 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     return <F label={onlyFacilities ? 'Facility' : 'Saved address'} value={valueOf(role, p)} searchable
       placeholder={onlyFacilities ? 'Pick a hub' : `${srcs[0] === 'customers' ? 'Search customers or locations' : 'Search your addresses'}${srcs.includes('facilities') ? ' or hubs' : ''}`}
       options={srcs.flatMap(optionsOf)}
-      onChange={(v) => {
-        const next = partyFromPick(v)
-        if (!next) return
-        const keep = { windowStart: p.windowStart, windowEnd: p.windowEnd }
-        if (role === 'from') {
-          if (v.startsWith('store:')) { pickSender(v.slice(6)); return }
-          setSenderStore(v.startsWith('hub:') ? v.slice(4) : OTHER_ADDRESS)
-          setSender({ ...next, ...keep })
-        } else replaceParty('to', idx, { ...next, ...keep })
-      }} />
+      onChange={(v) => applyPick(role, idx, v)} />
+  }
+  /** a saved address (or a hub) picked for one end — the picker's and the on-form search's choice */
+  const applyPick = (role: Role, idx: number, v: string) => {
+    const p = partyOf(role, idx)
+    if (role === 'rto') { const st = stores.find((x) => x.code === v); if (st) setRto({ ...st.party, locationCode: v }); return }
+    const next = partyFromPick(v)
+    if (!next) return
+    const keep = { windowStart: p.windowStart, windowEnd: p.windowEnd }
+    if (role === 'from') {
+      if (v.startsWith('store:')) { pickSender(v.slice(6)); return }
+      setSenderStore(v.startsWith('hub:') ? v.slice(4) : OTHER_ADDRESS)
+      setSender({ ...next, ...keep })
+    } else replaceParty('to', idx, { ...next, ...keep })
+  }
+  /** an address typed here, not picked from a saved list (it can be saved) */
+  const typedHere = (role: Role, idx: number) => {
+    const p = partyOf(role, idx)
+    const picked = role === 'rto' ? !!p.locationCode && stores.some((x) => x.code === p.locationCode) : valueOf(role, p) !== ''
+    return !picked && (filled(p.name) || filled(p.line1))
+  }
+  /** what the on-form search offers for one end: its saved addresses, by name, number, address or company */
+  const hitsFor = (role: Role): AddrHit[] => {
+    if (role === 'rto') return stores.map((st) => ({ value: st.code, party: st.party, tag: 'Your address' }))
+    return sourcesOf(role).flatMap(optionsOf).flatMap((o) => {
+      const party = partyFromPick(o.value)
+      if (!party) return []
+      const tag = o.value.startsWith('hub:') ? 'Hub' : o.value.startsWith('book:') ? book[Number(o.value.slice(5))]?.tag ?? 'Address book' : 'Your address'
+      return [{ value: o.value, party, tag }]
+    })
+  }
+  /** "Clear" on an address typed on the form — back to an empty address (the window stays) */
+  const clearParty = (role: Role, idx: number) => {
+    const p = partyOf(role, idx)
+    replaceParty(role, idx, { ...blankParty(), windowStart: p.windowStart, windowEnd: p.windowEnd })
+    if (role === 'from') setSenderStore(OTHER_ADDRESS)
   }
   /** Consignment Type: a switch into / out of Reverse swaps the two ends (a return is collected FROM the customer). */
   function changeType(next: string) {
@@ -2127,12 +2230,12 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     if (hid('addrWindow')) return null
     const p = partyOf(role, idx)
     const w = role === 'from' ? 'Pick Up' : 'Delivery'
-    return (
-      <Grid2 className="mt-6">
-        <DateTimeCell label={`${w} Start Time`} at={p.windowStart ?? ''} fallbackTime="00:00" onChange={(v) => patchParty(role, idx)({ windowStart: v })} />
-        <DateTimeCell label={`${w} End Time`} at={p.windowEnd ?? ''} fallbackTime="23:59" onChange={(v) => patchParty(role, idx)({ windowEnd: v })} />
-      </Grid2>
-    )
+    const cells = <>
+      <DateTimeCell label={`${w} Start Time`} at={p.windowStart ?? ''} fallbackTime="00:00" onChange={(v) => patchParty(role, idx)({ windowStart: v })} />
+      <DateTimeCell label={`${w} End Time`} at={p.windowEnd ?? ''} fallbackTime="23:59" onChange={(v) => patchParty(role, idx)({ windowEnd: v })} />
+    </>
+    /* the address on the form is four columns wide — the window keeps to its left half (the full width in the narrower preview) */
+    return <Grid2 className={`mt-6 ${inlineAddr && !editing ? 'lg:w-1/2 lg:pr-3' : ''}`}>{cells}</Grid2>
   }
   const addressSlot = (role: Role, idx: number, title: ReactNode, right?: ReactNode) => {
     const p = partyOf(role, idx)
@@ -2149,22 +2252,70 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
           )}
           {right}
         </span>}>{title}</SubTitle>
-        <div className={`grid items-end gap-3 ${src === 'facilities' ? '' : 'grid-cols-[minmax(0,1fr)_auto]'}`}>
+        {/* Grow has no hubs as addresses — a hub-coded pickup location is one of the merchant's own */}
+        {inlineAddr && src !== 'facilities' && (merchantMode || !facility)
+          ? inlineAddress(role, idx)
+          : <>
+        <div className={`grid items-end gap-3 ${src === 'facilities' || editing ? '' : 'grid-cols-[minmax(0,1fr)_auto]'}`}>
           {pickerFor(role, idx)}
-          {src !== 'facilities' && <button type="button" onClick={() => openAddress(role, idx, true)}
+          {src !== 'facilities' && !editing && <button type="button" onClick={() => openAddress(role, idx, true)}
             className="inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-md border border-brand-500 bg-surface px-3 text-[13px] text-brand-500 hover:bg-warm-50">
             <Plus size={14} />New address
           </button>}
         </div>
         <div className="mt-4">
-          {/* owner, 2026-09-29: address fields are customised in the popup — the card stays a card while editing */}
-          {<AddressCard party={p} missing={missingOf(p, role)} invalid={invalidOf(p, role)} onEdit={() => openAddress(role, idx, false)}
+          {/* owner, 2026-09-29: the card stays a card while editing — its fields are set in the side panel (2026-10-05) */}
+          {<AddressCard party={p} missing={missingOf(p, role)} invalid={invalidOf(p, role)} onEdit={editing ? undefined : () => openAddress(role, idx, false)}
                 tag={facility ? 'Hub' : at >= 0 ? book[at].tag ?? 'Saved' : role === 'from' && fromList ? 'Saved' : filled(p.name) ? 'New' : undefined} />}
-          {editing && <p className="mt-2 text-[12px] text-ink-3">Open the address (✎ or New address) to customise its fields.</p>}
+          {editing && src !== 'facilities' && !facility && (
+            <button type="button" onClick={() => showFieldGroup('addresses')}
+              className="mt-2 inline-flex items-center gap-1 text-[12px] font-bold text-brand-500 hover:text-brand-600">
+              <SlidersHorizontal size={12} />Address fields — change them in the panel
+            </button>
+          )}
           {((role === 'from' && fromKindBad) || (role === 'to' && idx === 0 && toKindBad)) && (
             <ErrLine className="mt-2">{src === 'facilities' ? 'Pick a hub — this end has no pickup / delivery leg.' : 'Pick an address — this end has a pickup / delivery leg.'}</ErrLine>
           )}
         </div>
+          </>}
+      </div>
+    )
+  }
+  /** "Fields on the form" (owner, 2026-10-05, the live Grow portal's Ship To): a search of the saved addresses, then
+      CONTACT DETAILS and ADDRESS DETAILS in the card itself, "More address details", and Save this address. */
+  const inlineAddress = (role: Role, idx: number) => {
+    const p = partyOf(role, idx)
+    const id = slotId(role, idx)
+    const typed = typedHere(role, idx)
+    const srcs = role === 'rto' ? (['merchant'] as Source[]) : sourcesOf(role)
+    const what = srcs[0] === 'customers' ? 'address book' : 'your addresses'
+    const kindBad = (role === 'from' && fromKindBad) || (role === 'to' && idx === 0 && toKindBad)
+    return (
+      <div>
+        <div className="flex items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <AddressSearch hits={hitsFor(role)} onPick={(h) => applyPick(role, idx, h.value)}
+              placeholder={`Search ${what}${srcs.includes('facilities') ? ' or hubs' : ''} by name, number, address or company`} />
+          </div>
+          {(filled(p.name) || filled(p.line1)) && !editing && (
+            <button type="button" onClick={() => clearParty(role, idx)}
+              className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md px-2 text-[13px] text-ink-2 hover:bg-warm-50 hover:text-ink">
+              <X size={14} />Clear
+            </button>
+          )}
+        </div>
+        <div className="mt-6">
+          <PartyBlock wide party={p} set={patchParty(role, idx)} nameLabel={role === 'to' ? 'Customer Name' : 'Sender Name'}
+            requireContact={role !== 'from'} hid={hid} variant={role === 'rto' ? 'rto' : 'full'} />
+        </div>
+        {typed && !editing && (
+          <div className="mt-6 inline-flex">
+            <InlineSwitch label="Save this address" title={`It is listed in ${what} next time — saved when the consignment is`}
+              checked={saveTyped.has(id)} onChange={(on) => setSaveTyped((xs) => { const n = new Set(xs); if (on) n.add(id); else n.delete(id); return n })} />
+          </div>
+        )}
+        {invalidOf(p, role).length > 0 && <p className="mt-3 text-[12px] text-danger-fg">Check the format: {invalidOf(p, role).join(', ')}</p>}
+        {kindBad && <ErrLine className="mt-2">Pick an address — this end has a pickup / delivery leg.</ErrLine>}
       </div>
     )
   }
@@ -2307,42 +2458,52 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
         : 'Leave empty to schedule the pickup later from Shipments'}</p>
     </div>
   ) : null
+  const fromSide = <>
+    {addressSlot('from', 0, 'Ship From')}
+    {/* the address on the form is four columns wide — the window keeps to the left half */}
+    <div className={inlineAddr && merchantMode && !editing ? 'lg:w-1/2 lg:pr-3' : ''}>{merchantMode ? merchantPickupWindow : windowCells('from', 0)}</div>
+    {typeRule.rto && (
+      <div className="mt-6">
+        <InlineSwitch label="RTO address same as Ship From address" title="If it can't be delivered, it comes back to the Ship From address"
+          checked={(c.rtoMode ?? RTO_MODES[0]) === RTO_MODES[0]} onChange={(same) => setC({ rtoMode: same ? RTO_MODES[0] : RTO_MODES[1] })} />
+      </div>
+    )}
+    {typeRule.rto && c.rtoMode === RTO_MODES[1] && <div className="mt-7">{addressSlot('rto', 0, 'Return To Origin (RTO) address')}</div>}
+  </>
+  const toSide = <>
+    {allDrops.map((_, i) => (
+      <div key={i} className={i > 0 ? 'mt-8 border-t border-warm-200 pt-6' : ''}>
+        {addressSlot('to', i, allDrops.length > 1 ? `Ship To · Address ${i + 1}` : 'Ship To', i > 0 ? (
+          <Tip text="Remove this address"><button type="button" aria-label={`Remove address ${i + 1}`} onClick={() => removeDrop(i - 1)}
+            className="text-ink-3 transition-colors hover:text-brand-500"><CircleMinus size={16} /></button></Tip>
+        ) : undefined)}
+        {windowCells('to', i)}
+      </div>
+    ))}
+    {/* scheduling is about the DELIVERY — asked beside its window */}
+    {!hid('schedulingConfirmation') && (
+      <div className="mt-6"><Configurable fieldKey="schedulingConfirmation">
+        <InlineSwitch label={lbl('schedulingConfirmation')} title={SWITCH_HINTS.schedulingConfirmation} checked={!!c.schedulingConfirmation} onChange={(v) => setC({ schedulingConfirmation: v })} />
+      </Configurable></div>
+    )}
+    {/* multi-drop is a dedicated-truck booking: every address needs a vehicle */}
+    {(isFtl || (merchantMode && mode === 'ftl')) && <div className="mt-6"><AddMoreButton label="Add delivery address" onClick={() => setDrops((ds) => [...ds, blankParty()])} /></div>}
+  </>
   const partiesSection = (
     <FormCard id="sec-parties" title="Ship From → Ship To"
       caption={ctype === 'Transfer' ? 'Stock moving between two facilities — pick a hub at each end.'
+        : inlineAddr ? 'Search a saved address, or type the address here.'
         : merchantMode ? 'Pick a saved address or add a new one.' : 'Pick a saved address or add a new one — Shipment legs decide whether each end is an address or a hub.'}>
-      <div className="grid gap-y-10 lg:grid-cols-2">
-        <div className="min-w-0 lg:pr-8">
-          {addressSlot('from', 0, 'Ship From')}
-          {merchantMode ? merchantPickupWindow : windowCells('from', 0)}
-          {typeRule.rto && (
-            <div className="mt-6">
-              <InlineSwitch label="RTO address same as Ship From address" title="If it can't be delivered, it comes back to the Ship From address"
-                checked={(c.rtoMode ?? RTO_MODES[0]) === RTO_MODES[0]} onChange={(same) => setC({ rtoMode: same ? RTO_MODES[0] : RTO_MODES[1] })} />
-            </div>
-          )}
-          {typeRule.rto && c.rtoMode === RTO_MODES[1] && <div className="mt-7">{addressSlot('rto', 0, 'Return To Origin (RTO) address')}</div>}
-        </div>
-        <div className="min-w-0 border-t border-warm-200 pt-8 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
-          {allDrops.map((_, i) => (
-            <div key={i} className={i > 0 ? 'mt-8 border-t border-warm-200 pt-6' : ''}>
-              {addressSlot('to', i, allDrops.length > 1 ? `Ship To · Address ${i + 1}` : 'Ship To', i > 0 ? (
-                <Tip text="Remove this address"><button type="button" aria-label={`Remove address ${i + 1}`} onClick={() => removeDrop(i - 1)}
-                  className="text-ink-3 transition-colors hover:text-brand-500"><CircleMinus size={16} /></button></Tip>
-              ) : undefined)}
-              {windowCells('to', i)}
-            </div>
-          ))}
-          {/* scheduling is about the DELIVERY — asked beside its window */}
-          {!hid('schedulingConfirmation') && (
-            <div className="mt-6"><Configurable fieldKey="schedulingConfirmation">
-              <InlineSwitch label={lbl('schedulingConfirmation')} title={SWITCH_HINTS.schedulingConfirmation} checked={!!c.schedulingConfirmation} onChange={(v) => setC({ schedulingConfirmation: v })} />
-            </Configurable></div>
-          )}
-          {/* multi-drop is a dedicated-truck booking: every address needs a vehicle */}
-          {(isFtl || (merchantMode && mode === 'ftl')) && <div className="mt-6"><AddMoreButton label="Add delivery address" onClick={() => setDrops((ds) => [...ds, blankParty()])} /></div>}
-        </div>
-      </div>
+      {inlineAddr
+        /* the fields on the form: one address under the other, each four columns wide (the live portal's look) */
+        ? <div>
+            <div className="min-w-0">{fromSide}</div>
+            <div className="mt-10 min-w-0 border-t border-warm-200 pt-8">{toSide}</div>
+          </div>
+        : <div className="grid gap-y-10 lg:grid-cols-2">
+            <div className="min-w-0 lg:pr-8">{fromSide}</div>
+            <div className="min-w-0 border-t border-warm-200 pt-8 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">{toSide}</div>
+          </div>}
       {!merchantMode && legsLine}
       {addressModal}
     </FormCard>
@@ -2700,17 +2861,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
         : useItems ? 'Pick the SKUs and how many — sizes and weights come from the SKU master, or type a new SKU.'
         : separateLayout ? 'List the SKUs, then the packages they go in.'
         : "Each package, and the SKUs packed in it. A package's weight adds up from its type and SKUs unless you type one."}>
-      {/* the account's one way of entering goods — asked here only while editing the form */}
-      {editing && !isFtl && (
-        <div className="mb-6 rounded-lg border border-dashed border-warm-300 p-4">
-          <p className="mb-3 text-[13px] font-bold text-ink">How goods are entered <span className="font-normal text-ink-3">— one way for every consignment</span></p>
-          <div className="flex flex-wrap gap-3" role="radiogroup" aria-label="How goods are entered">
-            {GOODS_OPTIONS.map((o) => (
-              <RadioCard key={o.value} label={o.label} sub={o.sub} checked={draftGoods === o.value} onClick={() => setDraftGoods(o.value)} />
-            ))}
-          </div>
-        </div>
-      )}
+      {/* the account's one way of entering goods — chosen in the builder's side panel (Form settings) */}
       {useItems ? itemsBlock : separateLayout ? separateBlock : combinedBlock}
     </FormCard>
   )
@@ -2936,11 +3087,14 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     </FormCard>
   )
   const merchantServiceSection = (
-    <FormCard id="sec-service" title="Service Type"
-      caption={`${mode === 'ftl' ? 'Full vehicle' : 'Shared vehicle'} services and estimated rates for this route — pick one. The load type is asked in Handling.`}>
+    <FormCard id="sec-service" title="Service Type" count={layout.services === 'grid' && quotes.length > 1 ? quotes.length : undefined}
+      caption={layout.services === 'grid'
+        ? `Estimated delivery time and rate for this route${mode === 'ftl' ? ' with a full vehicle' : ''} — nothing is preselected. The load type is asked in Handling.`
+        : `${mode === 'ftl' ? 'Full vehicle' : 'Shared vehicle'} services and estimated rates for this route — pick one. The load type is asked in Handling.`}>
       <ServiceTypeChooser hideMode ready={ready} mode={mode} onMode={changeMode} modeLocked={!!fromOverage || pr?.shipmentType === 'FTL'}
         quotes={quotes} selected={selected} onSelect={setService} currency={currency} fleet={fleet} counts={counts} onCount={setCount}
-        fleetNote={fleetNote} showErrors={showErrors} serviceLocked={serviceHidden} />
+        fleetNote={fleetNote} showErrors={showErrors} serviceLocked={serviceHidden}
+        layout={layout.services} carrier={mode === 'ftl' ? '2GO Logistics' : '2GO Express'} />
       {showErrors && !ready && (
         <ErrLine className="mt-3">Add {[!laneReady(sender) && 'a Ship From address', !allDrops.every(laneReady) && 'a Ship To address',
           !weightOk && 'a weight or size for every package'].filter(Boolean).join(', ')} to see the services.</ErrLine>
@@ -3108,7 +3262,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
           <div className="min-w-0">
             <p className="flex items-center gap-1.5 text-[15px] font-bold text-ink">
               {growSetup ? 'Editing the Grow portal form' : 'Editing the console form'}
-              <InfoTip text="Type over a label to rename it. ✱ Required · ☰ More information · .* Format checks what is typed · 👁 hide. + Add field adds your own field. A lock = needed by the system." />
+              <InfoTip text="Click any field to change it in the panel on the right — its name, whether it shows, whether it is required, what can be typed. Chips on a label show what is set. A lock = needed by the system." />
             </p>
             <p className="text-[13px] text-ink-2">
               {growSetup
@@ -3133,9 +3287,11 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
             <InlineSwitch label="Show hidden fields" checked={showHidden} onChange={setShowHidden} />
           </Tip>
           {growSetup
-            ? <Button variant="ghost" size="sm" icon={<RotateCcw size={13} />} disabled={changedForGrow === 0 && draftGoods === loadGoodsSetting('console')}
-                onClick={() => { setDraftRules({}); setDraftGoods(loadGoodsSetting('console')) }}>Match console form</Button>
-            : <Button variant="ghost" size="sm" icon={<RotateCcw size={13} />} onClick={() => { setDraftRules({}); setDraftGoods(DEFAULT_GOODS_SETTING) }}>Reset to default</Button>}
+            ? <Button variant="ghost" size="sm" icon={<RotateCcw size={13} />}
+                disabled={changedForGrow === 0 && draftGoods === loadGoodsSetting('console') && JSON.stringify(draftLayout) === JSON.stringify(loadLayout('console'))}
+                onClick={() => { setDraftRules({}); setDraftGoods(loadGoodsSetting('console')); setDraftLayout(loadLayout('console')) }}>Match console form</Button>
+            : <Button variant="ghost" size="sm" icon={<RotateCcw size={13} />}
+                onClick={() => { setDraftRules({}); setDraftGoods(DEFAULT_GOODS_SETTING); setDraftLayout(DEFAULT_LAYOUT) }}>Reset to default</Button>}
         </div>
       </div>
     </div>
@@ -3154,6 +3310,215 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
       {!simple && <Button variant="outline" icon={<SlidersHorizontal size={14} />} onClick={startEditing}>Edit consignment form</Button>}
     </div>
   )
+
+  /* ============================================================ the builder's side panel (2026-10-05 v2, owner: "it has to
+     be easy to use") — the Apple inspector pattern: click a field in the preview, its settings show here in plain words;
+     nothing selected = the form's own settings + every field in one searchable list. */
+  const [panelQuery, setPanelQuery] = useState('')
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set())
+  const panelRef = useRef<HTMLDivElement>(null)
+  /* Esc closes a field's settings (a dialog on top handles its own Esc) */
+  useEffect(() => {
+    if (!editing) return
+    const esc = (e: globalThis.KeyboardEvent) => { if (e.key === 'Escape' && !document.querySelector('[data-modal-open]')) setSelKey(null) }
+    window.addEventListener('keydown', esc)
+    return () => window.removeEventListener('keydown', esc)
+  }, [editing])
+  const customKeys = (card: CustomFieldCard) => customDefs.filter((d) => d.card === card).map((d) => d.key)
+  /* every field the builder can change, by the card it sits in (a field this form never has is left out) */
+  const fieldGroups = [
+    { id: 'sec-consignment', title: 'Consignment details', keys: ['merchant', 'orderNumber', 'referenceNumber', 'consignmentNumber', 'consignmentType',
+      'shipByDate', 'exchangeOrderNumber', 'paymentMode', 'orderAmount', ...customKeys('sec-consignment')] },
+    { id: 'addresses', title: 'Addresses', keys: ['addrCompanyName', 'addrContact', 'addrEmail', 'addrLines23', 'addrLandmark', 'addrSuburb',
+      'addrCoordinates', 'addrFloorLift', 'addrLift', 'addrWindow', 'schedulingConfirmation'] },
+    { id: 'sec-packages', title: 'Package & SKU', keys: ['pkgWeight', 'pkgDimensions', 'pkgTracking', 'pkgDescription', 'pkgPalletSpace',
+      'skuWeight', 'skuDimensions', 'skuCategory', 'skuDescription', 'skuHsn', 'skuImage', 'skuUnitCost'] },
+    { id: 'sec-handling', title: 'Handling', keys: [...GOODS_CATEGORIES.map(({ name }) => catKey(name)), 'scannable', 'splittable', 'clearanceRequired',
+      'tags', ...customKeys('sec-handling')] },
+    { id: 'sec-service', title: 'Service & instructions', keys: ['serviceType', 'dedicateTruck', 'vehicleType', 'labelFormat', 'totalLoadingTime',
+      'specialInstructions', 'vas', ...customKeys('sec-service')] },
+  ].map((g) => ({ ...g, keys: g.keys.filter((k) => known(k) && !(merchantMode && MERCHANT_OFF.has(k))) }))
+  /** a field's name as the form shows it */
+  const fieldName = (k: string) => (k === 'dedicateTruck' ? custom('dedicateTruck', 'Dedicate Truck', 'Load type')
+    : k === 'scannable' ? custom('scannable', 'Scannable', 'Barcode on every box')
+    : k === 'splittable' ? 'Can be delivered in parts' : lbl(k))
+  const groupOf = (k: string) => fieldGroups.find((g) => g.keys.includes(k))?.title ?? ''
+  /** the system's own name for a field (what an empty rename falls back to) */
+  const defaultName = (k: string) => customOf(k)?.label ?? (V2_KEYS.has(k) ? FIELD_DEF.get(k)!.defaultLabel : fieldLabel(k, fieldCfg))
+  const pickField = (k: string) => {
+    setSelKey(k)
+    window.setTimeout(() => document.querySelector(`[data-field="${CSS.escape(k)}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 30)
+  }
+  /** open one group of the field list (the address card's "Address fields" link) */
+  function showFieldGroup(id: string) {
+    setSelKey(null); setPanelQuery(''); setOpenGroups(new Set([id]))
+    window.setTimeout(() => panelRef.current?.querySelector(`[data-group="${id}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }), 30)
+  }
+  const toggleGroup = (id: string) => setOpenGroups((st) => { const n = new Set(st); if (n.has(id)) n.delete(id); else n.add(id); return n })
+  const needle = panelQuery.trim().toLowerCase()
+  const formPanel = (
+    <>
+      <div className="border-b border-line px-5 py-4">
+        <p className="text-[15px] font-bold text-ink">Form settings</p>
+        <p className="mt-0.5 text-[12px] text-ink-3">Click any field in the form to change it.</p>
+      </div>
+      <div className="grid gap-8 px-5 py-5">
+        <section>
+          <PanelHeading>Addresses</PanelHeading>
+          <ChoiceList label="Addresses" value={draftLayout.address} onChange={(v) => setDraftLayout((l) => ({ ...l, address: v }))} options={[
+            { value: 'cards', label: 'Saved address cards', sub: 'Pick a saved address. Add or edit one in a pop-up.' },
+            { value: 'inline', label: 'Fields on the form', sub: 'Type the address in the form, with a search of saved addresses on top.' },
+          ]} />
+        </section>
+        {!isFtl && (
+          <section>
+            <PanelHeading>How goods are entered</PanelHeading>
+            <ChoiceList label="How goods are entered" value={draftGoods} onChange={setDraftGoods} options={GOODS_OPTIONS} />
+          </section>
+        )}
+        {growSetup && (
+          <section>
+            <PanelHeading>Services</PanelHeading>
+            <ChoiceList label="Services" value={draftLayout.services} onChange={(v) => setDraftLayout((l) => ({ ...l, services: v }))} options={[
+              { value: 'grid', label: 'Grid', sub: 'Two services per row — less scrolling.' },
+              { value: 'list', label: 'List', sub: 'One full-width card per service.' },
+            ]} />
+          </section>
+        )}
+        <section>
+          <PanelHeading right={<AddRowLink label="Add field" onClick={() => setAddCard(null)} />}>Fields</PanelHeading>
+          <SearchInput value={panelQuery} onChange={setPanelQuery} placeholder="Find a field" />
+          <div className="mt-3 flex flex-col">
+            {fieldGroups.map((g) => {
+              const keys = needle ? g.keys.filter((k) => fieldName(k).toLowerCase().includes(needle)) : g.keys
+              if (!keys.length) return null
+              const open = !!needle || openGroups.has(g.id)
+              const hiddenN = g.keys.filter((k) => isHidden(k)).length
+              const reqN = g.keys.filter((k) => need(k) || lockOf(k) === 'system').length
+              return (
+                <div key={g.id} data-group={g.id} className="scroll-mt-2 border-b border-line last:border-b-0">
+                  <button type="button" aria-expanded={open} onClick={() => toggleGroup(g.id)}
+                    className="flex w-full items-center gap-2 py-2.5 text-left">
+                    {open ? <ChevronDown size={14} className="shrink-0 text-ink-3" /> : <ChevronRight size={14} className="shrink-0 text-ink-3" />}
+                    <span className="text-[13px] font-bold text-ink">{g.title}</span>
+                    <span className="text-[12px] text-ink-3">{keys.length}</span>
+                    <span className="ml-auto truncate text-[12px] text-ink-3">
+                      {[reqN ? `${reqN} required` : '', hiddenN ? `${hiddenN} hidden` : ''].filter(Boolean).join(' · ')}
+                    </span>
+                  </button>
+                  {open && (
+                    <ul className="pb-2">
+                      {keys.map((k) => (
+                        <li key={k} className="flex items-center gap-2 rounded-md py-1 pl-6 pr-1 hover:bg-warm-50">
+                          <button type="button" onClick={() => pickField(k)} className="flex min-w-0 flex-1 items-center gap-1.5 py-0.5 text-left text-[13px] text-ink">
+                            <span className={`min-w-0 truncate ${isHidden(k) ? 'text-ink-3' : ''}`}>{fieldName(k)}</span>
+                            {(need(k) || lockOf(k) === 'system') && <span className="shrink-0 text-danger-fg">*</span>}
+                          </button>
+                          <FieldChips k={k} hideHidden />
+                          {lockOf(k) ? <span className="w-9 shrink-0" />
+                            : <Tip text={ownHidden(k) ? 'Hidden — switch on to show it' : 'Shown — switch off to hide it'}>
+                                <span className="inline-flex shrink-0"><Toggle checked={!ownHidden(k)} onChange={(on) => setRule(k, { hidden: !on })} /></span>
+                              </Tip>}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )
+            })}
+            {needle && fieldGroups.every((g) => !g.keys.some((k) => fieldName(k).toLowerCase().includes(needle))) && (
+              <p className="py-3 text-[13px] text-ink-3">No field is called “{panelQuery.trim()}”.</p>
+            )}
+          </div>
+        </section>
+      </div>
+    </>
+  )
+  const fieldPanel = (k: string) => {
+    const lock = lockOf(k)
+    const parent = hiddenWith(k)
+    const own = ownHidden(k)
+    const cdef = customOf(k)
+    const renamable = !GROUP_KEYS.has(k) && k !== 'splittable' && k !== 'vas'
+    const verb = merchantMode || growSetup ? 'the order can go to checkout' : 'the consignment can be added'
+    return (
+      <>
+        <div className="flex items-start gap-2 border-b border-line px-5 py-4">
+          <Tip text="Back to form settings"><button type="button" aria-label="Back to form settings" onClick={() => setSelKey(null)}
+            className="-ml-1.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-ink-2 hover:bg-warm-100 hover:text-ink">
+            <ChevronLeft size={16} />
+          </button></Tip>
+          <div className="min-w-0">
+            <p className="truncate text-[15px] font-bold text-ink">{fieldName(k)}</p>
+            <p className="mt-0.5 text-[12px] text-ink-3">{[groupOf(k), cdef ? 'your own field' : ''].filter(Boolean).join(' · ')}</p>
+          </div>
+        </div>
+        <BuilderCtx.Provider value={null}>
+        <div className="grid gap-8 px-5 py-5">
+          {lock && (
+            <p className="flex items-start gap-2 rounded-lg bg-warm-50 px-3 py-2.5 text-[12px] text-ink-2">
+              <Lock size={13} className="mt-0.5 shrink-0 text-ink-3" />
+              {lock === 'system' ? 'The system needs this field — it is always shown and always required.' : 'This form needs this field — it is always shown.'}
+            </p>
+          )}
+          {renamable && (
+            <SFld label="Name on the form" helper={`Empty = “${defaultName(k)}”`}>
+              <Input value={rules[k]?.label ?? fieldName(k)} placeholder={defaultName(k)} onChange={(v) => setRule(k, { label: v })} />
+            </SFld>
+          )}
+          {!lock && (
+            <div className="divide-y divide-line rounded-lg border border-line">
+              <SettingRow title="Show on the form" checked={!own && !parent} disabled={!!parent} onChange={(on) => setRule(k, { hidden: !on })}
+                hint={parent ? `Hidden because ${fieldName(parent)} is hidden.` : own ? 'Hidden — people do not see it. Saved consignments keep their answer.' : 'People see it on this form.'} />
+              {requirable(k) && (
+                <SettingRow title="Required" checked={need(k)} disabled={own || !!parent} onChange={(on) => setRule(k, { required: on })}
+                  hint={`It must be filled before ${verb}.`} />
+              )}
+              {movable(k) && (
+                <SettingRow title="Put under “More”" checked={inMore(k)} disabled={own || !!parent || need(k)} onChange={(on) => setRule(k, { more: on })}
+                  hint={need(k) ? 'A required field always stays in the main form.' : 'It shows only when someone clicks More in this section.'} />
+              )}
+            </div>
+          )}
+          {formatable(k) && (
+            <div>
+              <PanelHeading>What can be typed</PanelHeading>
+              <FormatEditor key={k} value={fmtOf(k)} onChange={(f) => setRule(k, { format: f })} />
+            </div>
+          )}
+          {growSetup && !!draftRules[k] && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-brand-50 px-3 py-2.5">
+              <span className="text-[12px] font-bold text-brand-600">Changed for Grow</span>
+              <Button variant="ghost" size="sm" icon={<RotateCcw size={13} />} onClick={() => setDraftRules((r) => withoutKeys(r, [k]))}>Use the console setting</Button>
+            </div>
+          )}
+          {cdef && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line px-4 py-3">
+              <span className="text-[12px] text-ink-3">
+                {CUSTOM_FIELD_KINDS.find((x) => x.value === cdef.kind)?.label}{cdef.kind === 'list' ? ` · ${(cdef.options ?? []).join(', ')}` : ''}
+              </span>
+              <Button variant="ghost" size="sm" icon={<Trash2 size={13} />} onClick={() => { removeCustom(k); setSelKey(null) }}>Remove field</Button>
+            </div>
+          )}
+        </div>
+        </BuilderCtx.Provider>
+        <div className="mt-auto flex justify-end border-t border-line px-5 py-3">
+          <Button variant="outline" size="sm" onClick={() => setSelKey(null)}>Done</Button>
+        </div>
+      </>
+    )
+  }
+  /* beside the preview from 1280 px; narrower screens float it over the form's right edge */
+  const inspector = editing ? (
+    <aside aria-label={selKey ? 'Field settings' : 'Form settings'}
+      className="z-30 flex min-h-0 flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-ds-1
+                 xl:sticky xl:top-[152px] xl:max-h-[calc(100vh-312px)]
+                 max-xl:fixed max-xl:bottom-24 max-xl:right-6 max-xl:top-[240px] max-xl:w-[340px] max-xl:shadow-ds-overlay">
+      <div ref={panelRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        {selKey ? fieldPanel(selKey) : formPanel}
+      </div>
+    </aside>
+  ) : null
 
   return (
     <BuilderCtx.Provider value={builder}>
@@ -3185,8 +3550,11 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
         </div>
       )}
 
-      <div className="grid min-w-0 gap-6">
-        {sections.map((id) => <div key={id} className="min-w-0">{byId[id]}</div>)}
+      <div className={editing ? 'grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_340px]' : ''}>
+        <div className="grid min-w-0 gap-6">
+          {sections.map((id) => <div key={id} className="min-w-0">{byId[id]}</div>)}
+        </div>
+        {inspector}
       </div>
 
       {/* sticky footer — the form switch (owner, 2026-09-29: where the section strip was), then Go Back + Add Order */}
@@ -3217,19 +3585,16 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
 
       {/* the builder's dialogs (2026-10-05) — plain fields, outside the builder's label tools */}
       <BuilderCtx.Provider value={null}>
-      {fmtKey && (
-        <FormatDialog fieldLabel={lbl(fmtKey)} value={fmtOf(fmtKey)} portal={formPortal}
-          onClose={() => setFmtKey(null)}
-          onApply={(f) => { setRule(fmtKey, { format: f }); setFmtKey(null) }} />
-      )}
-      {addCard && (
+      {addCard !== false && (
         <AddFieldDialog card={addCard} portal={formPortal} taken={customDefs.map((d) => d.label.toLowerCase())}
-          onClose={() => setAddCard(null)}
+          onClose={() => setAddCard(false)}
           onAdd={(def, required, alsoOther) => {
             setDraftCustom((ds) => [...ds, def])
             if (required) setRule(def.key, { required: true })
             if (!alsoOther) setOtherHidden((xs) => [...xs, def.key])
-            setAddCard(null)
+            setAddCard(false)
+            /* the new field opens in the side panel, ready to be set up */
+            pickField(def.key)
             toast.success(`${def.label} added to ${CUSTOM_FIELD_CARDS[def.card]} — Save changes to keep it`)
           }} />
       )}
@@ -3250,54 +3615,101 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   )
 }
 
-/* ================================================================ builder dialogs (2026-10-05) ==== */
+/* ================================================================ the builder's side panel (2026-10-05 v2) ==== */
+
+/** A short vertical choice (one of a few) — neutral selection, a radio dot, the line under it says what it does. */
+function ChoiceList<T extends string>({ value, options, onChange, label }: {
+  value: T; options: { value: T; label: string; sub: string }[]; onChange: (v: T) => void; label: string
+}) {
+  return (
+    <div role="radiogroup" aria-label={label} className="flex flex-col gap-2">
+      {options.map((o) => {
+        const on = o.value === value
+        return (
+          <button key={o.value} type="button" role="radio" aria-checked={on} onClick={() => onChange(o.value)}
+            className={`flex w-full items-start gap-3 rounded-md border px-3 py-2.5 text-left transition-colors
+              ${on ? 'border-ink bg-warm-50' : 'border-line bg-surface hover:border-warm-300'}`}>
+            <span className={`mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${on ? 'border-ink' : 'border-warm-400'}`}>
+              {on && <span className="h-2 w-2 rounded-full bg-ink" />}
+            </span>
+            <span className="min-w-0">
+              <span className={`block text-[13px] text-ink ${on ? 'font-bold' : ''}`}>{o.label}</span>
+              <span className="block text-[12px] text-ink-3">{o.sub}</span>
+            </span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+/** One switch in the field panel: what it does in words, the switch on the right (greyed when it cannot change). */
+function SettingRow({ title, hint, checked, onChange, disabled }: {
+  title: string; hint: string; checked: boolean; onChange: (v: boolean) => void; disabled?: boolean
+}) {
+  return (
+    <div className={`flex items-start gap-4 px-4 py-3 ${disabled ? 'opacity-50' : ''}`}>
+      <div className="min-w-0 flex-1">
+        <p className="text-[13px] font-bold text-ink">{title}</p>
+        <p className="mt-0.5 text-[12px] text-ink-3">{hint}</p>
+      </div>
+      <span className={`mt-0.5 shrink-0 ${disabled ? 'pointer-events-none' : ''}`}><Toggle checked={checked} onChange={onChange} /></span>
+    </div>
+  )
+}
+/** A heading inside the side panel. */
+function PanelHeading({ children, right }: { children: ReactNode; right?: ReactNode }) {
+  return (
+    <div className="mb-3 flex min-h-6 items-center justify-between gap-3">
+      <p className="text-[12px] font-bold uppercase tracking-wide text-ink-3">{children}</p>
+      {right}
+    </div>
+  )
+}
 
 /**
- * Format — what may be typed in one field: a preset (numbers only, an email, a phone number…) or the account's own
- * regular expression, an optional length, and the message people see. "Try it" checks a sample as you type.
+ * What may be typed in one field — edited live in the side panel: Any text (no check), a preset (numbers only, an
+ * email, a phone number…) or the account's own regular expression, an optional length, the message people see, and
+ * a "Try it" box.
  */
-function FormatDialog({ fieldLabel, value, portal, onApply, onClose }: {
-  fieldLabel: string; value: FieldFormat | undefined; portal: 'console' | 'grow'
-  onApply: (f: FieldFormat | undefined) => void; onClose: () => void
-}) {
-  const [f, setF] = useState<FieldFormat>(value ?? { preset: 'digits' })
+function FormatEditor({ value, onChange }: { value: FieldFormat | undefined; onChange: (f: FieldFormat | undefined) => void }) {
+  const f: FieldFormat = value ?? { preset: 'any' }
   const [sample, setSample] = useState('')
+  const set = (patch: Partial<FieldFormat>) => {
+    const next = { ...f, ...patch }
+    onChange(next.preset === 'any' ? undefined : next)
+  }
   const preset = FORMAT_PRESETS.find((p) => p.value === f.preset) ?? FORMAT_PRESETS[0]
   const bad = patternError(f)
   const lenBad = !!f.minLength && !!f.maxLength && f.minLength > f.maxLength
-  const tried = sample.trim() ? formatError(f, sample) : null
+  const tried = sample.trim() && f.preset !== 'any' ? formatError(f, sample) : null
   const num = (v: string) => { const n = Math.round(Number(v)); return v.trim() && Number.isFinite(n) && n > 0 ? n : undefined }
   return (
-    <Modal open title={`Format · ${fieldLabel}`} onClose={onClose}
-      subtitle={`Checks what is typed in this field on the ${portal === 'grow' ? 'Grow portal' : 'console'} form. An empty field is left to Required.`}
-      footer={<>
-        {value && <span className="mr-auto"><Button variant="ghost" icon={<Trash2 size={14} />} onClick={() => onApply(undefined)}>Remove format</Button></span>}
-        <Button variant="outline" onClick={onClose}>Cancel</Button>
-        <Button disabled={!!bad || lenBad || f.preset === 'any'} onClick={() => onApply(f)}>Apply</Button>
-      </>}>
-      <div className="grid gap-x-5 gap-y-7 pb-4 pt-1 sm:grid-cols-2">
-        <SFld label="Allowed" className="sm:col-span-2">
-          <MenuSelect value={f.preset} options={FORMAT_PRESETS.filter((p) => p.value !== 'any').map((p) => p.value)}
-            labels={(v) => FORMAT_PRESETS.find((p) => p.value === v)?.label ?? v}
-            onChange={(v) => setF((x) => ({ ...x, preset: v as FormatPreset }))} />
+    <div className="grid gap-y-6">
+      <SFld label="Allowed">
+        <MenuSelect value={f.preset} options={FORMAT_PRESETS.map((p) => p.value)}
+          labels={(v) => FORMAT_PRESETS.find((p) => p.value === v)?.label ?? v}
+          onChange={(v) => set({ preset: v as FormatPreset })} />
+      </SFld>
+      {f.preset === 'custom' && (
+        <SFld label="Pattern (regular expression)" error={bad && f.pattern ? bad : undefined} errorNow
+          helper={bad ? undefined : 'eg, ^ORD[0-9]{6}$ = ORD + 6 digits'}>
+          <Input value={f.pattern ?? ''} placeholder="^ORD[0-9]{6}$" onChange={(v) => set({ pattern: v })} />
         </SFld>
-        {f.preset === 'custom' && (
-          <SFld label="Pattern (regular expression)" className="sm:col-span-2" error={bad && f.pattern ? bad : undefined} errorNow
-            helper={bad ? undefined : 'eg, ^ORD[0-9]{6}$ = ORD followed by 6 digits'}>
-            <Input value={f.pattern ?? ''} placeholder="^ORD[0-9]{6}$" onChange={(v) => setF((x) => ({ ...x, pattern: v }))} />
+      )}
+      {f.preset !== 'any' && <>
+        <div className="grid grid-cols-2 gap-x-3">
+          <SFld label="Shortest" error={lenBad ? 'Longer than the longest' : undefined} errorNow>
+            <Input type="number" value={f.minLength ? String(f.minLength) : ''} placeholder="Any" onChange={(v) => set({ minLength: num(v) })} />
           </SFld>
-        )}
-        <SFld label="Shortest (characters)" error={lenBad ? 'Longer than the longest' : undefined} errorNow>
-          <Input type="number" value={f.minLength ? String(f.minLength) : ''} placeholder="Any" onChange={(v) => setF((x) => ({ ...x, minLength: num(v) }))} />
-        </SFld>
-        <SFld label="Longest (characters)">
-          <Input type="number" value={f.maxLength ? String(f.maxLength) : ''} placeholder="Any" onChange={(v) => setF((x) => ({ ...x, maxLength: num(v) }))} />
-        </SFld>
-        <SFld label="Message when it does not match" className="sm:col-span-2">
+          <SFld label="Longest">
+            <Input type="number" value={f.maxLength ? String(f.maxLength) : ''} placeholder="Any" onChange={(v) => set({ maxLength: num(v) })} />
+          </SFld>
+        </div>
+        <SFld label="Message when it does not match">
           <Input value={f.message ?? ''} placeholder={formatMessage({ ...f, message: '' }) || 'Does not match the required format'}
-            onChange={(v) => setF((x) => ({ ...x, message: v }))} />
+            onChange={(v) => set({ message: v })} />
         </SFld>
-        <div className="rounded-lg bg-warm-50 p-4 sm:col-span-2">
+        <div className="rounded-lg bg-warm-50 p-3">
           <p className="mb-2 text-[13px] font-bold text-ink">Try it</p>
           <Input value={sample} placeholder={preset.example ? `eg, ${preset.example}` : 'Type a sample value'} onChange={setSample} />
           <p className={`mt-2 flex items-center gap-1.5 text-[12px] ${!sample.trim() || bad ? 'text-ink-3' : tried ? 'text-danger-fg' : 'text-success-fg'}`}>
@@ -3305,8 +3717,8 @@ function FormatDialog({ fieldLabel, value, portal, onApply, onClose }: {
               : tried ? <><X size={13} />{tried}</> : <><Check size={13} />Looks good — this value passes.</>}
           </p>
         </div>
-      </div>
-    </Modal>
+      </>}
+    </div>
   )
 }
 
@@ -3315,9 +3727,11 @@ function FormatDialog({ fieldLabel, value, portal, onApply, onClose }: {
  * One choice only for the other form: show it there too (on by default).
  */
 function AddFieldDialog({ card, portal, taken, onAdd, onClose }: {
-  card: CustomFieldCard; portal: 'console' | 'grow'; taken: string[]
+  /** the card it was opened from; null = from the side panel, the dialog asks where it goes */
+  card: CustomFieldCard | null; portal: 'console' | 'grow'; taken: string[]
   onAdd: (def: CustomFieldDef, required: boolean, alsoOther: boolean) => void; onClose: () => void
 }) {
+  const [where, setWhere] = useState<CustomFieldCard>(card ?? 'sec-consignment')
   const [label, setLabel] = useState('')
   const [kind, setKind] = useState<CustomFieldKind>('text')
   const [choices, setChoices] = useState('')
@@ -3333,19 +3747,26 @@ function AddFieldDialog({ card, portal, taken, onAdd, onClose }: {
     setTried(true)
     if (nameErr || listErr) return
     onAdd({
-      key: newCustomKey(), label: label.trim(), kind, card,
+      key: newCustomKey(), label: label.trim(), kind, card: where,
       ...(kind === 'list' ? { options } : {}),
       ...(placeholder.trim() && kind !== 'yesno' && kind !== 'date' ? { placeholder: placeholder.trim() } : {}),
     }, required && kind !== 'yesno', alsoOther)
   }
   return (
-    <Modal open title="Add a field" subtitle={`It appears in ${CUSTOM_FIELD_CARDS[card]}. You can rename it, move it, make it required or give it a Format later.`}
+    <Modal open title="Add a field" subtitle={card ? `It appears in ${CUSTOM_FIELD_CARDS[card]}. You can rename it, move it, make it required or check what is typed later.`
+      : 'Your own field, beside the system fields. You can rename it, move it, make it required or check what is typed later.'}
       onClose={onClose}
       footer={<><Button variant="outline" onClick={onClose}>Cancel</Button><Button onClick={add}>Add field</Button></>}>
       <div className="grid gap-7 pb-4 pt-1">
         <SFld label="Field name" required error={tried && nameErr ? nameErr : undefined} errorNow>
           <Input value={label} placeholder="eg, PO Number" onChange={setLabel} />
         </SFld>
+        {!card && (
+          <SFld label="Where it shows">
+            <MenuSelect value={where} options={Object.keys(CUSTOM_FIELD_CARDS)} labels={(v) => CUSTOM_FIELD_CARDS[v as CustomFieldCard]}
+              onChange={(v) => setWhere(v as CustomFieldCard)} />
+          </SFld>
+        )}
         <div>
           <p className="mb-1.5 text-[13px] text-ink">Answer type</p>
           <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Answer type">

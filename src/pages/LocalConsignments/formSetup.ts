@@ -11,6 +11,7 @@
  *                     for both portals; each portal's rules say whether a field is shown there.
  *
  * A rule may carry a `format` (what may be typed: a preset or a custom regular expression, + length).
+ * Layout (how addresses and services are shown) and "How goods are entered" are per portal the same way.
  */
 
 export type FormPortal = 'console' | 'grow'
@@ -165,6 +166,50 @@ export function saveGoodsSetting(p: FormPortal, v: GoodsSetting) {
     /* Grow keeps a value only while it differs from the console's — otherwise it follows */
     else if (v === loadGoodsSetting('console')) localStorage.removeItem(GOODS_SETTING_GROW_KEY)
     else localStorage.setItem(GOODS_SETTING_GROW_KEY, v)
+  } catch { /* private mode */ }
+}
+
+/* ------------------------------------------------------------- form layout ---- */
+
+/**
+ * How the form LOOKS (owner, 2026-10-05: "give Ship To / Ship From in two options"), per portal like the goods
+ * setting — Grow keeps only what differs from the console:
+ *   address   'cards'  = a saved-address picker read back as a card, Add / Edit in a popup (the form until now)
+ *             'inline' = the fields on the form itself, under a search of the saved addresses
+ *   services  (Grow) 'grid' = the lane's services as compact cards, two per row · 'list' = one full-width card each
+ */
+export type AddressEntry = 'cards' | 'inline'
+export type ServiceLayout = 'grid' | 'list'
+export interface FormLayout { address: AddressEntry; services: ServiceLayout }
+export const DEFAULT_LAYOUT: FormLayout = { address: 'cards', services: 'grid' }
+export const LAYOUT_KEY = 'fe-consignment-form-v2-layout'
+export const LAYOUT_GROW_KEY = 'fe-consignment-form-v2-layout-grow'
+const asLayout = (raw: unknown): Partial<FormLayout> => {
+  if (!raw || typeof raw !== 'object') return {}
+  const r = raw as Record<string, unknown>
+  return {
+    ...(r.address === 'cards' || r.address === 'inline' ? { address: r.address } : {}),
+    ...(r.services === 'grid' || r.services === 'list' ? { services: r.services } : {}),
+  }
+}
+const readLayout = (key: string): Partial<FormLayout> => {
+  try { return asLayout(JSON.parse(localStorage.getItem(key) ?? '{}')) } catch { return {} }
+}
+/** the console's layout; Grow = the console's with Grow's own choices on top */
+export function loadLayout(p: FormPortal = 'console'): FormLayout {
+  const base = { ...DEFAULT_LAYOUT, ...readLayout(LAYOUT_KEY) }
+  return p === 'grow' ? { ...base, ...readLayout(LAYOUT_GROW_KEY) } : base
+}
+export function saveLayout(p: FormPortal, l: FormLayout) {
+  try {
+    if (p === 'console') { localStorage.setItem(LAYOUT_KEY, JSON.stringify(asLayout(l))); return }
+    const base = loadLayout('console')
+    const diff: Partial<FormLayout> = {
+      ...(l.address !== base.address ? { address: l.address } : {}),
+      ...(l.services !== base.services ? { services: l.services } : {}),
+    }
+    if (Object.keys(diff).length) localStorage.setItem(LAYOUT_GROW_KEY, JSON.stringify(diff))
+    else localStorage.removeItem(LAYOUT_GROW_KEY)
   } catch { /* private mode */ }
 }
 
