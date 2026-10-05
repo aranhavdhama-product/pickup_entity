@@ -1444,7 +1444,7 @@ export default function AddOrderPage() {
      px-3 padding ate most of a narrow column regardless of its track width. No per-cell
      "cm"/"kg" tags either (the header already says so) — those were quietly stealing
      width back from the one thing meant to be narrow. */
-  const PKG_COLS = `minmax(130px,170px) 56px minmax(90px,1fr) 2ch${hid('pkgDimensions') ? '' : ' 3ch 3ch 3ch'} 56px`
+  const PKG_COLS = `minmax(130px,170px) 56px minmax(90px,1fr) 3ch${hid('pkgDimensions') ? '' : ' 4ch 4ch 4ch'} 56px`
   const SKU_COLS = `minmax(100px,120px) minmax(100px,140px) 52px${hid('skuDescription') ? '' : ' minmax(90px,120px)'} minmax(80px,100px) minmax(90px,120px)${hid('skuUnitCost') ? '' : ' 7ch'}${hid('skuDimensions') ? '' : ' 120px'}${hid('skuWeight') ? '' : ' 80px'} 32px`
   const packageSection = (
     <div id="sec-package" className="scroll-mt-20">

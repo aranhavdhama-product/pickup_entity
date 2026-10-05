@@ -16,6 +16,12 @@ import { Link } from 'react-router-dom'
 import { ChevronsLeft, ChevronsRight, type LucideIcon } from 'lucide-react'
 import { shellRowClass } from './shellClasses'
 
+/** "pin the rail open" survives navigation and reload — without it, expanding a rail a
+ *  route auto-collapses (Grow's order creation) would just snap shut on the next visit. */
+const PINNED_OPEN_KEY = 'fe-shell-sidebar-pinned-open'
+function loadPinnedOpen(): boolean { try { return localStorage.getItem(PINNED_OPEN_KEY) === '1' } catch { return false } }
+function savePinnedOpen(v: boolean) { try { localStorage.setItem(PINNED_OPEN_KEY, v ? '1' : '0') } catch { /* private mode */ } }
+
 export interface ShellNavItem {
   id: string
   label: string
@@ -58,13 +64,22 @@ export function ShellSidebar({ items, activeId, homeTo = '/', footer, defaultCol
    *  width, elevated z-index) instead of pushing the page's content out of the way */
   hoverExpand?: boolean
 }) {
-  const [collapsed, setCollapsed] = useState(!!defaultCollapsed)
+  const [localCollapsed, setLocalCollapsed] = useState(!!defaultCollapsed)
+  const [pinnedOpen, setPinnedOpen] = useState(loadPinnedOpen)
   const [hovering, setHovering] = useState(false)
+  /* a pin beats the route's own default — it's how "stay expanded" survives
+     navigating back into a route that would otherwise auto-collapse it */
+  const collapsed = pinnedOpen ? false : localCollapsed
   const floating = !!hoverExpand && collapsed && hovering
   /* the layout that renders this rail persists across routes (only its <Outlet/> swaps),
      so defaultCollapsed must be re-applied whenever the caller's own route-based value
      changes — a plain useState initializer only fires once, on first mount */
-  useEffect(() => setCollapsed(!!defaultCollapsed), [defaultCollapsed])
+  useEffect(() => setLocalCollapsed(!!defaultCollapsed), [defaultCollapsed])
+
+  /* expanding against a route that wants it collapsed pins it open (persisted); expanding
+     where it was already the default needs no pin. Collapsing always clears any pin. */
+  const expand = () => { setLocalCollapsed(false); if (defaultCollapsed) { setPinnedOpen(true); savePinnedOpen(true) } }
+  const collapse = () => { setLocalCollapsed(true); setPinnedOpen(false); savePinnedOpen(false) }
 
   const railBody = (expanded: boolean) => (
     <>
@@ -75,13 +90,13 @@ export function ShellSidebar({ items, activeId, homeTo = '/', footer, defaultCol
               <img src="/fareye-logo.png" alt="" className="h-7 w-7 object-contain" draggable={false} />
               <span className="text-[15px] font-bold tracking-tight text-ink">FarEye</span>
             </Link>
-            <button onClick={() => setCollapsed(true)} aria-label="Collapse sidebar"
+            <button onClick={collapse} aria-label="Collapse sidebar" title={pinnedOpen ? 'Collapse (currently pinned open)' : 'Collapse sidebar'}
               className="rounded p-1 text-ink-3 hover:bg-warm-100">
               <ChevronsLeft size={16} />
             </button>
           </>
         ) : (
-          <button onClick={() => setCollapsed(false)} aria-label="Expand sidebar"
+          <button onClick={expand} aria-label="Expand sidebar" title={defaultCollapsed ? 'Pin the sidebar open' : 'Expand sidebar'}
             className="mx-auto rounded p-1.5 text-ink-3 hover:bg-warm-100">
             <ChevronsRight size={16} />
           </button>
