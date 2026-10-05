@@ -88,8 +88,10 @@ function ServiceChoice({ q, carrier, selected, inert, onClick, currency }: {
 /** The body of the Grow form's Service Type card (the card itself is the form's own — AddConsignmentV2 merchant mode). */
 export function ServiceTypeChooser({
   ready, mode, onMode, modeLocked, quotes, selected, onSelect, currency, fleet, counts, onCount, fleetNote,
-  showErrors, serviceLocked, children, hideMode, layout = 'list', carrier = '',
+  showErrors, serviceLocked, children, hideMode, layout = 'list', carrier = '', servicesHidden = false,
 }: {
+  /** Service Type is hidden on the form: no service list (the default is booked) — only a full vehicle's vehicles show */
+  servicesHidden?: boolean
   /** the load type is asked elsewhere (the form's Handling card) — no segment here */
   hideMode?: boolean
   /** 'grid' = two compact cards per row (the builder's default for Grow), 'list' = one full-width card each */
@@ -127,7 +129,7 @@ export function ServiceTypeChooser({
   const pick = (code: string) => { onSelect(code); setEditing(false) }
   return (
     <>
-      {!grid && ready && chosen && !serviceLocked && quotes.length > 1 && (
+      {!grid && !servicesHidden && ready && chosen && !serviceLocked && quotes.length > 1 && (
         <div className="-mt-2 mb-3 flex justify-end">
           <button type="button" onClick={() => setEditing((v) => !v)}
             className="inline-flex items-center gap-1.5 text-[13px] font-bold text-brand-500 hover:text-brand-600">
@@ -142,9 +144,10 @@ export function ServiceTypeChooser({
         ]} />}
         {!mode ? null : !quotes.length ? (
           <p className="mt-4 text-[13px] text-ink-3">
-            No service offers a {mode === 'ftl' ? 'full vehicle' : 'shared vehicle'} on this route. Try the other option.
+            {servicesHidden ? 'No service can be booked on this route — please contact support.'
+              : `No service offers a ${mode === 'ftl' ? 'full vehicle' : 'shared vehicle'} on this route. Try the other option.`}
           </p>
-        ) : (
+        ) : servicesHidden ? null : (
           <>
             {grid ? (
               <div className={`${hideMode ? '' : 'mt-4 '}rounded-xl border border-line p-5`}>
@@ -171,8 +174,9 @@ export function ServiceTypeChooser({
         )}
 
         {ready && mode === 'ftl' && chosen && (
-          <div className="mt-6">
-            <p className="text-[13px] font-bold text-ink">Vehicles</p>
+          <div className={servicesHidden ? '' : 'mt-6'}>
+            {/* hidden services: the card itself is titled "Vehicles" */}
+            {!servicesHidden && <p className="text-[13px] font-bold text-ink">Vehicles</p>}
             <p className="mt-0.5 text-[12px] text-ink-3">{fleetNote}</p>
             {fleet.length ? (
               <div className={`mt-3 ${grid ? 'grid gap-4 lg:grid-cols-2' : 'flex flex-col gap-3'}`}>

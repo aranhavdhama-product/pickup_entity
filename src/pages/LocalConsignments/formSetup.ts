@@ -92,6 +92,9 @@ export interface FieldRuleV2 {
   more?: boolean
   /** what may be typed (text fields) */
   format?: FieldFormat
+  /** the value a hidden field gives every consignment — Service Type's default service (owner, 2026-10-05: "in Service
+      Type I can't hide that field") */
+  defaultValue?: string
 }
 export type FormRulesV2 = Record<string, FieldRuleV2>
 export const FORM_RULES_V2_KEY = 'fe-consignment-form-v2-rules'
@@ -110,6 +113,7 @@ export function asRules(raw: unknown): FormRulesV2 {
       ...(typeof r.label === 'string' && r.label.trim() ? { label: r.label } : {}),
       ...(typeof r.more === 'boolean' ? { more: r.more } : {}),
       ...(format ? { format } : {}),
+      ...(typeof r.defaultValue === 'string' && r.defaultValue.trim() ? { defaultValue: r.defaultValue.trim() } : {}),
     }
     if (Object.keys(rule).length) out[k] = rule
   }
@@ -172,25 +176,32 @@ export function saveGoodsSetting(p: FormPortal, v: GoodsSetting) {
 /* ------------------------------------------------------------- form layout ---- */
 
 /**
- * How the form LOOKS (owner, 2026-10-05: "give Ship To / Ship From in two options"), per portal like the goods
- * setting — Grow keeps only what differs from the console:
- *   address   'cards'  = a saved-address picker read back as a card, Add / Edit in a popup (the form until now)
+ * How the form LOOKS (owner, 2026-10-05: "give Ship To / Ship From in two options", then "individually configured,
+ * RTO also"), per portal like the goods setting — Grow keeps only what differs from the console:
+ *   shipFrom · shipTo · rto   each address on its own:
+ *             'cards'  = a saved-address picker read back as a card, Add / Edit in a popup (the form until now)
  *             'inline' = the fields on the form itself, under a search of the saved addresses
  *   services  (Grow) 'grid' = the lane's services as compact cards, two per row · 'list' = one full-width card each
+ * A stored layout from before the per-address split (`address`) applies to all three addresses.
  */
 export type AddressEntry = 'cards' | 'inline'
 export type ServiceLayout = 'grid' | 'list'
-export interface FormLayout { address: AddressEntry; services: ServiceLayout }
-export const DEFAULT_LAYOUT: FormLayout = { address: 'cards', services: 'grid' }
+export type AddressRole = 'shipFrom' | 'shipTo' | 'rto'
+export const ADDRESS_ROLES: AddressRole[] = ['shipFrom', 'shipTo', 'rto']
+export interface FormLayout { shipFrom: AddressEntry; shipTo: AddressEntry; rto: AddressEntry; services: ServiceLayout }
+export const DEFAULT_LAYOUT: FormLayout = { shipFrom: 'cards', shipTo: 'cards', rto: 'cards', services: 'grid' }
 export const LAYOUT_KEY = 'fe-consignment-form-v2-layout'
 export const LAYOUT_GROW_KEY = 'fe-consignment-form-v2-layout-grow'
+const isEntry = (v: unknown): v is AddressEntry => v === 'cards' || v === 'inline'
 const asLayout = (raw: unknown): Partial<FormLayout> => {
   if (!raw || typeof raw !== 'object') return {}
   const r = raw as Record<string, unknown>
-  return {
-    ...(r.address === 'cards' || r.address === 'inline' ? { address: r.address } : {}),
-    ...(r.services === 'grid' || r.services === 'list' ? { services: r.services } : {}),
-  }
+  const out: Partial<FormLayout> = {}
+  /* the first version stored one choice for every address */
+  if (isEntry(r.address)) for (const k of ADDRESS_ROLES) out[k] = r.address
+  for (const k of ADDRESS_ROLES) if (isEntry(r[k])) out[k] = r[k] as AddressEntry
+  if (r.services === 'grid' || r.services === 'list') out.services = r.services
+  return out
 }
 const readLayout = (key: string): Partial<FormLayout> => {
   try { return asLayout(JSON.parse(localStorage.getItem(key) ?? '{}')) } catch { return {} }
@@ -204,10 +215,8 @@ export function saveLayout(p: FormPortal, l: FormLayout) {
   try {
     if (p === 'console') { localStorage.setItem(LAYOUT_KEY, JSON.stringify(asLayout(l))); return }
     const base = loadLayout('console')
-    const diff: Partial<FormLayout> = {
-      ...(l.address !== base.address ? { address: l.address } : {}),
-      ...(l.services !== base.services ? { services: l.services } : {}),
-    }
+    const diff: Partial<FormLayout> = {}
+    for (const k of [...ADDRESS_ROLES, 'services'] as const) if (l[k] !== base[k]) Object.assign(diff, { [k]: l[k] })
     if (Object.keys(diff).length) localStorage.setItem(LAYOUT_GROW_KEY, JSON.stringify(diff))
     else localStorage.removeItem(LAYOUT_GROW_KEY)
   } catch { /* private mode */ }

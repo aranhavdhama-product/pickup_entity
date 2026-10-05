@@ -195,10 +195,15 @@ export default function ConsignmentOrderSettings() {
                   hint={section === FIELD_SECTIONS[0] ? 'Hidden fields leave both order forms; Required applies to the merchant portal\'s order form.' : undefined}>
                   {fields.map((f) => (
                     <SettingRow key={f.key} label={f.defaultLabel}
-                      hint={f.mandatory ? 'Always required' : f.dependsOn ? `Hidden with ${CONSIGNMENT_FIELDS.find((x) => x.key === f.dependsOn)?.defaultLabel ?? f.dependsOn}` : undefined}>
+                      hint={f.mandatory ? 'Always required'
+                        /* 2026-10-05: Service Type always has a value — hidden, every consignment gets the form's default service */
+                        : f.key === 'serviceType' ? 'Hidden = every consignment gets the default service (choose it in Customise the forms)'
+                        : f.dependsOn ? `Hidden with ${CONSIGNMENT_FIELDS.find((x) => x.key === f.dependsOn)?.defaultLabel ?? f.dependsOn}` : undefined}>
                       {f.mandatory
                         ? <span className="flex h-8 items-center text-[13px] text-ink-3">Required</span>
-                        : <OptionSelect options={RULES} value={ruleOf(rules, f.key)} onChange={(v) => setRules((r) => withRule(r, f.key, v))} />}
+                        : <OptionSelect options={f.key === 'serviceType' ? RULES.filter((o) => o.code !== 'required') : RULES}
+                            value={f.key === 'serviceType' && ruleOf(rules, f.key) === 'required' ? 'shown' : ruleOf(rules, f.key)}
+                            onChange={(v) => setRules((r) => withRule(r, f.key, v))} />}
                     </SettingRow>
                   ))}
                 </SectionCard>

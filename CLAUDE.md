@@ -284,12 +284,12 @@ Product changes layered on the replica (deliberate departures from the live port
   SKU-based (default) · SKUs, then packages (SKU list with a Package column, then the boxes) · Packages with
   their SKUs; Add SKU sits under its SKUs, Add Package under all packages. **Handling** is its own card (Order
   Category chips — each hideable — · Barcode · In parts · Clearance · Tags) between Package & SKU and **Service &
-  instructions**. Service Type is required (locked); Vehicle Type is optional. The footer carries the tier switch
+  instructions**. Service Type always has a value (hideable since 2026-10-05 — see Builder v3); Vehicle Type is optional. The footer carries the tier switch
   (**Switch to Simplified**, `console-consignment-form-v2-tier`): the original Simplified tier restyled — 3-column
   Consignment (window on the Ship By Date) · address cards · one Package & SKU table · Carriers; not customisable.
   **Form builder** ("Edit consignment form"): the live form is the preview — rename · Required · More (waits
   behind "More information", revealed IN PLACE) · hide, an eye for the hidden ones; locks = registry mandatory +
-  SKU / package weight + L × W × H + Service Type; v2-only keys Lift, Vehicle Type (optional), the VAS section and
+  SKU / package weight + L × W × H (Service Type unlocked 2026-10-05); v2-only keys Lift, Vehicle Type (optional), the VAS section and
   each Handling category; a block / card whose fields are all hidden leaves no gap; card captions live behind an ⓘ
   (local `FormCard` + `InfoTip`); row-adders are compact `+ Add SKU` links;
   address fields are customised inside the address popup. Rules live in `fe-consignment-form-v2-rules` over the shared config —
@@ -315,20 +315,34 @@ Product changes layered on the replica (deliberate departures from the live port
   asks is kept on Modify) and shown as **Additional details** in the console view and in the Grow view's Consignment
   details (Grow shows only fields its form shows). Entry points: the form's "Edit consignment form", and
   Settings → Consignment Order → Form Fields → **Customise the forms**.
-  **Builder v2 (2026-10-05, owner: "it has to be easy to use")** — click-to-select, the Apple inspector pattern: the
-  preview's fields are click targets (dashed frame, brand frame when selected; state as tags on the frame: Grow · Hidden ·
-  More · Format · lock), and a SIDE PANEL (sticky beside the preview from 1280 px, floating over it below) shows the
-  selected field's settings in plain words — Name on the form · Show on the form · Required · Put under "More" · What can
-  be typed (the Format editor, live, with Try it) · Remove field (own fields) · Use the console setting (Grow). Nothing
-  selected = **Form settings**: Addresses (Saved address cards | Fields on the form) · How goods are entered (moved here
-  from the package card) · Services (Grow: Grid | List), then **Fields** — every field by card in one searchable list
-  with a show / hide switch, + Add field (the dialog asks where). The old per-label icon tools and the Format dialog
-  are gone; Esc / Done closes a field. **Layout** = `formSetup.loadLayout/saveLayout` (`fe-consignment-form-v2-layout`,
-  Grow's differences in `…-layout-grow`): **Fields on the form** = each address typed in the card under a search of the
-  saved ones (name · number · address · company), CONTACT DETAILS / ADDRESS DETAILS in four columns, More address
-  details, "Save this address" (kept when the consignment is submitted or saved for later); the two ends stack (Ship From
-  above Ship To); a hub end stays a picker + card. Grow's **Grid** = the lane's services as compact radio cards two per
-  row (name + carrier · rate + Est. N days, nothing preselected, nothing collapses), `serviceCards.ServiceTypeChooser layout`.
+  **Builder v3 (2026-10-05, owner: "it has to be easy to use", then "I don't want the side bar — find another way — but
+  I love the idea")** — click-to-select: the preview's fields are click targets (dashed frame, brand frame when selected;
+  state as tags on the frame: Grow · Hidden · More · Format · lock) and a click opens that field's SETTINGS CARD right next
+  to it (`AnchoredCard`: portaled, below the field or above it, follows the scroll; outside click / Esc / Done closes) —
+  Name on the form · Show on the form · Required · Put under "More" · What can be typed (the Format editor, live, with Try
+  it) · Remove field (own fields) · Use the console setting (Grow). NO side panel: the form-level choices sit on the cards
+  they change — each address's **Entered as** Saved card | Fields on form (on Ship From, Ship To and the RTO address, each
+  its own), **How goods are entered** (the Package & SKU card), Grow's **Show as** Grid | List (its Service Type card) —
+  and the bar's **All fields** opens every field by card in one searchable dialog (a show / hide switch per field, the
+  picked field's settings beside the list, + Add field — the dialog asks where; the address card's "Address fields" link
+  opens it on Addresses). The old per-label icon tools and the Format dialog are gone. **Layout** =
+  `formSetup.loadLayout/saveLayout` (`fe-consignment-form-v2-layout` = `{ shipFrom, shipTo, rto, services }`, a stored
+  `address` from the first version applies to all three; Grow's differences in `…-layout-grow`): **Fields on form** = that
+  address typed in the card under a search of the saved ones (name · number · address · company), CONTACT DETAILS /
+  ADDRESS DETAILS in four columns, More address details, "Save this address" (kept when the consignment is submitted or
+  saved for later); any address on the form → the two ends stack (Ship From above Ship To); a hub end stays a picker +
+  card. Grow's **Grid** = the lane's services as compact radio cards two per row (name + carrier · rate + Est. N days,
+  nothing preselected, nothing collapses), `serviceCards.ServiceTypeChooser layout`.
+  **Service Type is hideable (2026-10-05, owner: "in Service Type I can't hide that field")** — it left `FORM_LOCKED`, so the
+  builder, the Form Fields tab (Shown | Hidden — no Required, it always has a value) and the older hides all reach the v2
+  forms. Hidden = nobody chooses: every consignment gets the field's **default service** (its rule's `defaultValue`, picked in
+  its settings card under "While it is hidden"; Grow follows the console unless it sets its own). Console: the default when it
+  is a known service, else Standard; `/new/vehicle`: the default when it is a vehicle service, else Inland FTL (vehicle rows
+  are fitted to its vehicles); a resumed draft / Modify / pickup request keeps its own service. Grow books from the Service
+  Type master's Active rows (its own if still bookable → the default → the first); Shared = no Service Type card (the footer
+  estimate names the service), Full vehicle = the card becomes **Vehicles** (`ServiceTypeChooser servicesHidden`: the count
+  steppers only); the builder preview keeps it, faded. The console's Service & instructions card leaves when everything in it
+  is hidden. The Simplified tier is not customisable — it still asks Service Type.
 - **Service Type has no Load type** (owner, 2026-09-29): `draft.loadTypeOf` returns `'both'` for every
   service, so Shared / Full vehicle is the booking's free choice on every form (the old form's Load type is no
   longer locked; Grow's service cards list every service in both modes); the Load type column / filter / form
