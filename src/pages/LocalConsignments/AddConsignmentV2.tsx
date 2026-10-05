@@ -3069,15 +3069,20 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   const SUBTITLE = 'Provide the order details to ensure accurate processing, routing, and billing of the shipment.'
   /* the builder's two forms — the console's, and the Grow portal's (the merchant form, previewed here) */
   const changedForGrow = growSetup ? Object.keys(draftRules).length : 0
+  /* a segment (CLAUDE.md: border-ink + bg-warm-50 for the chosen one), the explanation in a tooltip */
   const portalSwitch = (
-    <div role="radiogroup" aria-label="Which form" className="inline-flex shrink-0 rounded-md border border-line bg-surface p-0.5">
-      {([['console', 'Console', Monitor], ['grow', 'Grow portal', Store]] as const).map(([p, label, Icon]) => (
-        <button key={p} type="button" role="radio" aria-checked={formPortal === p} onClick={() => switchPortal(p)}
-          title={p === 'console' ? 'The console\'s Add Consignment' : 'The Grow merchant portal\'s Create Order'}
-          className={`inline-flex h-7 items-center gap-1.5 rounded px-3 text-[13px] transition-colors
-            ${formPortal === p ? 'bg-warm-50 font-bold text-ink shadow-ds-1' : 'text-ink-2 hover:text-ink'}`}>
-          <Icon size={14} className={formPortal === p ? 'text-brand-500' : 'text-warm-400'} />{label}
-        </button>
+    <div role="radiogroup" aria-label="Which form" className="inline-flex shrink-0 gap-1 rounded-lg border border-line bg-surface p-1">
+      {([
+        ['console', 'Console form', Monitor, 'What ops see on Add Consignment'],
+        ['grow', 'Grow portal form', Store, 'What merchants see on Create Order'],
+      ] as const).map(([p, label, Icon, hint]) => (
+        <Tip key={p} text={hint}>
+          <button type="button" role="radio" aria-checked={formPortal === p} onClick={() => switchPortal(p)}
+            className={`inline-flex h-8 items-center gap-1.5 rounded-md border px-3.5 text-[13px] transition-colors
+              ${formPortal === p ? 'border-ink bg-warm-50 font-bold text-ink' : 'border-transparent text-ink-2 hover:bg-warm-50'}`}>
+            <Icon size={14} />{label}
+          </button>
+        </Tip>
       ))}
     </div>
   )
@@ -3090,32 +3095,48 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
       </div>
     </div>
   ) : editing ? (
-    <div className="sticky top-0 z-40 mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-line bg-info-bg px-5 py-3 shadow-ds-1">
-      <SlidersHorizontal size={18} className="shrink-0 text-info-fg" />
-      <div className="min-w-0 flex-1">
-        <p className="flex flex-wrap items-center gap-x-2 text-[14px] font-bold text-ink">
-          {growSetup ? 'Editing the Grow portal form' : 'Editing the console form'}
-          <InfoTip text="Type over a label to rename it. ✱ Required · ☰ More information · .* Format checks what is typed · 👁 hide. + Add field adds your own field. A lock = needed by the system." />
-          {growSetup && changedForGrow > 0 && <span className="text-[12px] font-normal text-ink-2">· {changedForGrow} field{changedForGrow === 1 ? '' : 's'} changed for Grow</span>}
-        </p>
-        <p className="text-[13px] text-ink-2">
-          {growSetup
-            ? 'Follows the console form — what you change here applies to Grow only.'
-            : 'Changes also reach the Grow portal, unless Grow has its own setting.'}
-        </p>
+    /* the editing bar (owner, 2026-10-05: "needs a better UI") — two rows in one card: what is being edited and how to
+       finish it (Cancel / Save) above; which form, and the tools for the whole form, below. Row 2 rounds its own bottom
+       corners instead of the card clipping (overflow-hidden would cut off the ⓘ legend that opens over the card's edge). */
+    <div className="sticky top-0 z-40 mb-6 rounded-xl border border-line bg-surface shadow-ds-1">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-3 px-5 py-4">
+        <div className="flex min-w-0 flex-[1_1_360px] items-center gap-3">
+          <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-500">
+            <SlidersHorizontal size={18} />
+          </span>
+          <div className="min-w-0">
+            <p className="flex items-center gap-1.5 text-[15px] font-bold text-ink">
+              {growSetup ? 'Editing the Grow portal form' : 'Editing the console form'}
+              <InfoTip text="Type over a label to rename it. ✱ Required · ☰ More information · .* Format checks what is typed · 👁 hide. + Add field adds your own field. A lock = needed by the system." />
+            </p>
+            <p className="text-[13px] text-ink-2">
+              {growSetup
+                ? 'What merchants see on Create Order. It follows the console form — changes here are for Grow only.'
+                : 'What ops see on Add Consignment. Grow follows it, unless Grow has its own setting.'}
+            </p>
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-3">
+          {dirty && <span className="text-[12px] text-ink-3">Unsaved changes</span>}
+          <Button variant="outline" onClick={cancelEditing}>Cancel</Button>
+          <Button disabled={!dirty} onClick={() => saveEditing()}>Save changes</Button>
+        </div>
       </div>
-      {portalSwitch}
-      <button type="button" onClick={() => setShowHidden((v) => !v)} aria-pressed={showHidden}
-        title={showHidden ? 'Hide the hidden fields' : 'Show the hidden fields'} aria-label={showHidden ? 'Hide the hidden fields' : 'Show the hidden fields'}
-        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-line bg-surface text-ink-2 hover:bg-warm-50 hover:text-ink">
-        {showHidden ? <Eye size={16} /> : <EyeOff size={16} />}
-      </button>
-      {growSetup
-        ? <Button variant="ghost" icon={<RotateCcw size={14} />} disabled={changedForGrow === 0 && draftGoods === loadGoodsSetting('console')}
-            onClick={() => { setDraftRules({}); setDraftGoods(loadGoodsSetting('console')) }}>Match console form</Button>
-        : <Button variant="ghost" icon={<RotateCcw size={14} />} onClick={() => { setDraftRules({}); setDraftGoods(DEFAULT_GOODS_SETTING) }}>Reset to default</Button>}
-      <Button variant="outline" onClick={cancelEditing}>Cancel</Button>
-      <Button onClick={() => saveEditing()}>Save changes</Button>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-b-xl border-t border-line bg-warm-50 px-5 py-2.5">
+        {portalSwitch}
+        {growSetup && changedForGrow > 0 && (
+          <span className="rounded-full bg-brand-50 px-2.5 py-0.5 text-[12px] font-bold text-brand-600">{changedForGrow} changed for Grow</span>
+        )}
+        <div className="ml-auto flex flex-wrap items-center gap-x-4 gap-y-2">
+          <Tip text="Hidden fields stay in this preview, faded, so you can bring them back">
+            <InlineSwitch label="Show hidden fields" checked={showHidden} onChange={setShowHidden} />
+          </Tip>
+          {growSetup
+            ? <Button variant="ghost" size="sm" icon={<RotateCcw size={13} />} disabled={changedForGrow === 0 && draftGoods === loadGoodsSetting('console')}
+                onClick={() => { setDraftRules({}); setDraftGoods(loadGoodsSetting('console')) }}>Match console form</Button>
+            : <Button variant="ghost" size="sm" icon={<RotateCcw size={13} />} onClick={() => { setDraftRules({}); setDraftGoods(DEFAULT_GOODS_SETTING) }}>Reset to default</Button>}
+        </div>
+      </div>
     </div>
   ) : (
     <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
