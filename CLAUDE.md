@@ -240,7 +240,8 @@ Product changes layered on the replica (deliberate departures from the live port
   instructions** (Label Format · instructions · VAS in the lane's currency) · **Service Type LAST**
   (`serviceCards.ServiceTypeChooser hideMode`: the lane's rate cards show at once, vehicle cards with count steppers
   for Full vehicle, which also allows extra drops). The console form's saved customisation (`fe-consignment-form-v2-rules`:
-  hidden · labels · More · Required) applies to Grow too (owner, 2026-09-29), plus the Form Fields tab's Required.
+  hidden · labels · More · Required) applies to Grow too (owner, 2026-09-29), plus the Form Fields tab's Required —
+  unless the Grow portal form changes that field for Grow (2026-10-05, "Form setup" under Add Consignment v2).
   Sticky footer = the estimate · Go Back · Save for later · Continue to checkout (DRAFT_KEY → `/grow/orders/checkout`,
   a session draft is restored on Back). Package card (both portals): a chevron-only "more package details" at the END of
   the package's field row (level with the inputs), Add SKU on its own line below; a SKU's details toggle is a chevron only (words in the tooltip). The old `MerchantOrderForm` / `packageEditor` / `orderSummaryRail` are gone. Selected card = 2px brand
@@ -294,6 +295,26 @@ Product changes layered on the replica (deliberate departures from the live port
   address fields are customised inside the address popup. Rules live in `fe-consignment-form-v2-rules` over the shared config —
   never changes `/add`, Grow or the list. Errors only after an Add Order attempt. OWNER EXCEPTION to the
   type-scale rule, this form only: local SFld (13px ink labels) and a 24px row gap.
+  **Form setup — Console vs Grow, Format, own fields (2026-10-05)**, pure module `LocalConsignments/formSetup.ts`:
+  the builder edits ONE of two forms, switched in its bar (**Console | Grow portal**): `?edit=console` /
+  `?edit=grow` on `/local/consignments/new` (the Grow one mounts the merchant form itself as its preview; Save /
+  Cancel return to the plain console form; unsaved changes → "Save and switch" dialog). Grow FOLLOWS the console
+  form field by field: `fe-consignment-form-v2-rules-grow` holds only what differs (`growRules()` overlay; a "Grow ↺"
+  chip on a changed field reverts it; **Match console form** clears them), so a console change still reaches Grow
+  unless Grow set that field itself; MERCHANT_OFF fields never show on Grow, preview included. "How goods are
+  entered" may differ too (`…-goods-grow`, kept only while it differs). Field tools are compact icons with
+  tooltips (✱ Required · ☰ More · `.*` **Format** · eye · trash for own fields; lock = system). **Format** = what may
+  be typed in a text field (`FORMATABLE` + own Text fields, locked identifiers included; Contact Number via key
+  `addrContact`): preset (numbers / letters / letters+numbers / code / email / phone) or a custom regular
+  expression, optional min / max length, own message, a "Try it" box; checked on both forms, its message shows once
+  the field is left (not only after Add Order); the address card says "Check the format: …". **+ Add field** (in
+  Consignment details, Handling, Service & instructions — Grow: its Service & instructions card) adds the account's
+  own field: Text · Number · Date · List · Yes / No, Required, "Also show it on the other form" (on by default).
+  Definitions = ONE list `fe-consignment-form-v2-custom` (`cf:<id>` keys, rules per portal); answers are stored on the
+  consignment as a snapshot `consignment.customFields` (`{ key, label, value, kind }`; an answer the form no longer
+  asks is kept on Modify) and shown as **Additional details** in the console view and in the Grow view's Consignment
+  details (Grow shows only fields its form shows). Entry points: the form's "Edit consignment form", and
+  Settings → Consignment Order → Form Fields → **Customise the forms**.
 - **Service Type has no Load type** (owner, 2026-09-29): `draft.loadTypeOf` returns `'both'` for every
   service, so Shared / Full vehicle is the booking's free choice on every form (the old form's Load type is no
   longer locked; Grow's service cards list every service in both modes); the Load type column / filter / form

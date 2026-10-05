@@ -31,6 +31,7 @@ import type { GrowOrder, Party } from '../../growOrders/types'
 import { stateTone, type LocalConsignmentRow } from '../LocalPFP/adapter'
 import { planningActions, usePlanning } from '../LocalPFP/planningStore'
 import { dash, stamp } from '../LocalPFP/overlayFormat'
+import { customValueText } from './formSetup'
 import {
   attemptsOf, eventsOf, loadsOf, merchantEventsOf, piecesOf, skuLinesOf, vasLinesOf,
   type AttemptOutcome, type AttemptView, type EventGroup, type PieceView,
@@ -324,6 +325,12 @@ function OrderSection({ row, o, scheduled }: { row: LocalConsignmentRow; o: Grow
           ['Total Loading Time', c?.totalLoadingTime ? `${c.totalLoadingTime} min` : '—'],
         ]} />
       </FoldCard>
+      {/* the account's own form fields (consignment form builder, 2026-10-05) — as they were asked */}
+      {(c?.customFields ?? []).length > 0 && (
+        <FoldCard title="Additional details">
+          <Pairs pairs={(c?.customFields ?? []).map((f) => [f.label, customValueText(f.kind, f.value)])} />
+        </FoldCard>
+      )}
       <FoldCard title="Ship From">
         <Pairs pairs={partyPairs(o.sender, 'Sender Name', 'Planned Pickup Date/Time', row.pickupWindow?.start ?? '', 'Pickup Timezone', row.shipFromCode ?? '')} />
       </FoldCard>

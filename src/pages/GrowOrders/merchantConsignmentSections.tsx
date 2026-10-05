@@ -22,6 +22,7 @@ import type { GrowOrder, Party } from '../../growOrders/types'
 import { vehiclesOf, type Parcel } from '../../growOrders/draft'
 import { deliveryDate, quoteService, vasPrice, volumetricKg, type RateCurrency } from '../../growOrders/rates'
 import { stamp } from '../LocalPFP/overlayFormat'
+import { customFieldShown, customValueText } from '../LocalConsignments/formSetup'
 import type { ReadSection } from '../LocalConsignments/ConsignmentView'
 import { MGrid, MSection } from './merchantFormBits'
 import { RateCard } from './serviceCards'
@@ -126,6 +127,9 @@ export function merchantReadSections(row: ShipmentRow, o: GrowOrder): ReadSectio
           ['Barcode labels on boxes', yes(c.scannable)], ['Can be delivered in parts', yes(c.splittable)],
           ['Scheduling Confirmation Required', yes(c.schedulingConfirmation)], ['Clearance Required', yes(c.clearanceRequired)],
           ['Special instructions', instructions, true],
+          /* the account's own fields — only those the Grow portal form shows */
+          ...(c.customFields ?? []).filter((f) => customFieldShown(f.key, 'grow'))
+            .map((f): [string, Val] => [f.label, customValueText(f.kind, f.value)]),
         ])}
       </MSection>
     ),

@@ -14,6 +14,8 @@
  * Types, Modify-till and On Page Filters are stored only. The Form Fields tab (2026-09-25) writes
  * Shown / Required / Hidden per optional form field into `fe-consignment-form-behavior`
  * (ConsignmentAdd/fieldConfig): hides reach both order forms, Required the Grow merchant form.
+ * 2026-10-05: the tab opens with "Customise the forms" — the way into the form builder for the Console form and the
+ * Grow portal form (`/local/consignments/new?edit=console|grow`: Format checks, own fields, Grow-only changes).
  */
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -33,6 +35,7 @@ import {
   CONSIGNMENT_FIELDS, FIELD_SECTIONS, cacheFormBehavior, loadFormBehavior, type FormBehavior,
 } from '../ConsignmentAdd/fieldConfig'
 import { OptionSelect, SectionCard, SettingRow, ToggleField } from './settingsRows'
+import { loadCustomFields, loadRules } from '../LocalConsignments/formSetup'
 
 const TABS = ['General', 'Date Filter', 'Table Configuration', 'On Page Filters', 'Form Fields']
 
@@ -85,6 +88,8 @@ export default function ConsignmentOrderSettings() {
   /* the store turns an empty column list back into the defaults — block that save instead */
   const noColumns = draft.enabled && draft.tableColumns.length === 0
 
+  /* what the form builder holds today (read once — the builder is another page) */
+  const [formSetup] = useState(() => ({ custom: loadCustomFields().length, growChanges: Object.keys(loadRules('grow')).length }))
   const columnLabel = (k: string) => orderViewTitle(k, CONSIGNMENT_COLUMN_LABELS[k] ?? k, viewOnOrder)
   const filterLabel = (k: string) => orderViewTitle(k, CONSIGNMENT_FILTER_LABELS[k] ?? k, viewOnOrder)
   const toggleUserType = (u: string, on: boolean) =>
@@ -172,6 +177,16 @@ export default function ConsignmentOrderSettings() {
               </SectionCard>
             )}
 
+            {tab === 4 && (
+              <SectionCard title="Customise the forms" hint="Open a form to rename, require or hide its fields, check what is typed (Format) and add your own fields.">
+                <SettingRow label="Console form" hint={`What ops see on Add Consignment${formSetup.custom ? ` · ${formSetup.custom} own field${formSetup.custom === 1 ? '' : 's'}` : ''}`}>
+                  <Button variant="outline" onClick={() => navigate('/local/consignments/new?edit=console')}>Edit console form</Button>
+                </SettingRow>
+                <SettingRow label="Grow portal form" hint={`What merchants see on Create Order — follows the console form${formSetup.growChanges ? ` · ${formSetup.growChanges} field${formSetup.growChanges === 1 ? '' : 's'} changed for Grow` : ' unless you change it for Grow'}`}>
+                  <Button variant="outline" onClick={() => navigate('/local/consignments/new?edit=grow')}>Edit Grow portal form</Button>
+                </SettingRow>
+              </SectionCard>
+            )}
             {tab === 4 && FIELD_SECTIONS.map((section) => {
               const fields = CONSIGNMENT_FIELDS.filter((f) => f.section === section && !NOT_LISTED.has(f.key))
               if (!fields.length) return null

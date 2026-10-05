@@ -152,6 +152,16 @@ export interface ConsignmentFields {
   /** customer → another hub's facility, one vehicle picks and delivers (case 7) */
   directPickAndDeliver?: boolean
   packages?: ConsignmentPackage[]
+  /** the account's own fields (consignment form builder, 2026-10-05) — a snapshot of what was asked, with its label */
+  customFields?: CustomFieldValue[]
+}
+
+/** One custom field's answer on a consignment. `value` is the typed text; a Yes / No field stores 'true' | 'false'. */
+export interface CustomFieldValue {
+  key: string
+  label: string
+  value: string
+  kind?: 'text' | 'number' | 'date' | 'list' | 'yesno'
 }
 
 export interface OrderDraft {
