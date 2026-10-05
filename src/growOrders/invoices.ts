@@ -39,7 +39,8 @@ export function invoicesOf(ledger: LedgerEntry[], postpaid: boolean, now = new D
     const status: InvoiceStatus = pending.length ? 'Due' : !postpaid ? 'Paid' : month >= thisM ? 'Open' : month === lastM ? 'Due' : 'Paid'
     return {
       id: `INV-${month.replace('-', '')}-${curCode(currency)}`, month, label: monthLabel(month), currency, entries: es,
-      consignments: es.reduce((n, e) => n + e.orderIds.length, 0),
+      /* one consignment paid in parts (wallet + card …) is several entries but still ONE consignment */
+      consignments: new Set(es.flatMap((e) => e.orderIds)).size,
       shipping: r2(es.reduce((n, e) => n + e.shipping, 0)), tax: r2(es.reduce((n, e) => n + e.tax, 0)),
       total: r2(es.reduce((n, e) => n + e.amount, 0)), status, pendingIds: pending.map((e) => e.id), pendingTotal: r2(pending.reduce((n, e) => n + e.amount, 0)), estimated: es.some((e) => e.estimated), dueOn: dueOf(month),
     }
