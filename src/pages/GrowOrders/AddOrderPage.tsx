@@ -1444,18 +1444,18 @@ export default function AddOrderPage() {
      px-3 padding ate most of a narrow column regardless of its track width. No per-cell
      "cm"/"kg" tags either (the header already says so) — those were quietly stealing
      width back from the one thing meant to be narrow. */
-  const PKG_COLS = `minmax(130px,170px) 56px minmax(90px,1fr) 3ch${hid('pkgDimensions') ? '' : ' 4ch 4ch 4ch'} 56px`
+  const PKG_COLS = `minmax(130px,170px) 56px minmax(90px,1fr) 7ch${hid('pkgDimensions') ? '' : ' 4ch 4ch 7ch'} 56px`
   const SKU_COLS = `minmax(100px,120px) minmax(100px,140px) 52px${hid('skuDescription') ? '' : ' minmax(90px,120px)'} minmax(80px,100px) minmax(90px,120px)${hid('skuUnitCost') ? '' : ' 7ch'}${hid('skuDimensions') ? '' : ' 120px'}${hid('skuWeight') ? '' : ' 80px'} 32px`
   const packageSection = (
     <div id="sec-package" className="scroll-mt-20">
       <SectionCard title="Packages" done={doneOf['sec-package']} icon={<PackageIcon size={15} className={ICON} />}
-        caption="Add the packages in this consignment. A package can ship as-is, or you can optionally list what's inside it. Dimensions are in cm, weight in kg.">
+        caption="Add the packages in this consignment. A package can ship as-is, or you can optionally list what's inside it.">
         <div className="overflow-x-auto rounded-md border border-line">
           <div style={{ gridTemplateColumns: PKG_COLS }} className="grid min-w-max gap-2 border-b border-line bg-warm-50 px-3 py-2 text-[12px] font-bold text-ink-3">
             <span>Package Type<span className="text-brand-500">*</span></span>
             <span>Count<span className="text-brand-500">*</span></span>
             <span>Item Info</span>
-            <span>Weight (kg)<span className="text-brand-500">*</span></span>
+            <span>Weight<span className="text-brand-500">*</span></span>
             {!hid('pkgDimensions') && <><span>L</span><span>W</span><span>H</span></>}
             <span />
           </div>
@@ -1471,12 +1471,12 @@ export default function AddOrderPage() {
                   </div>
                   <NumBox value={p.quantity} min={1} integer onChange={(n) => setParcel(i, { quantity: n })} />
                   <Input value={p.itemInfo} placeholder="eg, Electronics" onChange={(v) => setParcel(i, { itemInfo: v })} />
-                  <MiniNumBox value={p.weight} error={reqErr(p.weight > 0)}
+                  <MiniNumBox value={p.weight} unit="kg" error={reqErr(p.weight > 0)}
                     onChange={(n) => setParcel(i, { weight: n, weightMode: 'manual' })} />
                   {!hid('pkgDimensions') && <>
                     <MiniNumBox value={p.l} placeholder="L" error={reqErr(p.l > 0)} onChange={(n) => setParcel(i, { l: n })} />
                     <MiniNumBox value={p.w} placeholder="W" error={reqErr(p.w > 0)} onChange={(n) => setParcel(i, { w: n })} />
-                    <MiniNumBox value={p.h} placeholder="H" error={reqErr(p.h > 0)} onChange={(n) => setParcel(i, { h: n })} />
+                    <MiniNumBox value={p.h} placeholder="H" unit="cm" error={reqErr(p.h > 0)} onChange={(n) => setParcel(i, { h: n })} />
                   </>}
                   <div className="flex items-center justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
                     <button type="button" title="Duplicate package" aria-label={`Duplicate package ${i + 1}`}
