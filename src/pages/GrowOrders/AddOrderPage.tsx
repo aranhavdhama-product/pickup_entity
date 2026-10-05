@@ -54,7 +54,7 @@ import {
 } from '../../nueva/components'
 import { DateTimeRangeInput } from '../../nueva/DateRangeFilter'
 import {
-  ChipToggle, Fld, Grid, InlineToggle, SectionCard, Segmented, SubHead, UnitBox,
+  ChipToggle, Fld, Grid, InlineToggle, SectionCard, SubHead, UnitBox,
 } from '../../components/consignmentForm'
 import { money, OTHER_ADDRESS, partyLine, partyOk, prWindow, storeOptionLabel } from './utils'
 import { earliestWindow, pickupPolicy } from '../../growOrders/pickupSlots'
@@ -1259,40 +1259,45 @@ export default function AddOrderPage() {
       )}
     </>
   )
-  /* RTO is never its own widget in either layout — a small label and the same-as-Ship-From
-     flag, folded into Ship From's own card (an address only when it differs). */
-  const rtoContent = (
-    <div className="border-t border-line pt-4">
-      <p className="mb-2 flex items-center gap-1.5 text-[12px] font-bold text-ink-3"><Undo2 size={13} /> Return To Origin</p>
-      <Segmented compact options={RTO_MODES} value={c.rtoMode ?? RTO_MODES[0]} onChange={(m) => setC({ rtoMode: m })} />
-      {c.rtoMode === RTO_MODES[1] && (
-        <div className="mt-5">
-          {addressLayout === 'searchFirst' ? (
-            <AddressCard party={rto} missing={missingOf(rto, 'rto')} onEdit={() => setAddrEdit({ role: 'rto', idx: 0 })} />
-          ) : (
-            <PartyFields party={rto} set={(p) => setRto((x) => ({ ...x, ...p }))} nameLabel="Name" windowLabel={null} hid={hid} req={req}
-              showErrors={showErrors} floorLift={false} advancedDefaultOpen={advancedDefaultOpen}
-              locationCode={<F label="Location Code" value={rto.locationCode ?? ''} placeholder="eg, Williamstown"
-                options={pickup.options.filter((o) => o.value !== OTHER_ADDRESS)}
-                onChange={(code) => {
-                  const st = stores.find((s) => s.code === code)
-                  setRto(st ? { ...st.party, locationCode: code } : (x) => ({ ...x, locationCode: code }))
-                }} />} />
-          )}
-        </div>
+  /* RTO is never its own widget in either layout, and the flag itself is a single compact
+     switch now, not a page-width Segmented control (two long option labels). Type-first
+     puts the flag in the card's own header — there's no address below it to show unless
+     RTO differs, so the default case costs the body no height at all. */
+  const rtoToggle = (
+    <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-[12.5px] font-bold text-ink-2">
+      <Undo2 size={13} className="shrink-0 text-ink-3" />
+      Different RTO
+      <Toggle checked={(c.rtoMode ?? RTO_MODES[0]) === RTO_MODES[1]}
+        onChange={(v) => setC({ rtoMode: v ? RTO_MODES[1] : RTO_MODES[0] })} />
+    </label>
+  )
+  const rtoExpanded = c.rtoMode !== RTO_MODES[1] ? null : (
+    <div className="mt-5 border-t border-line pt-4">
+      {addressLayout === 'searchFirst' ? (
+        <AddressCard party={rto} missing={missingOf(rto, 'rto')} onEdit={() => setAddrEdit({ role: 'rto', idx: 0 })} />
+      ) : (
+        <PartyFields party={rto} set={(p) => setRto((x) => ({ ...x, ...p }))} nameLabel="Name" windowLabel={null} hid={hid} req={req}
+          showErrors={showErrors} floorLift={false} advancedDefaultOpen={advancedDefaultOpen}
+          locationCode={<F label="Location Code" value={rto.locationCode ?? ''} placeholder="eg, Williamstown"
+            options={pickup.options.filter((o) => o.value !== OTHER_ADDRESS)}
+            onChange={(code) => {
+              const st = stores.find((s) => s.code === code)
+              setRto(st ? { ...st.party, locationCode: code } : (x) => ({ ...x, locationCode: code }))
+            }} />} />
       )}
     </div>
   )
 
   /* Ship From — its own widget (Type-first only; Search-first embeds shipFromContent in the
-     combined card below instead). RTO folds in as a small label + flag either way. */
+     combined card below instead). The RTO flag rides in the header's own action slot —
+     space that would otherwise just sit empty when not mid-edit. */
   const shipFromSection = (
     <SectionCard id="sec-ship-from" title="Ship From" done={done(fromReq) && done(rtoReq)}
       icon={<Warehouse size={15} className={ICON} />}
       caption="Provide the pickup address and contact details for this consignment."
-      action={editFrom ? saveSenderToggle : undefined}>
+      action={<div className="flex items-center gap-3">{editFrom && saveSenderToggle}{rtoToggle}</div>}>
       {shipFromContent}
-      <div className="mt-5">{rtoContent}</div>
+      {rtoExpanded}
     </SectionCard>
   )
 
@@ -1384,7 +1389,8 @@ export default function AddOrderPage() {
         <div id="sec-ship-from" className="min-w-0 lg:pr-8">
           <SubHead label="Ship From" first />
           {shipFromContent}
-          <div className="mt-5">{rtoContent}</div>
+          <div className="mt-5">{rtoToggle}</div>
+          {rtoExpanded}
         </div>
         <div id="sec-ship-to" className="min-w-0 border-t border-line pt-8 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
           <SubHead label="Ship To" first />
