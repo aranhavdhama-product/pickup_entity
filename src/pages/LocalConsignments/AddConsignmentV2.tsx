@@ -801,7 +801,7 @@ function FormCard({ id, title, caption, count, action, children }: {
   return (
     <section id={id} className="scroll-mt-20 rounded-xl bg-surface p-6">
       {(title || action) && (
-        <div className="mb-5 flex min-h-6 items-center justify-between gap-4">
+        <div className="mb-6 flex min-h-6 items-center justify-between gap-4">
           {title && (
             <h2 className="flex items-center gap-2 text-[15px] font-bold text-ink">
               {title}
@@ -836,7 +836,7 @@ function Grid2({ children, className = '' }: { children: ReactNode; className?: 
 /** A small bold heading inside a card, with an optional control on its right. */
 function SubTitle({ children, right }: { children: ReactNode; right?: ReactNode }) {
   return (
-    <div className="mb-5 flex min-h-8 items-center justify-between gap-3">
+    <div className="mb-4 flex min-h-8 items-center justify-between gap-3">
       <span className="text-[14px] font-bold text-ink">{children}</span>
       {right}
     </div>
@@ -2128,7 +2128,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     const p = partyOf(role, idx)
     const w = role === 'from' ? 'Pick Up' : 'Delivery'
     return (
-      <Grid2 className="mt-5">
+      <Grid2 className="mt-6">
         <DateTimeCell label={`${w} Start Time`} at={p.windowStart ?? ''} fallbackTime="00:00" onChange={(v) => patchParty(role, idx)({ windowStart: v })} />
         <DateTimeCell label={`${w} End Time`} at={p.windowEnd ?? ''} fallbackTime="23:59" onChange={(v) => patchParty(role, idx)({ windowEnd: v })} />
       </Grid2>
@@ -2283,13 +2283,13 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   }
   /* Grow: the pickup window under Ship From, as the pickup module says */
   const merchantPickupWindow = pickupState === 'auto-rule' ? (autoWin && (
-    <p className="mt-5 flex flex-wrap items-center gap-x-1.5 rounded-lg bg-warm-50 px-4 py-3 text-[13px] text-ink-2">
+    <p className="mt-6 flex flex-wrap items-center gap-x-1.5 rounded-lg bg-warm-50 px-4 py-3 text-[13px] text-ink-2">
       <b className="text-ink">Pickup is booked automatically</b>
       <span>· {fmtWin(autoWin)} ({autoRuleText})</span>
       {pickupCfg.autoPickup.slotConfirmation && <span>· you will be asked to confirm the slot</span>}
     </p>
   )) : pickupState === 'auto-ask' || (pickupState === 'manual' && !hid('addrWindow')) ? (
-    <div className="mt-5">
+    <div className="mt-6">
       <div className="mb-2 flex items-center gap-3">
         <span className="text-[13px] text-ink">
           {askWindow || need('addrWindow') ? <>Pickup window<span className="text-danger-fg">&nbsp;*</span></> : 'Pickup window (optional)'}
@@ -2316,7 +2316,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
           {addressSlot('from', 0, 'Ship From')}
           {merchantMode ? merchantPickupWindow : windowCells('from', 0)}
           {typeRule.rto && (
-            <div className="mt-5">
+            <div className="mt-6">
               <InlineSwitch label="RTO address same as Ship From address" title="If it can't be delivered, it comes back to the Ship From address"
                 checked={(c.rtoMode ?? RTO_MODES[0]) === RTO_MODES[0]} onChange={(same) => setC({ rtoMode: same ? RTO_MODES[0] : RTO_MODES[1] })} />
             </div>
@@ -2335,7 +2335,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
           ))}
           {/* scheduling is about the DELIVERY — asked beside its window */}
           {!hid('schedulingConfirmation') && (
-            <div className="mt-5"><Configurable fieldKey="schedulingConfirmation">
+            <div className="mt-6"><Configurable fieldKey="schedulingConfirmation">
               <InlineSwitch label={lbl('schedulingConfirmation')} title={SWITCH_HINTS.schedulingConfirmation} checked={!!c.schedulingConfirmation} onChange={(v) => setC({ schedulingConfirmation: v })} />
             </Configurable></div>
           )}
@@ -2376,7 +2376,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
         })}
       </div>}
       {/* row 2 — how the boxes travel, and their tags; every control on one baseline */}
-      {handlingTogglesVisible && <div className={`${handlingChipsVisible ? 'mt-5' : ''} ${HANDLING_ROW}`}>
+      {handlingTogglesVisible && <div className={`${handlingChipsVisible ? 'mt-6' : ''} ${HANDLING_ROW}`}>
         {!hid('scannable') && (
           <Configurable fieldKey="scannable">
             <InlineSwitch label={custom('scannable', 'Scannable', 'Barcode on every box')} title={SWITCH_HINTS.scannable}
@@ -2784,7 +2784,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   /* owner, 2026-09-29: a block whose fields are all hidden leaves no divider and no space */
   const extrasVisible = extrasReveal.nodes.length > 0 || extrasReveal.waiting > 0 || !hid('vas')
   const extrasSection = !extrasVisible ? null : (
-    <div className="mt-8 border-t border-warm-200 pt-6">
+    <div className="mt-8 border-t border-warm-200 pt-8">
       {extrasReveal.nodes}
       <RevealToggle open={secOpen('sec-service')} onToggle={() => toggleSec('sec-service')} waiting={extrasReveal.waiting} waitingFilled={extrasReveal.waitingFilled} className="mt-4" />
       {!hid('vas') && (
@@ -2908,7 +2908,8 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   /* ============================================================ Grow (merchant): the console's Handling card with the
      load type asked in it · Service & instructions (label, note, VAS) · Service Type (the lane's cards, LAST) */
   const loadTypeField = (
-    <div className="grid grid-cols-1 gap-x-6 sm:grid-cols-2 lg:grid-cols-4 lg:pr-10">
+    /* pb-5: the helper under the control hangs 20px below it — kept inside the card's padding, not eating it */
+    <div className="grid grid-cols-1 gap-x-6 pb-5 sm:grid-cols-2 lg:grid-cols-4 lg:pr-10">
       <F label="Load type" required value={mode === 'ftl' ? 'ftl' : 'ltl'}
         options={[{ value: 'ltl', label: 'Shared vehicle (LTL / LCL)' }, { value: 'ftl', label: 'Full vehicle (FTL / FCL)' }]}
         disabled={!!fromOverage || pr?.shipmentType === 'FTL'}
@@ -3087,7 +3088,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     </div>
   )
   const builderBar = merchantMode && !editing ? (
-    <div className="mb-5 flex items-start gap-3">
+    <div className="mb-6 flex items-start gap-3">
       {backBtn}
       <div className="min-w-0">
         <h1 className="text-[18px] font-bold leading-8 text-ink">Create Order</h1>
@@ -3139,7 +3140,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
       </div>
     </div>
   ) : (
-    <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
+    <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
       <div className="flex min-w-0 items-start gap-3">
       {backBtn}
       <div className="min-w-0">
@@ -3184,12 +3185,12 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
         </div>
       )}
 
-      <div className="grid min-w-0 gap-5">
+      <div className="grid min-w-0 gap-6">
         {sections.map((id) => <div key={id} className="min-w-0">{byId[id]}</div>)}
       </div>
 
       {/* sticky footer — the form switch (owner, 2026-09-29: where the section strip was), then Go Back + Add Order */}
-      <div className="sticky bottom-0 z-30 mt-5 flex items-center gap-x-4 rounded-xl border border-warm-200 bg-surface px-5 py-3 shadow-ds-1">
+      <div className="sticky bottom-0 z-30 mt-6 flex items-center gap-x-4 rounded-xl border border-warm-200 bg-surface px-6 py-3 shadow-ds-1">
         {merchantMode ? (
           /* Grow: the estimate for what is on screen (checkout confirms it) */
           <div className="min-w-0 text-[13px]">
