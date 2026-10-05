@@ -35,7 +35,7 @@ import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   ChevronDown, ChevronRight, CircleDot, CircleMinus, ClipboardList, Copy, CreditCard, FileCheck,
-  Package, Package as PackageIcon, Pencil, Plus, ScanBarcode, Truck, Undo2, User,
+  Package, Package as PackageIcon, Plus, ScanBarcode, Truck, Undo2, User,
   Wallet as WalletIcon, Warehouse, X,
 } from 'lucide-react'
 import { blankParty, CURRENCY } from '../../growOrders/seed'
@@ -49,7 +49,7 @@ import {
 import { ORIGIN_COUNTRIES } from '../../data/originCountries'
 import { toast } from '../../nueva/toast'
 import {
-  Button, Checkbox, DateInput, IconButton, Input, MenuSelect, Modal, MultiSelect, MultiSelectDropdown, PageHeader, Panel,
+  Button, Checkbox, DateInput, Input, MenuSelect, Modal, MultiSelect, MultiSelectDropdown, PageHeader, Panel,
   SearchInput, StatusPill, Toggle,
 } from '../../nueva/components'
 import { DateTimeRangeInput } from '../../nueva/DateRangeFilter'
@@ -1238,13 +1238,15 @@ export default function AddOrderPage() {
         </>
       ) : !editFrom ? (
         <>
-          <div className="flex items-start gap-3 rounded-lg border border-line bg-warm-25 px-4 py-3">
-            <Warehouse size={16} className="mt-0.5 shrink-0 text-warm-400" />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-[13px] font-bold text-ink">{sender.city || sender.name || <span className="font-normal text-ink-3">No pickup location yet</span>}</p>
-              <p className="mt-0.5 flex items-center gap-1.5 truncate text-[12.5px] text-ink-3"><User size={13} className="shrink-0" /> {sender.contactNumber || sender.name || '—'}</p>
+          {/* stretched: the picker and the compact address side by side, not stacked —
+              there's no neighbouring RTO card left to share the row with */}
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
+            <div className="sm:w-[300px] sm:shrink-0">
+              <PickupSearch options={senderOptions} onPick={pickSender} />
             </div>
-            <IconButton icon={<Pencil size={14} />} title="Edit Ship From" onClick={() => setEditFrom(true)} />
+            <div className="min-w-0 flex-1">
+              <AddressCard party={sender} missing={missingOf(sender, 'from')} onEdit={() => setEditFrom(true)} />
+            </div>
           </div>
           {showErrors && !done(fromReq) && <p className="mt-1 text-[12.5px] text-brand-500">Ship From is incomplete — edit it</p>}
         </>
@@ -1257,19 +1259,11 @@ export default function AddOrderPage() {
       )}
     </>
   )
-  /* Ship From — its own widget (Type-first only; Search-first embeds shipFromContent in the
-     combined card below instead). */
-  const shipFromSection = (
-    <SectionCard id="sec-ship-from" title="Ship From" done={done(fromReq)}
-      icon={<Warehouse size={15} className={ICON} />}
-      caption="Provide the pickup address and contact details for this consignment."
-      action={editFrom ? saveSenderToggle : undefined}>
-      {shipFromContent}
-    </SectionCard>
-  )
-
+  /* RTO is never its own widget in either layout — a small label and the same-as-Ship-From
+     flag, folded into Ship From's own card (an address only when it differs). */
   const rtoContent = (
-    <>
+    <div className="border-t border-line pt-4">
+      <p className="mb-2 flex items-center gap-1.5 text-[12px] font-bold text-ink-3"><Undo2 size={13} /> Return To Origin</p>
       <Segmented compact options={RTO_MODES} value={c.rtoMode ?? RTO_MODES[0]} onChange={(m) => setC({ rtoMode: m })} />
       {c.rtoMode === RTO_MODES[1] && (
         <div className="mt-5">
@@ -1287,26 +1281,28 @@ export default function AddOrderPage() {
           )}
         </div>
       )}
-    </>
+    </div>
   )
-  /* RTO — its own widget (Type-first only; Search-first embeds rtoContent under Ship From in the
-     combined card below instead, same as Aranhav's layout does). */
-  const rtoSection = (
-    <SectionCard id="sec-rto" title="Return To Origin (RTO)" done={done(rtoReq)}
-      icon={<Undo2 size={15} className={ICON} />}
-      caption="Provide the return-to-origin address and contact details for this consignment.">
-      {rtoContent}
+
+  /* Ship From — its own widget (Type-first only; Search-first embeds shipFromContent in the
+     combined card below instead). RTO folds in as a small label + flag either way. */
+  const shipFromSection = (
+    <SectionCard id="sec-ship-from" title="Ship From" done={done(fromReq) && done(rtoReq)}
+      icon={<Warehouse size={15} className={ICON} />}
+      caption="Provide the pickup address and contact details for this consignment."
+      action={editFrom ? saveSenderToggle : undefined}>
+      {shipFromContent}
+      <div className="mt-5">{rtoContent}</div>
     </SectionCard>
   )
 
-  /* side by side while both are in their compact state (the common case) — cuts page
-     height since a collapsed Ship From card and the RTO segmented control are both
-     narrow. Either expanding to a full address form drops back to full-width stacking
-     so the 4-column field grid isn't squeezed into a half-width column. Type-first only. */
+  /* Ship From — one full-width widget regardless of layout now that RTO folds into it;
+     Type-first additionally shows the picker and the compact address side by side once
+     something is picked, instead of stacking them (there's no neighbouring RTO card left
+     to share the row width with). */
   const shipFromRtoRow = (
-    <div id="sec-ship-from-rto" className={`scroll-mt-20 grid gap-5 ${!editFrom && c.rtoMode !== RTO_MODES[1] ? 'lg:grid-cols-2 lg:items-stretch' : ''}`}>
+    <div id="sec-ship-from-rto" className="scroll-mt-20">
       {shipFromSection}
-      {rtoSection}
     </div>
   )
 
@@ -1388,7 +1384,7 @@ export default function AddOrderPage() {
         <div id="sec-ship-from" className="min-w-0 lg:pr-8">
           <SubHead label="Ship From" first />
           {shipFromContent}
-          <div className="mt-7">{rtoContent}</div>
+          <div className="mt-5">{rtoContent}</div>
         </div>
         <div id="sec-ship-to" className="min-w-0 border-t border-line pt-8 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
           <SubHead label="Ship To" first />
