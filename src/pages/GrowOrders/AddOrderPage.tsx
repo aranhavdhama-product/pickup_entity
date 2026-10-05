@@ -438,25 +438,30 @@ function Tick({ checked, onChange, children, sub }: { checked: boolean; onChange
   )
 }
 
-/** Country Code + Contact Number side by side in one grid cell, as the console address block draws them. */
+/** Country Code + Contact Number fused into one bordered control under a single
+ *  "Contact Number" header — the code dropdown and the number share one pill,
+ *  split by a single hairline, so only the outer box carries a border/focus ring. */
 function PhoneField({ label, required, code, number, onCode, onNumber, disabled, error }: {
   label: string; required?: boolean; code: string; number: string
   onCode: (v: string) => void; onNumber: (v: string) => void; disabled?: boolean; error?: string
 }) {
   return (
-    <div className="flex min-w-0 gap-3">
-      <div className="w-[84px] shrink-0">
-        <Fld label="Country Code">
+    <Fld label={label} required={required} error={!!error}>
+      <div className={`flex items-stretch overflow-hidden rounded-md border bg-surface transition-shadow
+        focus-within:border-brand-500 focus-within:ring-[3px] focus-within:ring-brand-500/20
+        ${error ? 'border-brand-500' : 'border-warm-300'}`}>
+        <div className="w-[88px] shrink-0 border-r border-warm-200
+          [&>div]:h-full [&>div]:rounded-none [&>div]:border-0
+          [&>div>button]:h-full [&>div>button]:rounded-none [&>div>button]:border-0
+          [&>div>button]:focus:outline-none [&>div>button]:focus:ring-0">
           {disabled ? <ReadBox value={code || '+63'} />
             : <MenuSelect value={code || '+63'} options={DIAL_CODES} onChange={onCode} />}
-        </Fld>
-      </div>
-      <div className="min-w-0 flex-1">
-        <Fld label={label} required={required} error={!!error}>
+        </div>
+        <div className="min-w-0 flex-1 [&>input]:h-full [&>input]:rounded-none [&>input]:border-0 [&>input]:focus:outline-none [&>input]:focus:ring-0">
           <Input value={number} disabled={disabled} placeholder="eg, 1234567890" onChange={(v) => onNumber(v.replace(/[^\d ]/g, ''))} />
-        </Fld>
+        </div>
       </div>
-    </div>
+    </Fld>
   )
 }
 
@@ -989,7 +994,6 @@ export default function AddOrderPage() {
    *  so the page doesn't keep growing as more packages pick up their own SKU lines */
   const [collapsedContents, setCollapsedContents] = useState<Set<string>>(new Set())
   const contentsCollapsed = (p: Parcel) => !!p.packageId && collapsedContents.has(p.packageId)
-  const collapseContents = (p: Parcel) => p.packageId && setCollapsedContents((s) => new Set(s).add(p.packageId!))
   const expandContents = (p: Parcel) => p.packageId && setCollapsedContents((s) => { const n = new Set(s); n.delete(p.packageId!); return n })
   const addItem = (i: number) => {
     setFocusLine({ i, k: (parcels[i].items ?? []).length })
@@ -1534,7 +1538,7 @@ export default function AddOrderPage() {
                     adding one is the row's own "Add SKU" action (hover cluster above), not a button here.
                     Collapses to a one-line "N SKUs" summary once Add Package moves on to a new one. */}
                 {items.length > 0 && (contentsCollapsed(p) ? (
-                  <div className="mt-1.5 border-t border-line/60 pt-2">
+                  <div className="mt-1.5">
                     <button type="button" onClick={() => expandContents(p)}
                       className="flex items-center gap-1.5 text-[12px] font-bold text-ink-3 hover:text-ink">
                       <ChevronRight size={13} />
@@ -1542,11 +1546,7 @@ export default function AddOrderPage() {
                     </button>
                   </div>
                 ) : (
-                  <div className="mt-1.5 border-t border-line/60 pt-2">
-                    <button type="button" onClick={() => collapseContents(p)}
-                      className="mb-1.5 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-ink-3 hover:text-ink">
-                      <ChevronDown size={13} /> Contents
-                    </button>
+                  <div className="mt-1.5">
                     <div className="overflow-x-auto rounded-md border border-line/70">
                       <div style={{ gridTemplateColumns: SKU_COLS }} className="grid min-w-max gap-2 border-b border-line/70 bg-warm-25/60 px-2.5 py-1.5 text-[11px] font-bold text-ink-3">
                         <span>SKU Code</span><span>Name</span><span>Qty</span>
