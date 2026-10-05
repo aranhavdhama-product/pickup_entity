@@ -1498,15 +1498,15 @@ export default function AddOrderPage() {
                       className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[12px] font-bold text-ink-3 hover:bg-warm-100 hover:text-ink">
                       <ListPlus size={13} /> Add SKU
                     </button>
-                    <button type="button" aria-label={`Duplicate package ${i + 1}`}
+                    <button type="button" title="Duplicate package" aria-label={`Duplicate package ${i + 1}`}
                       onClick={() => setParcels((ps) => [...ps.slice(0, i + 1), clonePackage(ps[i]), ...ps.slice(i + 1)])}
-                      className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[12px] font-bold text-ink-3 hover:bg-warm-100 hover:text-ink">
-                      <Copy size={13} /> Duplicate
+                      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-ink-3 hover:bg-warm-100 hover:text-ink">
+                      <Copy size={13} />
                     </button>
-                    <button type="button" aria-label={`Remove package ${i + 1}`}
+                    <button type="button" title="Remove package" aria-label={`Remove package ${i + 1}`}
                       onClick={() => setParcels((ps) => (ps.length > 1 ? ps.filter((_, j) => j !== i) : [newParcel()]))}
-                      className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[12px] font-bold text-warm-400 hover:bg-warm-100 hover:text-brand-500">
-                      <X size={13} /> Remove
+                      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-warm-400 hover:bg-warm-100 hover:text-brand-500">
+                      <X size={13} />
                     </button>
                   </div>
                 </div>
