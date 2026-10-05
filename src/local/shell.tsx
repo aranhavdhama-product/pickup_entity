@@ -11,7 +11,7 @@
  * header plus rule (`stagingTokens.json`) — what puts the Pending For Planning
  * content origin at x=272, y=65. Do not change either here.
  */
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { ChevronsLeft, ChevronsRight, type LucideIcon } from 'lucide-react'
 import { shellRowClass } from './shellClasses'
@@ -45,23 +45,31 @@ export function ShellRowBody({ icon: Icon, label, suffix, active, collapsed }: {
 }
 
 /** The white left rail: FarEye mark, collapse toggle, nav, optional footer. */
-export function ShellSidebar({ items, activeId, homeTo = '/', footer }: {
+export function ShellSidebar({ items, activeId, homeTo = '/', footer, defaultCollapsed, hoverExpand }: {
   items: ShellNavItem[]
   activeId: string
   homeTo?: string
   /** rendered under a hairline at the rail's foot; told whether the rail is collapsed */
   footer?: (collapsed: boolean) => ReactNode
+  /** starts narrow (icon-only) instead of the usual always-expanded default — the caller
+   *  decides this per route (e.g. Grow collapses on order creation / the main list) */
+  defaultCollapsed?: boolean
+  /** while collapsed, hovering the rail shows the full nav as a floating overlay (fixed
+   *  width, elevated z-index) instead of pushing the page's content out of the way */
+  hoverExpand?: boolean
 }) {
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState(!!defaultCollapsed)
+  const [hovering, setHovering] = useState(false)
+  const floating = !!hoverExpand && collapsed && hovering
+  /* the layout that renders this rail persists across routes (only its <Outlet/> swaps),
+     so defaultCollapsed must be re-applied whenever the caller's own route-based value
+     changes — a plain useState initializer only fires once, on first mount */
+  useEffect(() => setCollapsed(!!defaultCollapsed), [defaultCollapsed])
 
-  return (
-    <aside
-      className={`flex flex-shrink-0 flex-col border-r border-line bg-surface transition-all duration-200
-        ${collapsed ? 'w-14' : 'w-[256px]'}`}
-      style={{ height: '100vh', position: 'sticky', top: 0 }}
-    >
+  const railBody = (expanded: boolean) => (
+    <>
       <div className="flex min-h-[56px] items-center justify-between border-b border-line px-4 py-3">
-        {!collapsed ? (
+        {expanded ? (
           <>
             <Link to={homeTo} className="flex items-center gap-2">
               <img src="/fareye-logo.png" alt="" className="h-7 w-7 object-contain" draggable={false} />
@@ -84,22 +92,41 @@ export function ShellSidebar({ items, activeId, homeTo = '/', footer }: {
         {items.map(({ id, label, suffix, icon, path, title }) => {
           const full = title ?? (suffix ? `${label} (${suffix})` : label)
           const active = id === activeId
-          const body = <ShellRowBody icon={icon} label={label} suffix={suffix} active={active} collapsed={collapsed} />
+          const body = <ShellRowBody icon={icon} label={label} suffix={suffix} active={active} collapsed={!expanded} />
           return path ? (
-            <Link key={id} to={path} title={full} aria-label={collapsed ? full : undefined}
-              className={shellRowClass(active, collapsed)}>
+            <Link key={id} to={path} title={full} aria-label={!expanded ? full : undefined}
+              className={shellRowClass(active, !expanded)}>
               {body}
             </Link>
           ) : (
-            <button key={id} type="button" title={full} aria-label={collapsed ? full : undefined}
-              className={`${shellRowClass(false, collapsed)} cursor-default`}>
+            <button key={id} type="button" title={full} aria-label={!expanded ? full : undefined}
+              className={`${shellRowClass(false, !expanded)} cursor-default`}>
               {body}
             </button>
           )
         })}
       </nav>
 
-      {footer && <div className="border-t border-line py-2">{footer(collapsed)}</div>}
+      {footer && <div className="border-t border-line py-2">{footer(!expanded)}</div>}
+    </>
+  )
+
+  return (
+    <aside
+      onMouseEnter={() => { if (hoverExpand && collapsed) setHovering(true) }}
+      onMouseLeave={() => setHovering(false)}
+      className={`flex flex-shrink-0 flex-col border-r border-line bg-surface transition-all duration-200
+        ${collapsed ? 'w-14' : 'w-[256px]'}`}
+      style={{ height: '100vh', position: 'sticky', top: 0 }}
+    >
+      {railBody(!collapsed)}
+      {/* the hover preview — a separate overlay, not a resize, so the page underneath
+          never reflows when it appears or retracts */}
+      {floating && (
+        <div className="absolute left-0 top-0 z-[60] flex h-full w-[256px] flex-col border-r border-line bg-surface shadow-ds-overlay">
+          {railBody(true)}
+        </div>
+      )}
     </aside>
   )
 }
