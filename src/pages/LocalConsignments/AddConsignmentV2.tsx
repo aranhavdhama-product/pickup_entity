@@ -47,7 +47,7 @@ import {
 } from '../../growOrders/masters'
 import { toast } from '../../nueva/toast'
 import {
-  Button, DateInput, Input, MenuSelect, Modal, MultiSelectDropdown, Toggle, SearchInput,
+  Button, DateInput, Input, MenuSelect, Modal, MultiSelectDropdown, Toggle, SearchInput, Tooltip,
 } from '../../nueva/components'
 import {
   AddMoreButton, PhoneInput, RadioCard, RowCard, SwitchField, TimeBox, UnitBox,
@@ -64,7 +64,7 @@ import {
   vehiclesOf, type ConsignmentFields, type CustomFieldValue, type FtlVehicle, type OrderDraft, type Parcel, type ParcelItem, type VasLine,
 } from '../../growOrders/draft'
 import {
-  CUSTOM_FIELD_CARDS, CUSTOM_FIELD_KINDS, FORMAT_PRESETS, formatError, formatMessage, formatSummary, growRules, isCustomKey,
+  CUSTOM_FIELD_CARDS, CUSTOM_FIELD_KINDS, DEFAULT_GOODS_SETTING, FORMAT_PRESETS, formatError, formatMessage, formatSummary, growRules, isCustomKey,
   loadCustomFields, loadGoodsSetting, loadRules, newCustomKey, patternError, saveCustomFields, saveGoodsSetting, saveRules, withoutKeys,
   type CustomFieldCard, type CustomFieldDef, type CustomFieldKind, type FieldFormat, type FieldRuleV2, type FormatPreset, type FormRulesV2,
   type GoodsSetting,
@@ -253,6 +253,11 @@ function AcRow({ on, onPick, onHover, children }: { on: boolean; onPick: () => v
 
 /* ------------------------------------------------------------ form chrome ---- */
 
+/** An icon's tooltip (owner, 2026-10-05: "add tooltip on icons") — the Nueva Tooltip, floating so a table or card never clips it. */
+function Tip({ text, children }: { text: string; children: ReactNode }) {
+  return <Tooltip floating text={text}>{children}</Tooltip>
+}
+
 interface Opt { value: string; label?: string }
 const TEXTAREA = `w-full rounded-md border border-warm-300 bg-surface px-3 py-2 text-[13px] text-ink
   placeholder:text-warm-400 transition-shadow focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/20
@@ -385,9 +390,9 @@ function SkuCode({ item, skus, onPick, onUnlink, onCustom, autoFocus }: {
     return (
       <span className="flex h-8 items-center gap-1 rounded-md border border-warm-300 bg-warm-50 px-3 text-[13px] text-ink">
         <span className="min-w-0 flex-1 truncate">{item.skuCode}</span>
-        {!inMaster && <span className="shrink-0 rounded-full bg-surface px-1.5 text-[11px] text-ink-2" title="Typed — not in the SKU master">New</span>}
-        <button type="button" aria-label="Clear SKU" title={inMaster ? 'Unlink from the SKU master' : 'Clear this SKU code'} onClick={onUnlink}
-          className="shrink-0 text-warm-400 hover:text-ink"><X size={13} /></button>
+        {!inMaster && <Tip text="Typed — not in the SKU master"><span className="shrink-0 rounded-full bg-surface px-1.5 text-[11px] text-ink-2">New</span></Tip>}
+        <Tip text={inMaster ? 'Unlink from the SKU master' : 'Clear this SKU code'}><button type="button" aria-label="Clear SKU" onClick={onUnlink}
+          className="shrink-0 text-warm-400 hover:text-ink"><X size={13} /></button></Tip>
       </span>
     )
   }
@@ -616,17 +621,16 @@ function FormatAndGrowTools({ k, disabled }: { k: string; disabled?: boolean }) 
   return (
     <>
       {b.overridden(k) && (
-        <button type="button" onClick={() => b.revert(k)} title="Changed for the Grow portal — click to use the console form's setting again"
+        <Tip text="Changed for Grow — click to use the console form's setting"><button type="button" onClick={() => b.revert(k)}
           className="inline-flex h-6 items-center gap-1 rounded-full bg-brand-50 px-1.5 text-[11px] font-bold text-brand-600 hover:bg-brand-100">
           Grow<RotateCcw size={10} />
-        </button>
+        </button></Tip>
       )}
       {b.formatable(k) && (
-        <button type="button" aria-pressed={!!f} onClick={() => b.editFormat(k)} disabled={disabled}
-          title={f ? `Format: ${formatSummary(f)} — click to change` : 'Format — check what is typed (numbers only, an email, a pattern…)'}
+        <Tip text={f ? `Format: ${formatSummary(f)}` : 'Format — check what is typed'}><button type="button" aria-pressed={!!f} onClick={() => b.editFormat(k)} disabled={disabled}
           aria-label="Format" className={toolIcon(!!f)}>
           <Regex size={14} />
-        </button>
+        </button></Tip>
       )}
     </>
   )
@@ -638,9 +642,9 @@ function FieldTools({ k }: { k: string }) {
     return (
       <span className="ml-auto inline-flex shrink-0 items-center gap-0.5">
         <FormatAndGrowTools k={k} />
-        <span title={lock === 'system' ? 'Required by the system — cannot be hidden or made optional' : 'This form needs it — cannot be hidden'}
+        <Tip text={lock === 'system' ? 'Needed by the system — always shown and required' : 'This form needs it — always shown'}><span
           aria-label={lock === 'system' ? 'Required by the system' : 'Needed by this form'}
-          className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-ink-3"><Lock size={12} /></span>
+          className="inline-flex h-6 w-6 shrink-0 items-center justify-center text-ink-3"><Lock size={12} /></span></Tip>
       </span>
     )
   }
@@ -649,36 +653,34 @@ function FieldTools({ k }: { k: string }) {
   const custom = b.custom(k)
   return (
     <span className="ml-auto inline-flex shrink-0 items-center gap-0.5">
-      {parent && !own && <span className="mr-1 max-w-[96px] truncate text-[11px] text-ink-3" title={`Hidden with ${b.label(parent)}`}>Hidden with {b.label(parent)}</span>}
+      {parent && !own && <Tip text={`Hidden with ${b.label(parent)}`}><span className="mr-1 max-w-[96px] truncate text-[11px] text-ink-3">Hidden with {b.label(parent)}</span></Tip>}
       <FormatAndGrowTools k={k} disabled={own || !!parent} />
       {b.requirable(k) && (
-        <button type="button" aria-pressed={b.required(k)} onClick={() => b.set(k, { required: !b.required(k) })}
+        <Tip text={b.required(k) ? 'Required — click to make it optional' : 'Make required'}><button type="button" aria-pressed={b.required(k)} onClick={() => b.set(k, { required: !b.required(k) })}
           disabled={own || !!parent}
-          title={b.required(k) ? 'Required — click to make it optional' : 'Make required'} aria-label="Required"
+          aria-label="Required"
           className={toolIcon(b.required(k))}>
           <Asterisk size={14} />
-        </button>
+        </button></Tip>
       )}
       {movable(k) && (
-        <button type="button" aria-pressed={b.inMore(k)} onClick={() => b.set(k, { more: !b.inMore(k) })}
+        <Tip text={b.required(k) ? 'A required field stays in the main form' : b.inMore(k) ? 'In More information — click to bring it back' : 'Move to More information'}><button type="button" aria-pressed={b.inMore(k)} onClick={() => b.set(k, { more: !b.inMore(k) })}
           disabled={own || !!parent || b.required(k)}
-          title={b.required(k) ? 'A required field stays in the main form' : b.inMore(k) ? 'In More information — click to show it in the main form' : 'Move to More information'}
           aria-label="More information" className={toolIcon(b.inMore(k))}>
           <ListCollapse size={14} />
-        </button>
+        </button></Tip>
       )}
-      <button type="button" aria-pressed={own} onClick={() => b.set(k, { hidden: !own })}
-        title={own ? `Show this field on the ${b.portal === 'grow' ? 'Grow portal' : 'console'} form` : `Hide this field on the ${b.portal === 'grow' ? 'Grow portal' : 'console'} form`}
+      <Tip text={own ? `Show this field on the ${b.portal === 'grow' ? 'Grow portal' : 'console'} form` : `Hide this field on the ${b.portal === 'grow' ? 'Grow portal' : 'console'} form`}><button type="button" aria-pressed={own} onClick={() => b.set(k, { hidden: !own })}
         aria-label={own ? 'Show field' : 'Hide field'}
         className={`inline-flex h-6 w-6 items-center justify-center rounded-md hover:bg-warm-100 ${own ? 'text-warm-400' : 'text-ink-2'}`}>
         {own ? <EyeOff size={14} /> : <Eye size={14} />}
-      </button>
+      </button></Tip>
       {custom && (
-        <button type="button" onClick={() => b.removeCustom(k)} title="Remove this field from both forms (consignments already saved keep their answer)"
+        <Tip text="Remove this field — saved consignments keep their answer"><button type="button" onClick={() => b.removeCustom(k)}
           aria-label={`Remove ${b.label(k)}`}
           className="inline-flex h-6 w-6 items-center justify-center rounded-md text-ink-3 hover:bg-warm-100 hover:text-brand-500">
           <Trash2 size={13} />
-        </button>
+        </button></Tip>
       )}
     </span>
   )
@@ -689,9 +691,9 @@ function BuilderLabel({ label, fieldKey, required }: { label?: string; fieldKey?
   const star = required && <span className="text-danger-fg">&nbsp;*</span>
   if (!fieldKey || !b.known(fieldKey)) {
     return (
-      <div className="mb-1.5 flex min-h-6 items-center gap-1 text-[13px] leading-5 text-ink" title="Part of the form — not configurable">
-        <span className="min-w-0 truncate">{label}{star}</span>
-        <Lock size={11} className="ml-auto shrink-0 text-warm-300" />
+      <div className="mb-1.5 flex min-h-6 items-center gap-1 text-[13px] leading-5 text-ink">
+        <span className="min-w-0 truncate" title={label}>{label}{star}</span>
+        <span className="ml-auto inline-flex shrink-0"><Tip text="Part of the form — not configurable"><Lock size={11} className="text-warm-300" /></Tip></span>
       </div>
     )
   }
@@ -751,10 +753,10 @@ function RevealToggle({ open, onToggle, waiting, waitingFilled = 0, label = 'inf
   if (b?.editing || waiting === 0) return null
   const words = open ? `Less ${label}` : `More ${label} · ${waiting} field${waiting === 1 ? '' : 's'}${waitingFilled ? `, ${waitingFilled} filled` : ''}`
   if (iconOnly) return (
-    <button type="button" onClick={onToggle} aria-expanded={open} title={words} aria-label={words}
+    <Tip text={words}><button type="button" onClick={onToggle} aria-expanded={open} aria-label={words}
       className={`inline-flex h-7 w-7 items-center justify-center rounded-md text-brand-500 hover:bg-warm-100 ${className}`}>
       {open ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-    </button>
+    </button></Tip>
   )
   return (
     <div className={className}>
@@ -973,10 +975,10 @@ function AddressCard({ party, missing, invalid = [], onEdit, tag }: {
               <p className="mt-1 text-[13px] text-ink">{[party.line1, party.line2, party.line3, party.landmark].filter((x) => filled(x)).join(', ')}</p>
               {place && <p className="text-[13px] text-ink-2">{place}</p>}
             </div>
-            <button type="button" onClick={onEdit} title="Edit this address" aria-label="Edit this address"
+            <Tip text="Edit this address"><button type="button" onClick={onEdit} aria-label="Edit this address"
               className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-warm-200 text-ink-2 hover:bg-warm-50 hover:text-ink">
               <Pencil size={14} />
-            </button>
+            </button></Tip>
           </div>
         )}
       {missing.length > 0 && (showErrors
@@ -1023,7 +1025,8 @@ interface ItemLine { id: string; item: ParcelItem }
 const FORM_TIER_V2_KEY = 'console-consignment-form-v2-tier'
 const GOODS_OPTIONS: { value: GoodsSetting; label: string; sub: string }[] = [
   { value: 'sku', label: 'SKU-based', sub: 'A SKU and how many — the packages are worked out' },
-  { value: 'separate', label: 'SKUs, then packages', sub: 'List the SKUs, then the boxes they go in' },
+  /* owner, 2026-10-05: the default */
+  { value: 'separate', label: 'SKUs, then packages', sub: 'Default · list the SKUs, then the boxes they go in' },
   { value: 'combined', label: 'Packages with their SKUs', sub: 'Each box, and what is packed in it' },
 ]
 
@@ -2324,8 +2327,8 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
           {allDrops.map((_, i) => (
             <div key={i} className={i > 0 ? 'mt-8 border-t border-warm-200 pt-6' : ''}>
               {addressSlot('to', i, allDrops.length > 1 ? `Ship To · Address ${i + 1}` : 'Ship To', i > 0 ? (
-                <button type="button" aria-label={`Remove address ${i + 1}`} onClick={() => removeDrop(i - 1)}
-                  className="text-ink-3 transition-colors hover:text-brand-500"><CircleMinus size={16} /></button>
+                <Tip text="Remove this address"><button type="button" aria-label={`Remove address ${i + 1}`} onClick={() => removeDrop(i - 1)}
+                  className="text-ink-3 transition-colors hover:text-brand-500"><CircleMinus size={16} /></button></Tip>
               ) : undefined)}
               {windowCells('to', i)}
             </div>
@@ -2503,15 +2506,15 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
                   {picked && weightOk && it.quantity ? `${round2(it.weightKg * it.quantity)} kg` : '-'}
                 </span>
                 <span className="flex items-center justify-end gap-1">
-                  <button type="button" title={open ? 'Hide SKU details' : 'SKU details: category, description, HSN, origin, cost, image, units, volume'} disabled={!picked}
+                  <Tip text={open && picked ? 'Hide SKU details' : picked ? 'SKU details — category, HSN, origin, cost' : 'Pick a SKU first'}><button type="button" disabled={!picked}
                     aria-label={`SKU line ${n + 1} details`} aria-expanded={open && picked} onClick={() => setItemMore((st) => flip(st, l.id))}
                     className="inline-flex h-8 items-center gap-0.5 rounded-md px-1 text-[12px] text-brand-500 hover:bg-warm-100 disabled:text-warm-400">
                     Details{open && picked ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-                  </button>
-                  <button type="button" title="Remove" aria-label={`Remove SKU line ${n + 1}`} onClick={() => removeLine(l.id)}
+                  </button></Tip>
+                  <Tip text="Remove SKU"><button type="button" aria-label={`Remove SKU line ${n + 1}`} onClick={() => removeLine(l.id)}
                     className="inline-flex h-8 w-7 items-center justify-center rounded-md text-ink-3 hover:bg-warm-100 hover:text-brand-500">
                     <Trash2 size={14} />
-                  </button>
+                  </button></Tip>
                 </span>
               </div>
               {picked && open && skuDetailsGrid(it, (patch) => setLine(l.id, patch))}
@@ -2587,16 +2590,16 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
             {vol * it.quantity > 0 && <span className="text-[12px] text-ink-3">{(vol * it.quantity / 1e6).toFixed(3)} m³</span>}
           </span>
           <span className="flex items-center justify-end gap-1">
-            <button type="button" title={open ? 'Hide SKU details' : 'SKU details: category, description, HSN, origin, cost, image, units, volume'}
+            <Tip text={open ? 'Hide SKU details' : 'SKU details — category, HSN, origin, cost'}><button type="button"
               aria-label={`SKU ${n + 1} details`} aria-expanded={open} onClick={() => setSkuMore((st) => flip(st, key))}
               className="inline-flex h-8 w-7 items-center justify-center rounded-md text-brand-500 hover:bg-warm-100">
               {/* owner, 2026-09-29: a chevron only — the words are in the tooltip */}
               {open ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-            </button>
-            <button type="button" title="Remove SKU" aria-label={`Remove SKU ${n + 1}`} onClick={() => removeItem(i, k)}
+            </button></Tip>
+            <Tip text="Remove SKU"><button type="button" aria-label={`Remove SKU ${n + 1}`} onClick={() => removeItem(i, k)}
               className="inline-flex h-8 w-7 items-center justify-center rounded-md text-ink-3 hover:bg-warm-100 hover:text-brand-500">
               <Trash2 size={14} />
-            </button>
+            </button></Tip>
           </span>
         </div>
         {missing.length > 0 && <ErrLine className="mt-1.5 pl-10">Required: {missing.join(', ')}</ErrLine>}
@@ -2645,6 +2648,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     const vol = p.l * p.w * p.h
     return (
       <RowCard key={p.packageId ?? i} title={`Package ${i + 1}`} onRemove={parcels.length > 1 ? () => removeParcel(i) : undefined}
+        removeTip={separateLayout ? 'Remove package — its SKUs move to the first package' : 'Remove package'}
         footer={<>
           <span>Total Weight (kg) <b className="ml-2 font-normal">{p.weight ? round2(p.weight * p.quantity) : '-'}</b></span>
           <span>Total Volume (cm³) <b className="ml-2 font-normal">{vol ? round2(vol * p.quantity) : '-'}</b></span>
@@ -2746,10 +2750,10 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
               <MultiSelectDropdown options={addressLabels} noun="addresses" placeholder="Ship To addresses"
                 values={r.addressIdx.map((a) => addressLabels[a]).filter(Boolean)}
                 onChange={(vals) => setRow(i, { addressIdx: vals.map((v) => addressLabels.indexOf(v)).filter((a) => a >= 0).sort((x, y) => x - y) })} />
-              <button type="button" aria-label={`Remove vehicle row ${i + 1}`} disabled={rows.length === 1} onClick={() => removeVehicle(i)}
+              <Tip text="Remove vehicle"><button type="button" aria-label={`Remove vehicle row ${i + 1}`} disabled={rows.length === 1} onClick={() => removeVehicle(i)}
                 className="inline-flex h-8 w-8 items-center justify-center rounded-md text-ink-3 hover:bg-warm-100 hover:text-ink disabled:cursor-not-allowed disabled:opacity-40">
                 <X size={14} />
-              </button>
+              </button></Tip>
             </div>
           )
         })}
@@ -2824,10 +2828,10 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
                           labels={(x) => vasOpts.find((o) => o.value === x)?.label ?? x} onChange={(x) => setVas(i, { service: x })} />
                         <NumBox integer blankZero placeholder="0" unit="min" value={v.serviceTimeMin} onChange={(n) => setVas(i, { serviceTimeMin: n })} />
                         <Input value={v.remark} placeholder="eg, Second floor" onChange={(x) => setVas(i, { remark: x })} />
-                        <button type="button" aria-label={`Remove service ${i + 1}`} title="Remove" onClick={() => setC({ vas: (c.vas ?? []).filter((_, j) => j !== i) })}
+                        <Tip text="Remove service"><button type="button" aria-label={`Remove service ${i + 1}`} onClick={() => setC({ vas: (c.vas ?? []).filter((_, j) => j !== i) })}
                           className="inline-flex h-8 w-8 items-center justify-center rounded-md text-ink-3 hover:bg-warm-100 hover:text-brand-500">
                           <Trash2 size={14} />
-                        </button>
+                        </button></Tip>
                       </div>
                       {missing.length > 0 && <ErrLine className="mt-1.5">Required: {missing.join(', ')}</ErrLine>}
                     </div>
@@ -3025,11 +3029,11 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
                       <Plus size={13} />SKU
                     </button>
                   )}
-                  <button type="button" title={k === 0 ? 'Remove package' : 'Remove SKU'} aria-label={k === 0 ? `Remove package ${i + 1}` : `Remove SKU ${k + 1}`}
+                  <Tip text={k === 0 ? 'Remove package' : 'Remove SKU'}><button type="button" aria-label={k === 0 ? `Remove package ${i + 1}` : `Remove SKU ${k + 1}`}
                     onClick={() => (k === 0 ? (parcels.length > 1 ? removeParcel(i) : setParcels([newParcel()])) : removeItem(i, k))}
                     className="inline-flex h-8 w-8 items-center justify-center rounded-md text-ink-3 hover:bg-warm-100 hover:text-brand-500">
                     <Trash2 size={14} />
-                  </button>
+                  </button></Tip>
                 </span>
               </div>
             ))
@@ -3057,10 +3061,10 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   /* owner, 2026-09-29: a back chevron beside the title (PageHeader's back button) + the one-line subtitle */
   const goBack = () => { clearDraftKeys(); nav(backTo) }
   const backBtn = (
-    <button type="button" onClick={goBack} aria-label="Go back" title="Go back"
+    <Tip text="Go back"><button type="button" onClick={goBack} aria-label="Go back"
       className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-line bg-surface text-ink-2 shadow-ds-1 transition-colors hover:bg-warm-100">
       <ChevronLeft size={16} />
-    </button>
+    </button></Tip>
   )
   const SUBTITLE = 'Provide the order details to ensure accurate processing, routing, and billing of the shipment.'
   /* the builder's two forms — the console's, and the Grow portal's (the merchant form, previewed here) */
@@ -3109,7 +3113,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
       {growSetup
         ? <Button variant="ghost" icon={<RotateCcw size={14} />} disabled={changedForGrow === 0 && draftGoods === loadGoodsSetting('console')}
             onClick={() => { setDraftRules({}); setDraftGoods(loadGoodsSetting('console')) }}>Match console form</Button>
-        : <Button variant="ghost" icon={<RotateCcw size={14} />} onClick={() => { setDraftRules({}); setDraftGoods('sku') }}>Reset to default</Button>}
+        : <Button variant="ghost" icon={<RotateCcw size={14} />} onClick={() => { setDraftRules({}); setDraftGoods(DEFAULT_GOODS_SETTING) }}>Reset to default</Button>}
       <Button variant="outline" onClick={cancelEditing}>Cancel</Button>
       <Button onClick={() => saveEditing()}>Save changes</Button>
     </div>

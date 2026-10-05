@@ -1,5 +1,5 @@
 // FarEye Nueva — design-system primitives (see design.md)
-import { useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ComponentType, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import {
   Plus, SlidersHorizontal, X, ChevronDown, Search,
@@ -1569,12 +1569,59 @@ export function ClearFilters({ onClick, active }: { onClick: () => void; active?
 }
 
 /* Small hover tooltip wrapper */
-export function Tooltip({ text, children, side = 'top' }: { text: string; children: ReactNode; side?: 'top' | 'bottom' }) {
+export function Tooltip({ text, children, side = 'top', floating = false }: {
+  text: string; children: ReactNode; side?: 'top' | 'bottom'
+  /** additive (2026-10-05): portaled + fixed, kept inside the viewport, also shown on keyboard focus — for icons inside
+      scrolling / clipping containers (tables, cards with overflow). Default = the original CSS hover bubble. */
+  floating?: boolean
+}) {
+  if (floating) return <FloatingTooltip text={text} side={side}>{children}</FloatingTooltip>
   return (
     <span className="relative inline-flex group/tt">
       {children}
       <span className={`pointer-events-none absolute left-1/2 -translate-x-1/2 z-40 hidden group-hover/tt:block whitespace-nowrap rounded-md bg-warm-900 text-white text-[12px] px-2 py-1 shadow-ds-overlay
         ${side === 'top' ? 'bottom-full mb-1.5' : 'top-full mt-1.5'}`}>{text}</span>
+    </span>
+  )
+}
+/** Tooltip's `floating` mode: the same dark bubble, portaled to <body> so no container clips it; flips below near the top. */
+function FloatingTooltip({ text, side, children }: { text: string; side: 'top' | 'bottom'; children: ReactNode }) {
+  const ref = useRef<HTMLSpanElement>(null)
+  const bubble = useRef<HTMLSpanElement>(null)
+  const [at, setAt] = useState<{ x: number; y: number; below: boolean } | null>(null)
+  const [left, setLeft] = useState<number | null>(null)
+  const show = () => {
+    /* the control itself (it may be absolutely positioned, leaving the wrapper without a size) */
+    const r = (ref.current?.firstElementChild ?? ref.current)?.getBoundingClientRect()
+    if (!r) return
+    const below = side === 'bottom' || r.top < 44
+    setLeft(null)
+    setAt({ x: r.left + r.width / 2, y: below ? r.bottom + 6 : r.top - 6, below })
+  }
+  const hide = () => setAt(null)
+  /* keep the bubble inside the viewport once its width is known */
+  useLayoutEffect(() => {
+    if (!at || !bubble.current) return
+    const w = bubble.current.offsetWidth
+    setLeft(Math.min(Math.max(8, at.x - w / 2), window.innerWidth - w - 8))
+  }, [at, text])
+  useEffect(() => {
+    if (!at) return
+    window.addEventListener('scroll', hide, true)
+    window.addEventListener('resize', hide)
+    return () => { window.removeEventListener('scroll', hide, true); window.removeEventListener('resize', hide) }
+  }, [at])
+  return (
+    <span ref={ref} className="inline-flex" onMouseEnter={show} onMouseLeave={hide} onFocus={show} onBlur={hide}>
+      {children}
+      {at && createPortal(
+        <span ref={bubble} role="tooltip" style={{ left: left ?? at.x, top: at.y, visibility: left === null ? 'hidden' : 'visible' }}
+          className={`fe-nueva pointer-events-none fixed z-[100] w-max max-w-[280px] rounded-md bg-warm-900 px-2 py-1 text-[12px] leading-snug text-white shadow-ds-overlay
+            ${at.below ? '' : '-translate-y-full'}`}>
+          {text}
+        </span>,
+        document.body,
+      )}
     </span>
   )
 }

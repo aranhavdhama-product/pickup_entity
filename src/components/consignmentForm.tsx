@@ -10,7 +10,7 @@
  */
 import type { ComponentType, ReactNode } from 'react'
 import { CheckCircle2, CircleDot, CircleMinus, CirclePlus, Clock, Info } from 'lucide-react'
-import { Input, MenuSelect, Toggle } from '../nueva/components'
+import { Input, MenuSelect, Toggle, Tooltip } from '../nueva/components'
 
 export function SectionCard({ id, eyebrow, title, icon, done, caption, count, action, className = '', clip = true, children }: {
   id?: string; eyebrow?: string; title: ReactNode; done?: boolean
@@ -285,19 +285,22 @@ export function AddMoreButton({ label = 'Add More', onClick, icon = true }: { la
 }
 
 /** One Add More row: a bordered sub-card with a grey header strip ("SKU 1") and a ⊖ remove button. */
-export function RowCard({ title, onRemove, footer, children }: {
+export function RowCard({ title, onRemove, footer, children, removeTip }: {
   title: string; onRemove?: () => void; footer?: ReactNode; children: ReactNode
+  /** additive (2026-10-05): a tooltip on the remove button (the v2 consignment form); absent = as before */
+  removeTip?: string
 }) {
+  const remove = onRemove && (
+    <button type="button" onClick={onRemove} aria-label={`Remove ${title}`}
+      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-warm-200 bg-surface text-ink-2 hover:text-brand-500">
+      <CircleMinus size={14} />
+    </button>
+  )
   return (
     <div className="mt-4 overflow-hidden rounded-lg border border-warm-200 first:mt-0">
       <div className="flex items-center justify-between bg-warm-50 px-4 py-3">
         <span className="text-[13px] font-bold text-ink">{title}</span>
-        {onRemove && (
-          <button type="button" onClick={onRemove} aria-label={`Remove ${title}`}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-warm-200 bg-surface text-ink-2 hover:text-brand-500">
-            <CircleMinus size={14} />
-          </button>
-        )}
+        {remove && (removeTip ? <Tooltip floating text={removeTip}>{remove}</Tooltip> : remove)}
       </div>
       <div className="px-4 py-5">
         {children}

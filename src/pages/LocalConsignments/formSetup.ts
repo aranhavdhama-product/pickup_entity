@@ -138,15 +138,26 @@ export const withoutKeys = (r: FormRulesV2, keys: Iterable<string>): FormRulesV2
 /* ----------------------------------------------------- how goods are entered ---- */
 
 export type GoodsSetting = 'sku' | 'separate' | 'combined'
-export const GOODS_SETTING_KEY = 'fe-consignment-form-v2-goods'
+/** owner, 2026-10-05: "SKUs, then packages" (option 2) is the default */
+export const DEFAULT_GOODS_SETTING: GoodsSetting = 'separate'
+/* v2 of the key (2026-10-05): the first key also caught the old default ('sku') whenever the builder was saved, so it
+   cannot tell a choice from a default — read once as a fallback, keeping only a non-default choice */
+export const GOODS_SETTING_KEY = 'fe-consignment-form-v2-goods-v2'
+const GOODS_SETTING_KEY_V1 = 'fe-consignment-form-v2-goods'
 export const GOODS_SETTING_GROW_KEY = 'fe-consignment-form-v2-goods-grow'
 const asGoods = (v: string | null): GoodsSetting | null => (v === 'sku' || v === 'separate' || v === 'combined' ? v : null)
+const consoleGoods = (): GoodsSetting => {
+  const v2 = asGoods(localStorage.getItem(GOODS_SETTING_KEY))
+  if (v2) return v2
+  const v1 = asGoods(localStorage.getItem(GOODS_SETTING_KEY_V1))
+  return v1 && v1 !== 'sku' ? v1 : DEFAULT_GOODS_SETTING
+}
 /** the console's setting; Grow's own when it has one, else the console's */
 export function loadGoodsSetting(p: FormPortal = 'console'): GoodsSetting {
   try {
     const own = p === 'grow' ? asGoods(localStorage.getItem(GOODS_SETTING_GROW_KEY)) : null
-    return own ?? asGoods(localStorage.getItem(GOODS_SETTING_KEY)) ?? 'sku'
-  } catch { return 'sku' }
+    return own ?? consoleGoods()
+  } catch { return DEFAULT_GOODS_SETTING }
 }
 export function saveGoodsSetting(p: FormPortal, v: GoodsSetting) {
   try {

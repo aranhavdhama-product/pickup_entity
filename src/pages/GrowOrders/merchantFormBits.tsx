@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Check, Minus, Plus } from 'lucide-react'
-import { Toggle } from '../../nueva/components'
+import { Toggle, Tooltip } from '../../nueva/components'
 
 /* ------------------------------------------------------------------ card ---- */
 
@@ -151,9 +151,9 @@ export function CountStepper({ value, onChange, min = 0, max = 20, label }: {
   const btn = 'flex h-8 w-8 items-center justify-center text-ink-2 transition-colors hover:bg-warm-100 disabled:cursor-not-allowed disabled:opacity-40'
   return (
     <div className="inline-flex h-8 items-center overflow-hidden rounded-md border border-warm-300 bg-surface" onClick={(e) => e.stopPropagation()}>
-      <button type="button" aria-label={`Fewer ${label}`} className={btn} disabled={value <= min} onClick={() => onChange(Math.max(min, value - 1))}><Minus size={14} /></button>
+      <Tooltip floating text={`One less ${label}`}><button type="button" aria-label={`Fewer ${label}`} className={btn} disabled={value <= min} onClick={() => onChange(Math.max(min, value - 1))}><Minus size={14} /></button></Tooltip>
       <span className="w-8 text-center text-[13px] font-bold tabular-nums text-ink" aria-live="polite">{value}</span>
-      <button type="button" aria-label={`More ${label}`} className={btn} disabled={value >= max} onClick={() => onChange(Math.min(max, value + 1))}><Plus size={14} /></button>
+      <Tooltip floating text={`One more ${label}`}><button type="button" aria-label={`More ${label}`} className={btn} disabled={value >= max} onClick={() => onChange(Math.min(max, value + 1))}><Plus size={14} /></button></Tooltip>
     </div>
   )
 }
