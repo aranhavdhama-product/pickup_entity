@@ -1,7 +1,8 @@
 /**
  * The merchant's payments ledger — what the live portal calls Wallet → "Payments"
- * (`/transactions/`, research 2026-09-25 §4). One checkout = one DEBIT entry that
- * may cover several consignments. Live has NO balance, NO top-up and NO credit
+ * (`/transactions/`, research 2026-09-25 §4). One payment = one DEBIT entry that
+ * may cover several consignments (a checkout split over several methods writes one
+ * entry per method). Live has NO balance, NO top-up and NO credit
  * entries, so neither do we (the `type` field keeps 'CR' only for the receipt's
  * "Transaction Type" line).
  *
@@ -10,8 +11,11 @@
  * a few rows carry the "n Consignments" badge. Consignment numbers are SNAPSHOT
  * on the entry, so a receipt still renders after "Reset demo data" reseeds orders.
  *
- * `recordPayment(order)` is called by CheckoutPage at payment; it is idempotent
- * by order id (a resumed draft checks out through `update`).
+ * `recordSplitPayment(order, parts)` is called by CheckoutPage at payment: ONE debit per
+ * payment method used (a checkout may be split, e.g. wallet + card); shipping and tax are
+ * shared between the parts by amount, so the parts add up to the order's charges to the
+ * cent. `recordPayment(order, method)` is the one-part case. Both are idempotent by order
+ * id (a resumed draft checks out through `update`).
  */
 import { quoteForRecord } from './rates'
 import { growOrdersSnapshot } from './store'
@@ -144,26 +148,63 @@ export const debitsWallet = (e: LedgerEntry) => e.type === 'DR' && e.status === 
 export const isDue = (e: LedgerEntry) => e.type === 'DR' && e.status === 'Pending'
 export const modeLabel = (method: PayMethod, last4?: string) => (method === 'Card' ? `Card${last4 ? ` •••• ${last4}` : ''}` : method)
 
-/** One checkout = one debit. Idempotent: an order already on an entry is not recorded twice. */
-export function recordPayment(order: GrowOrder, method: PayMethod = 'Wallet', last4?: string): LedgerEntry | null {
+/** One way of paying a checkout: how, how much, and — for a card — only its last 4 digits. */
+export interface PaymentPart { method: PayMethod; amount: number; last4?: string }
+
+/**
+ * One checkout = one debit PER PAYMENT METHOD used. `parts` are the amounts to take, in order;
+ * together they should equal the order's total. Shipping is shared by amount (the last part
+ * takes the cent that rounding leaves) and each part's tax is its amount minus its shipping, so
+ * the parts add up to the order's shipping, tax and total exactly. Idempotent: an order already
+ * on a debit is not recorded again (returns []). Wallet and Card parts are Success; Pay later and
+ * COD parts stay Pending until paid. A single part is a plain payment (no "Split payment" remark).
+ */
+export function recordSplitPayment(order: GrowOrder, parts: PaymentPart[]): LedgerEntry[] {
+  const live = parts.filter((p) => p.amount > 0)
   const cur = store.get()
-  if (cur.some((e) => e.type === 'DR' && e.orderIds.includes(order.id))) return null
-  const e = entryFor([order], cur.length, new Set(cur.map((x) => x.id)))
-  e.at = new Date().toISOString()
-  e.bankTxnAt = e.at
-  e.mode = modeLabel(method, last4)
-  e.status = method === 'Pay later' || method === 'COD' ? 'Pending' : 'Success'
-  e.remarks = method === 'Pay later' ? 'Pay later · billed on the monthly invoice' : method === 'COD' ? 'Collect on delivery' : ''
-  store.set([e, ...cur])
-  return e
+  if (!live.length || cur.some((e) => e.type === 'DR' && e.orderIds.includes(order.id))) return []
+  const charges = chargesOf(order)
+  const sum = round2(live.reduce((n, p) => n + p.amount, 0))
+  const used = new Set(cur.map((x) => x.id))
+  const at = new Date().toISOString()
+  let shippingLeft = charges.shipping
+  const entries = live.map((p, i) => {
+    const e = entryFor([order], cur.length + i, used)
+    const amount = round2(p.amount)
+    const shipping = i === live.length - 1 ? round2(shippingLeft) : round2(Math.min(shippingLeft, (charges.shipping * p.amount) / sum))
+    shippingLeft = round2(shippingLeft - shipping)
+    e.at = at
+    e.bankTxnAt = at
+    e.amount = amount
+    e.shipping = shipping
+    e.tax = round2(amount - shipping)
+    e.mode = modeLabel(p.method, p.last4)
+    e.status = p.method === 'Pay later' || p.method === 'COD' ? 'Pending' : 'Success'
+    e.remarks = [
+      live.length > 1 ? `Split payment · ${i + 1} of ${live.length}` : '',
+      p.method === 'Pay later' ? 'Pay later · billed on the monthly invoice' : p.method === 'COD' ? 'Collect on delivery' : '',
+    ].filter(Boolean).join(' · ')
+    return e
+  })
+  store.set([...entries, ...cur])
+  return entries
 }
+
+/** One checkout paid ONE way = one debit. Idempotent: an order already on an entry is not recorded twice. */
+export function recordPayment(order: GrowOrder, method: PayMethod = 'Wallet', last4?: string): LedgerEntry | null {
+  return recordSplitPayment(order, [{ method, amount: chargesOf(order).total, last4 }])[0] ?? null
+}
+
+/** "Split payment · 2 of 3" when a remark starts with it — kept when a due part is paid later. */
+const splitNote = (remarks: string) => /^Split payment · \d+ of \d+/.exec(remarks)?.[0] ?? ''
 
 /** Pay now: settle pending debits with the wallet or a card. */
 export function settlePayments(ids: string[], method: 'Wallet' | 'Card', last4?: string): void {
   const s = new Set(ids)
   const at = new Date().toISOString()
   store.set(store.get().map((e) => (s.has(e.id) && isDue(e)
-    ? { ...e, status: 'Success', mode: modeLabel(method, last4), bankTxnAt: at, remarks: `Paid ${at.slice(0, 10)}` } : e)))
+    ? { ...e, status: 'Success', mode: modeLabel(method, last4), bankTxnAt: at,
+        remarks: [splitNote(e.remarks), `Paid ${at.slice(0, 10)}`].filter(Boolean).join(' · ') } : e)))
 }
 
 /* ------------------------------------------------------------------ wallet -- */

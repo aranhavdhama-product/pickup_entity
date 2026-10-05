@@ -326,12 +326,17 @@ Packages (1) / Service Type (2) (QA shortcut). Never reintroduce a Grow-only loo
   `GrowOrders/accountBits.tsx`): **Wallet** `/grow/orders/wallet?tab=wallet|payments` (+ `/:id` receipt) = `WalletPage` /
   `ReceiptPage` on `growOrders/ledger.ts` (`grow-wallet-v2`; Wallet tab = the GROW-STAGING wallet: Recharge (demo
   credit row) · Balance/Credits/Debits tiles · running balance per currency from `walletOf()`; Payments tab = the
-  2GO_PH list; seeded opening credit per currency; one checkout = one DR entry, seeded from paid orders,
-  **payment flow** = `GrowOrders/paymentSheet.tsx` `PaymentSheet` (Wallet balance + inline Recharge · Card demo, only
-  the last 4 digits kept · Pay later on a Postpaid account · COD for a COD order; choice saved as
-  `merchantSettings.defaultPayMethod`) on Checkout, `PayNowDialog` on Billing / Payments ⋮ for Pending (pay-later /
-  COD) debits, `PayNowButton` for the order overlay; `debitsWallet()` = only Wallet/'Credit' debits move the balance,
-  `recordPayment(order, method, last4)` called by CheckoutPage, idempotent; `chargesOf()` = frozen charges else rate card, flagged
+  2GO_PH list; seeded opening credit per currency; one payment = one DR entry (a checkout split over several methods
+  writes one per method), seeded from paid orders,
+  **payment flow** (2026-10-05) = a TWO-step checkout `GrowOrders/CheckoutPage` — **1 Payment** (Payment Mode, then "How you pay":
+  `paymentSheet.tsx` `SplitPaymentSheet`, tick ONE OR MORE of Wallet balance + inline Recharge · Card demo, only the last 4
+  digits kept · Pay later on a Postpaid account · COD for a COD order, each with its own amount that must add up to the payable
+  amount; state = `splitPayment.ts` `useSplitPayment`; the method with the largest share is saved as
+  `merchantSettings.defaultPayMethod`) → **2 Summary** (`CheckoutSummary.tsx`, read-only review, then Pay / Place order);
+  `PaymentSheet` (one method) stays for `PayNowDialog` on Billing / Payments ⋮ for Pending (pay-later /
+  COD) debits and `PayNowButton` for the order overlay; `debitsWallet()` = only Wallet/'Credit' debits move the balance,
+  `recordSplitPayment(order, parts)` called by CheckoutPage (shipping / tax shared by amount, "Split payment · 1 of 2"),
+  `recordPayment(order, method, last4)` = one part; both idempotent by order id; `chargesOf()` = frozen charges else rate card, flagged
   estimated). **Billing** `/grow/orders/billing` = `BillingPage` — invoices DERIVED per month × currency by
   `growOrders/invoices.ts` (never sum ₱ and $), status from Settings' Payment Type. **Disputes**
   `/grow/orders/disputes` (+ `/:id`) = `DisputesPage` on `growOrders/disputes.ts` (`grow-disputes-v3`): the live

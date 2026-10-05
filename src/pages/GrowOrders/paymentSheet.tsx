@@ -10,7 +10,13 @@
  *    Payment Type); the debit stays Pending and the invoice reads Due;
  *  · Cash on delivery — only when the order is COD (checkout only).
  * The chosen method is remembered per merchant (`merchantSettings.defaultPayMethod`).
- * Ledger: `growOrders/ledger.ts` (`recordPayment`, `settlePayments`, `walletOf`).
+ *
+ * Two sheets, the same four methods:
+ *  · `PaymentSheet` — ONE method (radio cards): Billing's / the overlay's "Pay now" (`PayNowDialog`);
+ *  · `SplitPaymentSheet` — ONE OR MORE methods (checkbox cards, each with its own amount that adds
+ *    up to the payable amount): checkout's "How you pay" step. Its state is `splitPayment.ts`
+ *    `useSplitPayment`, owned by the checkout page.
+ * Ledger: `growOrders/ledger.ts` (`recordSplitPayment`, `recordPayment`, `settlePayments`, `walletOf`).
  */
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -21,6 +27,7 @@ import { RECHARGE_METHODS, isDue, ledgerSnapshot, recharge, settlePayments, useL
 import { currentMerchant, useMasters, useMerchantCode } from '../../growOrders/masters'
 import { saveMerchantSettings, useMerchantSettings } from '../../growOrders/merchantSettings'
 import { MField, NumInput } from './merchantFormBits'
+import { digits, expiryOk, maskCard, type SplitPayment } from './splitPayment'
 import { money } from './utils'
 
 /* --------------------------------------------------------- recharge dialog -- */
@@ -61,33 +68,38 @@ export function RechargeDialog({ currency, suggested = 0, onClose, onDone }: {
 
 export interface PaymentChoice { method: PayMethod; last4?: string; ready: boolean; reason?: string }
 
-function MethodCard({ on, icon, title, sub, onClick, children }: {
+/**
+ * One method card. `check` = a checkbox card (tick any number of them) instead of a radio; `aside` is
+ * shown at the right of the header while the card is on (the split sheet's amount field).
+ */
+function MethodCard({ on, icon, title, sub, onClick, children, check, aside }: {
   on: boolean; icon: React.ReactNode; title: string; sub: React.ReactNode; onClick: () => void; children?: React.ReactNode
+  check?: boolean; aside?: React.ReactNode
 }) {
   return (
     <div className={`rounded-md border transition-colors ${on ? 'border-ink bg-warm-50' : 'border-line bg-surface hover:border-warm-300'}`}>
-      <button type="button" role="radio" aria-checked={on} onClick={onClick} className="flex w-full items-start gap-3 px-4 py-3 text-left">
-        <span className={`mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${on ? 'border-ink bg-ink text-white' : 'border-warm-400'}`}>
-          {on && <Check size={10} strokeWidth={3} />}
-        </span>
-        <span className="text-ink-3">{icon}</span>
-        <span className="min-w-0 flex-1">
-          <span className={`block text-[13px] text-ink ${on ? 'font-bold' : ''}`}>{title}</span>
-          <span className="block text-[12px] text-ink-3">{sub}</span>
-        </span>
-      </button>
+      <div className="flex items-start">
+        <button type="button" role={check ? 'checkbox' : 'radio'} aria-checked={on} onClick={onClick} className="flex min-w-0 flex-1 items-start gap-3 px-4 py-3 text-left">
+          {check ? (
+            <span className={`mt-0.5 inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[3px] border ${on ? 'border-brand-500 bg-brand-500 text-white' : 'border-warm-300 bg-surface'}`}>
+              {on && <Check size={11} strokeWidth={3} />}
+            </span>
+          ) : (
+            <span className={`mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${on ? 'border-ink bg-ink text-white' : 'border-warm-400'}`}>
+              {on && <Check size={10} strokeWidth={3} />}
+            </span>
+          )}
+          <span className="text-ink-3">{icon}</span>
+          <span className="min-w-0 flex-1">
+            <span className={`block text-[13px] text-ink ${on ? 'font-bold' : ''}`}>{title}</span>
+            <span className="block text-[12px] text-ink-3">{sub}</span>
+          </span>
+        </button>
+        {on && aside && <div className="shrink-0 pr-4 pt-2.5">{aside}</div>}
+      </div>
       {on && children && <div className="px-4 pb-4 pl-[52px]">{children}</div>}
     </div>
   )
-}
-
-const digits = (s: string) => s.replace(/\D/g, '')
-const maskCard = (d: string) => (d.length <= 4 ? d : `${'•'.repeat(d.length - 4)}${d.slice(-4)}`).replace(/(.{4})/g, '$1 ').trim()
-const expiryOk = (v: string) => {
-  const m = /^(\d{2})\/(\d{2})$/.exec(v)
-  if (!m || +m[1] < 1 || +m[1] > 12) return false
-  const now = new Date(); const y = 2000 + +m[2]
-  return y > now.getFullYear() || (y === now.getFullYear() && +m[1] >= now.getMonth() + 1)
 }
 
 /** The method cards. Calls `onChange` with the current choice and whether it can be paid. */
@@ -170,9 +182,64 @@ export function PaymentSheet({ amount, currency, allowCod = false, allowPayLater
   )
 }
 
-/** The primary button's label for a choice. */
-export const payLabel = (c: PaymentChoice | null, amount: number, currency: string, verb = 'and place order') =>
-  !c || c.method === 'Wallet' || c.method === 'Card' ? `Pay ${money(amount, currency)} ${verb}`.trim() : verb === 'and place order' ? 'Place order' : 'Confirm'
+/* ---------------------------------------------------------- split sheet ---- */
+
+/**
+ * Checkout's "How you pay": tick ONE OR MORE methods and give each an amount (state: `useSplitPayment`).
+ * A ticked card shows its amount field at the right; the Wallet offers Recharge when its balance cannot
+ * cover the whole payable amount; the Card shows the demo form (masked number, name, MM/YY). Under the
+ * cards one line says what is still to assign.
+ */
+export function SplitPaymentSheet({ split }: { split: SplitPayment }) {
+  const { currency, payable, balance, allowed, ticked, choice, card } = split
+  const [recharging, setRecharging] = useState(false)
+  const short = Math.max(0, Math.round((payable - balance) * 100) / 100)
+  const on = (m: PayMethod) => ticked.includes(m)
+  const amountField = (m: PayMethod, label: string) => (
+    <label className="block w-[150px]">
+      <span className="sr-only">{label} amount</span>
+      <NumInput value={split.amountOf(m)} onChange={(n) => split.setAmount(m, n)} unit={currency} blankZero placeholder="0.00" />
+    </label>
+  )
+  const covered = choice.left === 0
+  return (
+    <div>
+      <div role="group" aria-label="Ways to pay" className="flex flex-col gap-2">
+        <MethodCard check on={on('Wallet')} onClick={() => split.toggle('Wallet')} icon={<Wallet size={17} />} title="Wallet balance"
+          sub={<>Balance <b className="text-ink">{money(balance, currency)}</b></>} aside={amountField('Wallet', 'Wallet')}>
+          {short > 0 && (
+            <div className="flex flex-wrap items-center gap-3">
+              <Button variant="outline" size="sm" onClick={() => setRecharging(true)}>Recharge</Button>
+              <span className="text-[12px] text-ink-3">The wallet can pay up to {money(balance, currency)}. Add money to pay more from it.</span>
+            </div>
+          )}
+        </MethodCard>
+        <MethodCard check on={on('Card')} onClick={() => split.toggle('Card')} icon={<CreditCard size={17} />} title="Card / online"
+          sub="Demo only — no card is charged and the number is never stored" aside={amountField('Card', 'Card')}>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_110px]">
+            <MField label="Card number" required>
+              <Input value={card.number} placeholder="•••• •••• •••• ••••" onChange={card.setNumber} />
+            </MField>
+            <MField label="Name on card" required><Input value={card.name} onChange={card.setName} placeholder="As printed" /></MField>
+            <MField label="Expiry" required><Input value={card.expiry} placeholder="MM/YY" onChange={card.setExpiry} /></MField>
+          </div>
+        </MethodCard>
+        {allowed.includes('Pay later') && (
+          <MethodCard check on={on('Pay later')} onClick={() => split.toggle('Pay later')} icon={<CalendarClock size={17} />} title="Pay later / credit"
+            sub="Postpaid account — added to this month's invoice, shown as Due in Billing" aside={amountField('Pay later', 'Pay later')} />
+        )}
+        {allowed.includes('COD') && (
+          <MethodCard check on={on('COD')} onClick={() => split.toggle('COD')} icon={<Banknote size={17} />} title="Cash on delivery"
+            sub="Shipping charges collected with the COD amount at delivery" aside={amountField('COD', 'Cash on delivery')} />
+        )}
+      </div>
+      <p role="status" className={`mt-3 text-[13px] font-bold ${covered ? 'text-success-fg' : 'text-danger-fg'}`}>
+        {covered ? 'Fully covered' : choice.left > 0 ? `${money(choice.left, currency)} left to assign` : `${money(-choice.left, currency)} too much — lower an amount`}
+      </p>
+      {recharging && <RechargeDialog currency={currency} suggested={short} onClose={() => setRecharging(false)} />}
+    </div>
+  )
+}
 
 /* ------------------------------------------------------------- pay now ---- */
 

@@ -82,7 +82,7 @@ export default function ReceiptPage() {
                   })}
                 </td>
               </tr>}
-              {e.type === 'CR' && e.remarks && <tr><td className="py-2 text-ink-3">Remarks</td><td className="py-2 text-ink">{e.remarks}</td></tr>}
+              {(e.type === 'CR' || e.remarks.startsWith('Split payment')) && e.remarks && <tr><td className="py-2 text-ink-3">Remarks</td><td className="py-2 text-ink">{e.remarks}</td></tr>}
             </tbody>
           </table>
           {e.estimated && <p className="mt-4 text-center text-[12px] text-ink-3">Amount estimated from the rate card — this order was created outside checkout.</p>}
