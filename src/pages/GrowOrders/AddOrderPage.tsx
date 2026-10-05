@@ -100,6 +100,11 @@ const INSTRUCTION_OPTIONS = [
   'Fragile — handle with care', 'Signature required',
 ]
 const DIAL_CODES = ['+63', '+27', '+264', '+267', '+1', '+44', '+91']
+/** country name per dial code — lets the picker's search match "Philippines" as well as "+63" */
+const DIAL_COUNTRY: Record<string, string> = {
+  '+63': 'Philippines', '+27': 'South Africa', '+264': 'Namibia', '+267': 'Botswana',
+  '+1': 'United States', '+44': 'United Kingdom', '+91': 'India',
+}
 const DIM_UOMS = ['CM', 'IN', 'M']
 const WEIGHT_UOMS = ['KG', 'LB', 'G']
 /** rate-card price of a former FTL "Additional Service" — VAS itself is gone,
@@ -438,26 +443,26 @@ function Tick({ checked, onChange, children, sub }: { checked: boolean; onChange
   )
 }
 
-/** Country Code + Contact Number fused into one bordered control under a single
- *  "Contact Number" header — the code dropdown and the number share one pill,
- *  split by a single hairline, so only the outer box carries a border/focus ring. */
+/** Country Code + Contact Number under a single "Contact Number" header, glued into
+ *  one pill — each keeps its own real Input/MenuSelect styling (so it reads as a
+ *  native field, not a bespoke one), only the touching corners/border collapse: the
+ *  code's right corners square off, the number's left corners square off, and a
+ *  -ml-px overlap merges their two borders into a single shared hairline. Error
+ *  here (as everywhere else in this form) shows as the "Required field." text under
+ *  the control, never a red border. */
 function PhoneField({ label, required, code, number, onCode, onNumber, disabled, error }: {
   label: string; required?: boolean; code: string; number: string
   onCode: (v: string) => void; onNumber: (v: string) => void; disabled?: boolean; error?: string
 }) {
   return (
     <Fld label={label} required={required} error={!!error}>
-      <div className={`flex items-stretch overflow-hidden rounded-md border bg-surface transition-shadow
-        focus-within:border-brand-500 focus-within:ring-[3px] focus-within:ring-brand-500/20
-        ${error ? 'border-brand-500' : 'border-warm-300'}`}>
-        <div className="w-[88px] shrink-0 border-r border-warm-200
-          [&>div]:h-full [&>div]:rounded-none [&>div]:border-0
-          [&>div>button]:h-full [&>div>button]:rounded-none [&>div>button]:border-0
-          [&>div>button]:focus:outline-none [&>div>button]:focus:ring-0">
+      <div className="flex min-w-0">
+        <div className="w-[88px] shrink-0 [&>div]:rounded-r-none [&>div>button]:relative [&>div>button]:rounded-r-none [&>div>button]:focus:z-10">
           {disabled ? <ReadBox value={code || '+63'} />
-            : <MenuSelect value={code || '+63'} options={DIAL_CODES} onChange={onCode} />}
+            : <MenuSelect value={code || '+63'} options={DIAL_CODES} searchable
+                labels={(v) => `${DIAL_COUNTRY[v] ?? ''} ${v}`.trim()} renderValue={(v) => v} onChange={onCode} />}
         </div>
-        <div className="min-w-0 flex-1 [&>input]:h-full [&>input]:rounded-none [&>input]:border-0 [&>input]:focus:outline-none [&>input]:focus:ring-0">
+        <div className="-ml-px min-w-0 flex-1 [&>input]:relative [&>input]:rounded-l-none [&>input]:focus:z-10">
           <Input value={number} disabled={disabled} placeholder="eg, 1234567890" onChange={(v) => onNumber(v.replace(/[^\d ]/g, ''))} />
         </div>
       </div>
@@ -471,7 +476,7 @@ function PhoneField({ label, required, code, number, onCode, onNumber, disabled,
  * Staging's Regular address block, in its order, split under the console's
  * Contact Details / Address Details sub-heads:
  *   Location Code · Company Name · {Sender|Customer} Name* · Contact Number
- *   Email · Address Line 1* · Address Line 2 · Address Line 3
+ *   Email · Address Line 1* · Address Line 2
  *   Landmark · Country* · Postal Code · Suburb / County
  *   City* · State* · Latitude · Longitude
  *   {Pick Up|Delivery} window · Floor Number · Lift Available
@@ -506,20 +511,18 @@ export function PartyFields({ party, set, nameLabel, windowLabel, requireContact
         {locationCode}
         {!hid('addrCompanyName') && text('businessName', 'Company Name', { placeholder: 'eg, Random Company', reqKey: 'addrCompanyName' })}
         {text('name', nameLabel, { required: true, placeholder: 'eg, John Doe' })}
-        {/* spans 2 grid columns — a single column left too little room for the
-            country code plus a full number to show without truncating */}
-        <div className="sm:col-span-2">
-          <PhoneField label="Contact Number" required={requireContact} code={party.countryCode ?? ''} number={party.contactNumber}
-            disabled={locked} error={err(party.contactNumber, !!requireContact)}
-            onCode={(v) => set({ countryCode: v })} onNumber={(v) => set({ contactNumber: v })} />
-        </div>
+        {/* one grid column, same as every other field here — the merged code+number
+            pill (PhoneField) is compact enough now to fit without its own 2-column span,
+            which otherwise pushed Email onto a near-empty row of its own */}
+        <PhoneField label="Contact Number" required={requireContact} code={party.countryCode ?? ''} number={party.contactNumber}
+          disabled={locked} error={err(party.contactNumber, !!requireContact)}
+          onCode={(v) => set({ countryCode: v })} onNumber={(v) => set({ contactNumber: v })} />
         {!hid('addrEmail') && text('email', 'Email', { type: 'email', placeholder: 'eg, johndoe@xyz.com', reqKey: 'addrEmail' })}
       </Grid>
       <SubHead label="Address Details" />
       <Grid>
         {text('line1', 'Address Line 1', { required: true, placeholder: 'eg, Building No.' })}
-        {/* the registry groups line 2 & 3 for visibility only — line 3 stays genuinely optional even when required */}
-        {!hid('addrLines23') && <>{text('line2', 'Address Line 2', { placeholder: 'eg, Street 1 A', reqKey: 'addrLines23' })}{text('line3', 'Address Line 3', { placeholder: 'eg, Behind High School' })}</>}
+        {!hid('addrLines23') && text('line2', 'Address Line 2', { placeholder: 'eg, Street 1 A', reqKey: 'addrLines23' })}
         {!hid('addrLandmark') && text('landmark', 'Landmark', { placeholder: 'eg, Behind High School', reqKey: 'addrLandmark' })}
         <F label="Country" required value={party.country} disabled={locked} error={err(party.country)}
           options={opts(COUNTRIES)} placeholder="Select country" onChange={(v) => set({ country: v })} />
