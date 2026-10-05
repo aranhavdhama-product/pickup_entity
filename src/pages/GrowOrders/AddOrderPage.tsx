@@ -1540,12 +1540,15 @@ export default function AddOrderPage() {
                   </div>
                 </div>
 
-                {/* only meaningful once a package covers more than one physical unit */}
+                {/* only meaningful once a package covers more than one physical unit — a compact
+                    single-line toggle (same treatment as the RTO flag) instead of a full labelled
+                    row, since it's a rare, secondary flag that shouldn't compete with the fields above */}
                 {!hid('scannable') && p.quantity > 1 && (
-                  <div className="mt-3">
-                    <InlineToggle label="Separate label for each unit in this package"
-                      checked={!!c.scannable} onChange={(v) => setC({ scannable: v })} />
-                  </div>
+                  <label className="mt-2 flex w-fit cursor-pointer items-center gap-1.5 text-[12.5px] font-bold text-ink-2">
+                    <ScanBarcode size={13} className="shrink-0 text-ink-3" />
+                    Separate label per unit
+                    <Toggle checked={!!c.scannable} onChange={(v) => setC({ scannable: v })} />
+                  </label>
                 )}
 
                 {/* contents — optional, nested SKU lines scoped to this package, each ONE dense row too;
