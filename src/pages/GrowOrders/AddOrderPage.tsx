@@ -1544,7 +1544,7 @@ export default function AddOrderPage() {
                     single-line toggle (same treatment as the RTO flag) instead of a full labelled
                     row, since it's a rare, secondary flag that shouldn't compete with the fields above */}
                 {!hid('scannable') && p.quantity > 1 && (
-                  <label className="mt-2 flex w-fit cursor-pointer items-center gap-1.5 text-[12.5px] font-bold text-ink-2">
+                  <label className="mx-3 mb-3 mt-2 flex w-fit cursor-pointer items-center gap-1.5 text-[12.5px] font-bold text-ink-2">
                     <ScanBarcode size={13} className="shrink-0 text-ink-3" />
                     Separate label per unit
                     <Toggle checked={!!c.scannable} onChange={(v) => setC({ scannable: v })} />
@@ -1553,9 +1553,13 @@ export default function AddOrderPage() {
 
                 {/* contents — optional, nested SKU lines scoped to this package, each ONE dense row too;
                     adding one is the row's own "Add SKU" action (hover cluster above), not a button here.
-                    Collapses to a one-line "N SKUs" summary once Add Package moves on to a new one. */}
+                    Collapses to a one-line "N SKUs" summary once Add Package moves on to a new one.
+                    mx-3 matches the fields row's own px-3 inset (the fields row's padding lives on its
+                    grid div, one level down, so this sibling needs its own); mb-3 gives whichever of
+                    these is the package's last child some breathing room before its border separator,
+                    which otherwise sits flush against it and reads as no separation at all. */}
                 {items.length > 0 && (contentsCollapsed(p) ? (
-                  <div className="mt-1.5">
+                  <div className="mx-3 mb-3 mt-1.5">
                     <button type="button" onClick={() => expandContents(p)}
                       className="flex items-center gap-1.5 text-[12px] font-bold text-ink-3 hover:text-ink">
                       <ChevronRight size={13} />
@@ -1563,7 +1567,7 @@ export default function AddOrderPage() {
                     </button>
                   </div>
                 ) : (
-                  <div className="mt-1.5">
+                  <div className="mx-3 mb-3 mt-1.5">
                     <div className="overflow-x-auto rounded-md border border-line/70">
                       <div style={{ gridTemplateColumns: SKU_COLS }} className="grid min-w-max gap-2 border-b border-line/70 bg-warm-25/60 px-2.5 py-1.5 text-[11px] font-bold text-ink-3">
                         <span>SKU Code</span><span>Name</span><span>Qty</span>
