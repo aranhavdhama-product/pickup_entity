@@ -1452,7 +1452,7 @@ export default function AddOrderPage() {
      px-3 padding ate most of a narrow column regardless of its track width. No per-cell
      "cm"/"kg" tags either (the header already says so) — those were quietly stealing
      width back from the one thing meant to be narrow. */
-  const PKG_COLS = `minmax(130px,170px) 56px minmax(80px,140px) 9ch${hid('pkgDimensions') ? '' : ' 5ch 5ch 9ch'} 56px`
+  const PKG_COLS = `minmax(130px,170px) 56px minmax(160px,280px) 9ch${hid('pkgDimensions') ? '' : ' 5ch 5ch 9ch'} 56px`
   const SKU_COLS = `minmax(100px,120px) minmax(100px,140px) 52px${hid('skuDescription') ? '' : ' minmax(90px,120px)'} minmax(80px,100px) minmax(90px,120px)${hid('skuUnitCost') ? '' : ' 7ch'}${hid('skuDimensions') ? '' : ' 120px'}${hid('skuWeight') ? '' : ' 80px'} 32px`
   const packageSection = (
     <div id="sec-package" className="scroll-mt-20">
@@ -1470,8 +1470,8 @@ export default function AddOrderPage() {
           {parcels.map((p, i) => {
             const items = p.items ?? []
             return (
-              <div key={p.packageId ?? i} className="group border-b border-line px-3 py-2.5 last:border-0">
-                <div style={{ gridTemplateColumns: PKG_COLS }} className="grid min-w-max items-center gap-2">
+              <div key={p.packageId ?? i} className="group border-b border-line last:border-0">
+                <div style={{ gridTemplateColumns: PKG_COLS }} className="grid min-w-max items-center gap-2 px-3 py-2.5">
                   <div title={packageTypeTitle}>
                     <MenuSelect value={packageValue(p, packageTypes)} placeholder="Select" searchable
                       options={packageTypeOpts.map((o) => o.value)} labels={(v) => packageTypeOpts.find((o) => o.value === v)?.label ?? v}
