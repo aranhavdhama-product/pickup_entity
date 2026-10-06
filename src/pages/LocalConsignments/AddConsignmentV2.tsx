@@ -30,7 +30,7 @@
  * never change. Errors appear only after an Add Order attempt. Labels 13px ink (owner exception to the type scale).
  * Deep links: `?draft=`, `?fromPickup=`, `?fromOverage=`, `?step=1|2` (packages / carriers).
  */
-import { createContext, isValidElement, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
+import { createContext, Fragment, isValidElement, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
@@ -1255,19 +1255,22 @@ interface ItemLine { id: string; item: ParcelItem }
  *   combined  — packages with their SKUs: each box, and what is packed in it
  */
 const FORM_TIER_V2_KEY = 'console-consignment-form-v2-tier'
-/** The Summary card's lines (2026-10-05) — the console's ops view and Grow's merchant view differ. */
-interface SummaryLine { key: string; label: string }
+/** The Summary card's blocks (2026-10-05; 2026-10-06, owner: "make the Grow summary look like this [the second branch's
+    Shipment Summary], and the console the same view with the details that matter to it"). Blocks stack — a grey label,
+    Edit (jumps to its card), the value, a grey line; `foot` rows sit under them (the totals). Each one can be switched
+    off per portal in the builder; the blocks drag to reorder, the foot stays at the foot. */
+interface SummaryLine { key: string; label: string; foot?: boolean }
 const SUMMARY_LINES: Record<'console' | 'grow', SummaryLine[]> = {
   console: [
-    { key: 'merchant', label: 'Merchant' }, { key: 'type', label: 'Consignment type' }, { key: 'route', label: 'Route' },
-    { key: 'legs', label: 'Legs' }, { key: 'goods', label: 'Pieces & weight' }, { key: 'service', label: 'Service Type' },
-    { key: 'load', label: 'Load type' }, { key: 'carrier', label: 'Carrier' }, { key: 'pickup', label: 'Pickup window' },
-    { key: 'delivery', label: 'Delivery window' },
+    { key: 'consignment', label: 'Consignment' }, { key: 'shipFrom', label: 'Ship From' }, { key: 'shipTo', label: 'Ship To' },
+    { key: 'legs', label: 'Shipment legs' }, { key: 'goods', label: 'Packages' }, { key: 'service', label: 'Service' },
+    { key: 'carrier', label: 'Carrier' },
+    { key: 'totals', label: 'Pieces & weight', foot: true }, { key: 'eta', label: 'ETA', foot: true },
   ],
   grow: [
-    { key: 'route', label: 'Route' }, { key: 'goods', label: 'Pieces & weight' }, { key: 'load', label: 'Load type' },
-    { key: 'service', label: 'Service Type' }, { key: 'pickup', label: 'Pickup' }, { key: 'vas', label: 'Value-added services' },
-    { key: 'price', label: 'Estimated price' },
+    { key: 'shipFrom', label: 'Ship From' }, { key: 'shipTo', label: 'Ship To' }, { key: 'goods', label: 'Packages' },
+    { key: 'service', label: 'Service' },
+    { key: 'totals', label: 'Price', foot: true }, { key: 'eta', label: 'ETA', foot: true },
   ],
 }
 const summaryLinesOf = (p: 'console' | 'grow') => SUMMARY_LINES[p]
@@ -3724,85 +3727,152 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     const day = isNaN(d.getTime()) ? dateOf(a) : d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
     return `${day} · ${timeOf(a)}${filled(b) ? `–${timeOf(b)}` : ''}`
   }
-  const placeOf = (p: Party) => [p.city, p.state].filter((x) => filled(x)).join(', ') || (filled(p.name) ? p.name : '')
   const goodsPieces = goods.reduce((n, p) => n + (p.quantity || 0), 0)
-  const goodsKg = round2(goods.reduce((n, p) => n + (p.weight || 0) * (p.quantity || 0), 0))
-  const routeText = placeOf(sender) && placeOf(receiver)
-    ? `${placeOf(sender)} → ${placeOf(receiver)}${drops.length ? ` + ${plural(drops.length, 'more drop')}` : ''}` : ''
   const pickupText = merchantMode
     ? (pickupState === 'auto-rule' ? (autoWin ? `Booked automatically · ${fmtWin(autoWin)}` : 'Booked automatically')
       : hasWindow ? whenText(sender.windowStart, sender.windowEnd) : pickupState === 'off' ? '' : 'Schedule later')
     : whenText(sender.windowStart, sender.windowEnd)
-  const summaryValues: Record<string, ReactNode> = merchantMode ? {
-    route: routeText,
-    goods: goodsPieces ? `${plural(goodsPieces, 'piece')} · ${goodsKg} kg` : '',
-    load: mode === 'ftl' ? `Full vehicle${vehicleLine ? ` · ${vehicleLine}` : ''}` : 'Shared vehicle',
-    service: quote ? `${quote.name} · delivery by ${plural(quote.days, 'day')}` : growService,
-    pickup: pickupText,
-    vas: vasNames.join(', '),
-    price: quote && ftlOk ? <><b>{money(quote.net, currency)}</b><span className="text-ink-3"> estimated, before tax</span></> : '',
-  } : {
-    merchant: merchant?.name ?? '',
-    type: ctype,
-    route: routeText,
-    legs: legList.map((l) => LEG_INFO[l].name).join(' → '),
-    goods: isFtl ? (vehicles.length ? `${plural(vehicles.length, 'vehicle')} · ${round2(actualLoad)} kg` : '')
-      : goodsPieces ? `${plural(goodsPieces, 'piece')} · ${goodsKg} kg` : '',
-    service: isFtl ? consoleFtl : consoleService,
-    load: isFtl || dedicated ? `Full vehicle${!isFtl && vehicleChoice ? ` · ${vehicleChoice}` : ''}` : 'Shared vehicle',
-    carrier: c.carrier ?? '',
-    pickup: pickupText,
-    delivery: whenText(receiver.windowStart, receiver.windowEnd),
+  /* ---- the blocks' content ---- */
+  /* an address reads back only once it has a name or a line (the default country alone is not an address) */
+  const partyText = (p: Party) => (filled(p.name) || filled(p.line1)
+    ? [p.name, p.line1, p.line2, p.city, p.state, p.country, p.postalCode].filter((x) => filled(x)).join(', ') : '')
+  const skuUnits = goods.reduce((n, p) => n + (p.quantity || 0) * (p.items ?? []).filter((it) => !isBlankItem(it)).reduce((m, it) => m + (it.quantity || 0), 0), 0)
+  const fullVehicle = merchantMode ? mode === 'ftl' : isFtl || dedicated
+  const growCarrier = mode === 'ftl' ? '2GO Logistics' : '2GO Express'
+  const vasAmount = quote ? quote.lines.filter((l) => vasNames.includes(l.label)).reduce((n, l) => n + l.amount, 0) : 0
+  const etaDays = merchantMode ? quote?.days ?? null : svc.days
+  const muted = (t: string) => <span className="text-ink-3">{t}</span>
+  const kgText = (n: number) => `${round2(n).toLocaleString()} kg`
+  /* breaks only between its parts — never "2.57 / kg" */
+  const weightLine = [`Dead ${kgText(weights.dead)}`, `Vol ${kgText(weights.volumetric)}`, `Chargeable ${kgText(weights.chargeable)}`]
+    .map((t, i) => <Fragment key={i}>{i > 0 && ' · '}<span className="whitespace-nowrap">{t}</span></Fragment>)
+  type SumBlock = { title: string; value: ReactNode; sub?: ReactNode; jump?: string | null }
+  const sumBlocks: Record<string, SumBlock> = {
+    consignment: {
+      title: 'Consignment', jump: 'sec-consignment',
+      value: <>{merchant?.name ?? muted('No merchant yet')} · {ctype}</>,
+      sub: [filled(effectiveOrder) && `Order ${effectiveOrder.trim()}`, filled(effectiveRef) && effectiveRef.trim() !== effectiveOrder.trim() && `Ref ${effectiveRef.trim()}`]
+        .filter(Boolean).join(' · '),
+    },
+    shipFrom: {
+      title: 'Ship From', jump: 'sec-parties',
+      value: partyText(sender) || '—',
+      sub: merchantMode ? (pickupText ? `Pickup: ${pickupText}` : '') : (pickupText ? `Pick up ${pickupText}` : ''),
+    },
+    shipTo: {
+      title: allDrops.length > 1 ? `Ship To (${allDrops.length} addresses)` : 'Ship To', jump: 'sec-parties',
+      value: allDrops.length > 1
+        ? <>{allDrops.map((d, i) => <span key={i} className="block">{i + 1}. {partyText(d) || '—'}</span>)}</>
+        : partyText(receiver) || '—',
+      sub: !merchantMode && filled(receiver.windowStart) ? `Deliver ${whenText(receiver.windowStart, receiver.windowEnd)}` : '',
+    },
+    legs: {
+      title: 'Shipment legs', jump: 'sec-parties',
+      value: legsDirect ? 'Pick & Del' : legList.length ? legList.map((l) => LEG_INFO[l].name).join(' → ') : muted('No legs yet'),
+      sub: !legsDirect && legList.length && viaHubs.length ? `Via ${viaHubs.join(' → ')}` : '',
+    },
+    goods: isFtl ? {
+      title: 'FTL · Vehicle Details', jump: 'sec-vehicle',
+      value: `${consoleFtl} · ${plural(vehicles.length, 'vehicle')} · ${(actualLoad / 1000).toFixed(2)} tons`,
+    } : {
+      title: `${fullVehicle ? 'FTL' : 'LTL'} · Packages`, jump: 'sec-packages',
+      value: goodsPieces ? `${plural(goodsPieces, 'package')}${skuUnits ? ` · ${plural(skuUnits, 'SKU unit')}` : ''}` : muted('No packages yet'),
+      sub: <>{goodsPieces > 0 && <span className="block">{weightLine}</span>}
+        {merchantMode && mode === 'ftl' && vehicleLine && <span className="block">Vehicles: {vehicleLine}</span>}</>,
+    },
+    service: merchantMode ? {
+      title: 'Service', jump: growServiceCard ? 'sec-service' : null,
+      value: quote ? `${quote.name} · ${growCarrier}` : muted('no service selected yet'),
+      sub: vasNames.length ? `+ ${vasNames.join(', ')}` : '',
+    } : {
+      title: 'Service', jump: consoleServiceCard ? 'sec-service' : null,
+      value: <>{isFtl ? consoleFtl : consoleService} · {isFtl || dedicated ? `Full vehicle${!isFtl && vehicleChoice ? ` · ${vehicleChoice}` : ''}` : 'Shared vehicle'}</>,
+      sub: vasNames.length ? `+ ${vasNames.join(', ')}` : '',
+    },
+    carrier: {
+      title: 'Carrier', jump: 'sec-carrier',
+      value: c.carrier || muted('no carrier selected yet'),
+    },
   }
-  const lineLabel = (l: SummaryLine) => (l.key === 'service' ? lbl('serviceType') : l.key === 'goods' && isFtl ? 'Vehicles' : l.label)
   const toggleLine = (key: string, on: boolean) => {
     setDraftSummary((x) => ({ ...x, hidden: on ? x.hidden.filter((k) => k !== key) : [...x.hidden, key] }))
-    if (!on && !showHidden) toast.info('Line hidden — “Show hidden fields” brings it back')
+    if (!on && !showHidden) toast.info('Hidden — “Show hidden fields” brings it back')
   }
   const setSummaryOn = (on: boolean) => {
     setDraftSummary((x) => ({ ...x, enabled: on }))
     if (!on && !showHidden) toast.info('Summary hidden — “Show hidden fields” brings it back')
   }
-  /* owner, 2026-10-06: a VERTICAL card — beside the form (sticky) when the page is wide enough, under it otherwise; one line
-     under the other, label above value, the estimated price larger. While the form is edited every line shows (each with
-     its switch) and lines drag up / down. */
+  const sumLines = summaryLinesOf(formPortal).filter((l) => (editing && showHidden) || !summaryCfg.hidden.includes(l.key))
+  /** while editing: the switch that shows / hides one block or foot row */
+  const lineSwitch = (key: string) => {
+    const off = summaryCfg.hidden.includes(key)
+    return (
+      <Tip text={off ? 'Hidden — switch on to show it' : 'Shown — switch off to hide it'}>
+        <span className="inline-flex shrink-0"><Toggle checked={!off} onChange={(on) => toggleLine(key, on)} /></span>
+      </Tip>
+    )
+  }
+  /* the foot (the totals): Grow = what it costs, the console = how much it is; ETA under both */
+  const footRows = (key: string): [ReactNode, ReactNode, boolean?][] => key === 'eta'
+    ? [[<span title="Estimated — the carrier confirms the delivery date">ETA<span className="text-brand-500">*</span></span>,
+        etaDays != null ? plural(etaDays, 'day') : '—']]
+    : merchantMode
+      ? [
+        ['Delivery', quote ? money(quote.net - vasAmount, currency) : '—'],
+        ...(vasAmount > 0 ? [['Value-added services', money(vasAmount, currency)] as [ReactNode, ReactNode]] : []),
+        [<span title="Estimated, before tax — checkout shows the tax">Total</span>, quote ? money(quote.net, currency) : '—', true],
+      ]
+      : [
+        [isFtl ? 'Vehicles' : 'Pieces', isFtl ? String(vehicles.length) : String(goodsPieces)],
+        [isFtl ? 'Load' : 'Chargeable weight', kgText(isFtl ? actualLoad : weights.chargeable), true],
+      ]
+  const summaryTitle = merchantMode ? 'Shipment Summary' : 'Consignment Summary'
+  /* owner, 2026-10-06: the second branch's Shipment Summary — a vertical card beside the form (sticky) when the page is wide
+     enough, under it otherwise */
   const summarySection = (
-    <section id="sec-summary" aria-label="Summary" className="rounded-xl bg-surface p-5">
-      <div className="flex min-h-6 items-center justify-between gap-3">
-        <h2 className="flex items-center gap-2 text-[15px] font-bold text-ink">
-          Summary
-          <InfoTip text={merchantMode ? 'Your order at a glance — check it before checkout.' : 'The consignment at a glance — check it before you add it.'} />
-        </h2>
-      </div>
+    <section id="sec-summary" aria-label={summaryTitle} className="rounded-xl bg-surface px-5 pb-4 pt-4">
+      <h2 className="pb-3 text-[15px] font-bold text-ink">{summaryTitle}</h2>
       {editing && (
-        <div className="mt-3 rounded-lg bg-warm-50 px-3 py-2">
+        <div className="mb-3 rounded-lg bg-warm-50 px-3 py-2">
           <Tip text={`Show the summary on the ${formPortal === 'grow' ? 'Grow portal' : 'console'} form`}>
             <InlineSwitch label={summaryCfg.enabled ? 'Shown on this form' : 'Not shown'} checked={summaryCfg.enabled} onChange={setSummaryOn} />
           </Tip>
         </div>
       )}
-      <div className={`mt-2 divide-y divide-line ${editing && !summaryCfg.enabled ? 'opacity-50' : ''}`}>
-        {arrange(sortApi, 'summary', summaryLinesOf(formPortal)
-          .filter((l) => (editing && showHidden) || !summaryCfg.hidden.includes(l.key))
-          .map((l): RevealEntry => {
-            const off = summaryCfg.hidden.includes(l.key)
-            const price = l.key === 'price'
-            return [null, (
-              <div key={l.key} className="min-w-0 py-3">
-                <div className="flex min-h-5 items-center justify-between gap-2">
-                  <span className="min-w-0 truncate text-[12px] text-ink-3">{lineLabel(l)}</span>
-                  {editing && (
-                    <Tip text={off ? 'Hidden — switch on to show this line' : 'Shown — switch off to hide this line'}>
-                      <span className="ml-auto inline-flex shrink-0"><Toggle checked={!off} onChange={(on) => toggleLine(l.key, on)} /></span>
-                    </Tip>
-                  )}
-                </div>
-                <p className={`mt-0.5 break-words ${price ? 'text-[15px] leading-6' : 'text-[13px] leading-5'} text-ink ${off ? 'opacity-40' : ''}`}>
-                  {summaryValues[l.key] || <span className="text-ink-3">—</span>}
-                </p>
+      <div className={editing && !summaryCfg.enabled ? 'opacity-50' : ''}>
+        {arrange(sortApi, 'summary', sumLines.filter((l) => !l.foot && sumBlocks[l.key]).map((l): RevealEntry => {
+          const bk = sumBlocks[l.key]
+          const off = summaryCfg.hidden.includes(l.key)
+          return [null, (
+            <div key={l.key} className={`flex gap-3 border-t border-line py-3 ${off ? 'opacity-40' : ''}`}>
+              <div className="min-w-0 flex-1">
+                <p className="text-[12px] font-bold text-ink-3">{bk.title}</p>
+                <div className="mt-0.5 break-words text-[13px] leading-5 text-ink">{bk.value}</div>
+                {bk.sub && <div className="mt-0.5 break-words text-[12px] leading-[18px] text-ink-3">{bk.sub}</div>}
               </div>
-            )]
-          }), () => false, true, 'rows').nodes}
+              {editing ? lineSwitch(l.key) : bk.jump && (
+                <button type="button" onClick={() => jumpTo(bk.jump!)} className="self-start text-[12px] font-bold text-brand-500 hover:text-brand-600">Edit</button>
+              )}
+            </div>
+          )]
+        }), () => false, true, 'rows').nodes}
+        {sumLines.some((l) => l.foot) && (
+          <div className="border-t border-line pt-3">
+            {sumLines.filter((l) => l.foot).map((l) => (
+              <div key={l.key} className={`flex items-start gap-3 ${summaryCfg.hidden.includes(l.key) ? 'opacity-40' : ''}`}>
+                <div className="grid min-w-0 flex-1 grid-cols-[1fr_auto] items-baseline gap-x-6 gap-y-1 py-0.5 text-[13px] text-ink-2">
+                  {footRows(l.key).map(([k, v, strong], i) => (
+                    <Fragment key={i}>
+                      <span className={strong ? 'font-bold text-ink' : ''}>{k}</span>
+                      <span className={`text-right tabular-nums text-ink ${strong ? 'text-[15px] font-bold' : ''}`}>{v}</span>
+                    </Fragment>
+                  ))}
+                </div>
+                {editing && lineSwitch(l.key)}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </section>
   )

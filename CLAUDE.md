@@ -387,9 +387,14 @@ Product changes layered on the replica (deliberate departures from the live port
   not know after its natural predecessor. **More** keeps its meaning: a More field waits in its NEW place and is revealed
   there. **Summary** = an optional VERTICAL card (owner, 2026-10-06: "vertical card, not horizontal") — beside the form, sticky,
 300px, while the form area is ≥ 1000px wide (a container query on the form wrapper, so a collapsed sidebar counts), else under
-the cards; one line under the other (label above value, the estimated price larger); it is NOT one of the movable cards. The console's ops lines (Merchant · Type ·
-  Route · Legs · Pieces & weight · Service Type · Load type · Carrier · Pickup / Delivery window) and Grow's merchant lines
-  (Route · Pieces & weight · Load type · Service Type · Pickup · Value-added services · Estimated price); its on / off and
+the cards; it is NOT one of the movable cards. It looks like the second branch's **Shipment Summary** (owner, 2026-10-06):
+  stacked blocks — a 12px bold grey label, **Edit** on the right (jumps to its card), the value, a 12px grey line — then a
+  foot of totals. Grow = **Shipment Summary**: Ship From (+ Pickup) · Ship To · LTL / FTL · Packages (packages · SKU units;
+  Dead · Vol · Chargeable; Vehicles) · Service (name · carrier, + VAS) · foot Delivery · Value-added services · Total (net,
+  before tax) · ETA*. Console = **Consignment Summary**: Consignment (merchant · type, Order / Ref) · Ship From (+ pick-up
+  window) · Ship To (+ delivery window) · Shipment legs (+ via hubs) · Packages / FTL · Vehicle Details · Service (+ load type,
+  vehicle, VAS) · Carrier · foot Pieces / Vehicles · Chargeable weight / Load · ETA*. Blocks + foot rows = `SUMMARY_LINES`
+  (keys; `foot` rows stay at the foot, blocks drag in zone `summary`); its on / off and
   hidden lines live per portal on their own (`formSetup.loadSummary/saveSummary`, `fe-consignment-form-v2-summary[-grow]`,
   default console OFF, Grow ON — Grow does NOT follow the console here); while editing the card shows a "Shown on this
   form" switch and a switch per line, and it follows **Show hidden fields** like every field (owner, 2026-10-06): switched
