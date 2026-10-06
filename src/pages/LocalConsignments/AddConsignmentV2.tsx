@@ -809,7 +809,7 @@ const SortCtx = createContext<SortApi | null>(null)
 let liveDragValue: { zone: string; id: string } | null = null
 const liveDrag = { get: () => liveDragValue, set: (v: { zone: string; id: string } | null) => { liveDragValue = v } }
 /** a zone's entries in the saved order, through the More fold; drag cells while the form is edited */
-function arrange(sort: SortApi | null, zone: string, entries: RevealEntry[], inMore: (k: string) => boolean, open: boolean, gap?: 'chips') {
+function arrange(sort: SortApi | null, zone: string, entries: RevealEntry[], inMore: (k: string) => boolean, open: boolean, gap?: 'chips' | 'rows') {
   const live = entries.filter((e): e is LiveEntry => !!e)
   return revealEntries(applyOrder(live, entryId, sort?.order(zone)), inMore, open,
     sort?.active ? (node, id) => <SortCell key={id} zone={zone} id={id} gap={gap}>{node}</SortCell> : undefined)
@@ -818,13 +818,19 @@ function arrange(sort: SortApi | null, zone: string, entries: RevealEntry[], inM
 const zoneIds = (cell: HTMLElement, zone: string) => [...(cell.parentElement?.children ?? [])]
   .filter((c): c is HTMLElement => c instanceof HTMLElement && c.dataset.sortZone === zone).map((c) => c.dataset.sortId!)
 /** One field as a drag cell (edit mode only): a grip on hover, a brand bar where it would land, faded while dragged. */
-function SortCell({ zone, id, gap, children }: { zone: string; id: string; gap?: 'chips'; children: ReactNode }) {
+function SortCell({ zone, id, gap, children }: { zone: string; id: string; gap?: 'chips' | 'rows'; children: ReactNode }) {
   const s = useContext(SortCtx)!
   const dragging = s.drag?.zone === zone && s.drag.id === id
   const over = s.over && s.over.zone === zone && s.over.id === id ? s.over : null
-  const side = (e: { clientX: number; currentTarget: HTMLElement }) => { const r = e.currentTarget.getBoundingClientRect(); return e.clientX > r.left + r.width / 2 }
-  /* the bar sits in the middle of the gap: 24px between grid fields, 8px between chips */
-  const bar = gap === 'chips' ? (over?.after ? '-right-[6px]' : '-left-[6px]') : (over?.after ? '-right-[14px]' : '-left-[14px]')
+  /* a vertical list (the Summary's lines) is split top / bottom; a grid or a chip row left / right */
+  const rows = gap === 'rows'
+  const side = (e: { clientX: number; clientY: number; currentTarget: HTMLElement }) => {
+    const r = e.currentTarget.getBoundingClientRect()
+    return rows ? e.clientY > r.top + r.height / 2 : e.clientX > r.left + r.width / 2
+  }
+  /* the bar sits in the middle of the gap: 24px between grid fields, 8px between chips, on the line between rows */
+  const bar = rows ? (over?.after ? '-bottom-[2px]' : '-top-[2px]')
+    : gap === 'chips' ? (over?.after ? '-right-[6px]' : '-left-[6px]') : (over?.after ? '-right-[14px]' : '-left-[14px]')
   return (
     <div data-sort-zone={zone} data-sort-id={id} draggable
       onDragStart={(e) => { e.stopPropagation(); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', id); s.start(zone, id) }}
@@ -843,9 +849,11 @@ function SortCell({ zone, id, gap, children }: { zone: string; id: string; gap?:
         s.end()
       }}
       className={`group/sort relative min-w-0 cursor-grab active:cursor-grabbing ${dragging ? 'opacity-40' : ''}`}>
-      {over && !dragging && <span aria-hidden className={`pointer-events-none absolute -bottom-1 -top-1 z-30 w-[3px] rounded-full bg-brand-500 ${bar}`} />}
+      {over && !dragging && (rows
+        ? <span aria-hidden className={`pointer-events-none absolute left-0 right-0 z-30 h-[3px] rounded-full bg-brand-500 ${bar}`} />
+        : <span aria-hidden className={`pointer-events-none absolute -bottom-1 -top-1 z-30 w-[3px] rounded-full bg-brand-500 ${bar}`} />)}
       {gap !== 'chips' && (
-        <span aria-hidden className="pointer-events-none absolute -left-[19px] top-0.5 z-20 hidden text-warm-400 group-hover/sort:block"><GripVertical size={14} /></span>
+        <span aria-hidden className={`pointer-events-none absolute z-20 hidden text-warm-400 group-hover/sort:block ${rows ? '-left-[17px] top-3.5' : '-left-[19px] top-0.5'}`}><GripVertical size={14} /></span>
       )}
       {children}
     </div>
@@ -969,7 +977,7 @@ function Grid2({ children, className = '' }: { children: ReactNode; className?: 
 function SubTitle({ children, right }: { children: ReactNode; right?: ReactNode }) {
   return (
     <div className="mb-4 flex min-h-8 items-center justify-between gap-3">
-      <span className="text-[14px] font-bold text-ink">{children}</span>
+      <span className="shrink-0 whitespace-nowrap text-[14px] font-bold text-ink">{children}</span>
       {right}
     </div>
   )
@@ -2253,7 +2261,9 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   const svcSec = consoleServiceCard ? ['sec-service'] : []
   /* the Summary card closes the form while it is on (and always while the form is edited, to switch it on) */
   const summaryShown = !simple && (editing || (summaryCfg.enabled && summaryLinesOf(formPortal).some((l) => !summaryCfg.hidden.includes(l.key))))
-  const sumSec = summaryShown ? ['sec-summary'] : []
+  /* owner, 2026-10-06 ("summary should be a vertical card, not a horizontal one"): the Summary is no longer a card in
+     the flow — it is the vertical card beside the form (see the layout at the bottom), so it takes no place here */
+  const sumSec: string[] = []
   const sections = merchantMode ? ['sec-consignment', 'sec-parties', 'sec-packages', 'sec-handling', 'sec-extras', ...(growServiceCard ? ['sec-service'] : []), ...sumSec]
     : simple ? ['sec-consignment', 'sec-parties', isFtl ? 'sec-vehicle' : 'sec-packages', 'sec-carrier'] : isFtl
     ? ['sec-consignment', 'sec-parties', ...svcSec, 'sec-vehicle', ...(handlingVisible ? ['sec-handling'] : []), 'sec-carrier', ...sumSec]
@@ -2546,7 +2556,13 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
       <DateTimeCell label={`${w} End Time`} at={p.windowEnd ?? ''} fallbackTime="23:59" onChange={(v) => patchParty(role, idx)({ windowEnd: v })} />
     </>
     /* the address on the form is four columns wide — the window keeps to its left half (the full width in the narrower preview) */
-    return <Grid2 className={`mt-6 ${stackedInline && !editing ? 'lg:w-1/2 lg:pr-3' : ''}`}>{cells}</Grid2>
+    /* the two cells sit side by side only where each gets room for its date AND time (a container query — the column
+       is narrower beside the vertical Summary) */
+    return (
+      <div className={`@container mt-6 ${stackedInline && !editing ? 'lg:w-1/2 lg:pr-3' : ''}`}>
+        <div className={`grid grid-cols-1 ${FIELD_GAPS} @min-[440px]:grid-cols-2`}>{cells}</div>
+      </div>
+    )
   }
   const addressSlot = (role: Role, idx: number, title: ReactNode, right?: ReactNode) => {
     const p = partyOf(role, idx)
@@ -3624,38 +3640,49 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   }
   const lineLabel = (l: SummaryLine) => (l.key === 'service' ? lbl('serviceType') : l.key === 'goods' && isFtl ? 'Vehicles' : l.label)
   const toggleLine = (key: string, on: boolean) => setDraftSummary((x) => ({ ...x, hidden: on ? x.hidden.filter((k) => k !== key) : [...x.hidden, key] }))
+  /* owner, 2026-10-06: a VERTICAL card — beside the form (sticky) when the page is wide enough, under it otherwise; one line
+     under the other, label above value, the estimated price larger. While the form is edited every line shows (each with
+     its switch) and lines drag up / down. */
   const summarySection = (
-    <FormCard id="sec-summary" title="Summary"
-      caption={merchantMode ? 'Your order at a glance — check it before checkout.' : 'The consignment at a glance — check it before you add it.'}
-      action={editing ? (
-        <Tip text={`Show the summary on the ${formPortal === 'grow' ? 'Grow portal' : 'console'} form`}>
-          <InlineSwitch label={summaryCfg.enabled ? 'Shown on this form' : 'Not shown'} checked={summaryCfg.enabled}
-            onChange={(on) => setDraftSummary((x) => ({ ...x, enabled: on }))} />
-        </Tip>
-      ) : undefined}>
-      <div className={editing && !summaryCfg.enabled ? 'opacity-50' : ''}>
-        <SGrid>
-          {arrange(sortApi, 'summary', summaryLinesOf(formPortal)
-            .filter((l) => !summaryCfg.hidden.includes(l.key) || (editing && showHidden))
-            .map((l): RevealEntry => {
-              const off = summaryCfg.hidden.includes(l.key)
-              return [null, (
-                <div key={l.key} className={`min-w-0 ${editing ? 'rounded-md outline-dashed outline-1 outline-offset-[5px] outline-warm-300' : ''}`}>
-                  <div className="mb-1 flex min-h-5 items-center gap-2">
-                    <span className="min-w-0 truncate text-[12px] text-ink-3">{lineLabel(l)}</span>
-                    {editing && (
-                      <Tip text={off ? 'Hidden — switch on to show this line' : 'Shown — switch off to hide this line'}>
-                        <span className="ml-auto inline-flex shrink-0"><Toggle checked={!off} onChange={(on) => toggleLine(l.key, on)} /></span>
-                      </Tip>
-                    )}
-                  </div>
-                  <p className={`text-[13px] leading-5 text-ink ${off ? 'opacity-40' : ''}`}>{summaryValues[l.key] || <span className="text-ink-3">—</span>}</p>
-                </div>
-              )]
-            }), () => false, true).nodes}
-        </SGrid>
+    <section id="sec-summary" aria-label="Summary" className="rounded-xl bg-surface p-5">
+      <div className="flex min-h-6 items-center justify-between gap-3">
+        <h2 className="flex items-center gap-2 text-[15px] font-bold text-ink">
+          Summary
+          <InfoTip text={merchantMode ? 'Your order at a glance — check it before checkout.' : 'The consignment at a glance — check it before you add it.'} />
+        </h2>
       </div>
-    </FormCard>
+      {editing && (
+        <div className="mt-3 rounded-lg bg-warm-50 px-3 py-2">
+          <Tip text={`Show the summary on the ${formPortal === 'grow' ? 'Grow portal' : 'console'} form`}>
+            <InlineSwitch label={summaryCfg.enabled ? 'Shown on this form' : 'Not shown'} checked={summaryCfg.enabled}
+              onChange={(on) => setDraftSummary((x) => ({ ...x, enabled: on }))} />
+          </Tip>
+        </div>
+      )}
+      <div className={`mt-2 divide-y divide-line ${editing && !summaryCfg.enabled ? 'opacity-50' : ''}`}>
+        {arrange(sortApi, 'summary', summaryLinesOf(formPortal)
+          .filter((l) => editing || !summaryCfg.hidden.includes(l.key))
+          .map((l): RevealEntry => {
+            const off = summaryCfg.hidden.includes(l.key)
+            const price = l.key === 'price'
+            return [null, (
+              <div key={l.key} className="min-w-0 py-3">
+                <div className="flex min-h-5 items-center justify-between gap-2">
+                  <span className="min-w-0 truncate text-[12px] text-ink-3">{lineLabel(l)}</span>
+                  {editing && (
+                    <Tip text={off ? 'Hidden — switch on to show this line' : 'Shown — switch off to hide this line'}>
+                      <span className="ml-auto inline-flex shrink-0"><Toggle checked={!off} onChange={(on) => toggleLine(l.key, on)} /></span>
+                    </Tip>
+                  )}
+                </div>
+                <p className={`mt-0.5 break-words ${price ? 'text-[15px] leading-6' : 'text-[13px] leading-5'} text-ink ${off ? 'opacity-40' : ''}`}>
+                  {summaryValues[l.key] || <span className="text-ink-3">—</span>}
+                </p>
+              </div>
+            )]
+          }), () => false, true, 'rows').nodes}
+      </div>
+    </section>
   )
 
   /* ============================================================ the Simplified form — as it was, restyled:
@@ -4135,6 +4162,10 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
         </div>
       )}
 
+      {/* owner, 2026-10-06: the Summary is a vertical card — beside the form while the form area is at least 1000px wide
+          (container query, so a collapsed sidebar counts), else under the cards. One element, placed by the grid. */}
+      <div className="@container">
+      <div className={summaryShown ? 'grid items-start gap-6 @min-[1000px]:grid-cols-[minmax(0,1fr)_300px]' : ''}>
       <div className="grid min-w-0 gap-6">
         {orderedSections.filter((id) => byId[id]).map((id, n, list) => (
           <div key={id} className="relative min-w-0">
@@ -4150,6 +4181,13 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
             {byId[id]}
           </div>
         ))}
+      </div>
+      {summaryShown && (
+        <aside className="min-w-0 @min-[1000px]:sticky @min-[1000px]:top-4 @min-[1000px]:max-h-[calc(100vh-2rem)] @min-[1000px]:overflow-y-auto">
+          {summarySection}
+        </aside>
+      )}
+      </div>
       </div>
       {fieldCard}
       {allFieldsDialog}

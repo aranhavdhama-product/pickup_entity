@@ -367,7 +367,9 @@ Product changes layered on the replica (deliberate departures from the live port
   `formSetup.loadOrder/saveOrder` (`fe-consignment-form-v2-order`, `{ zone: [entry ids] }`; an entry's id = its element
   key; Grow follows the console zone by zone, its own zones in `…-order-grow`); `applyOrder` keeps a field the order does
   not know after its natural predecessor. **More** keeps its meaning: a More field waits in its NEW place and is revealed
-  there. **Summary** = an optional card at the end of the form (`sec-summary`), the console's ops lines (Merchant · Type ·
+  there. **Summary** = an optional VERTICAL card (owner, 2026-10-06: "vertical card, not horizontal") — beside the form, sticky,
+300px, while the form area is ≥ 1000px wide (a container query on the form wrapper, so a collapsed sidebar counts), else under
+the cards; one line under the other (label above value, the estimated price larger); it is NOT one of the movable cards. The console's ops lines (Merchant · Type ·
   Route · Legs · Pieces & weight · Service Type · Load type · Carrier · Pickup / Delivery window) and Grow's merchant lines
   (Route · Pieces & weight · Load type · Service Type · Pickup · Value-added services · Estimated price); its on / off and
   hidden lines live per portal on their own (`formSetup.loadSummary/saveSummary`, `fe-consignment-form-v2-summary[-grow]`,
