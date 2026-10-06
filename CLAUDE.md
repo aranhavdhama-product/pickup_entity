@@ -239,9 +239,12 @@ Product changes layered on the replica (deliberate departures from the live port
   Pallet Space; no Carriers card, no Shipment legs, no form builder, no Simplified tier, no Transfer type, no hubs as
   addresses). Cards: Consignment details · Ship From → Ship To (pickup window under Ship From follows the pickup
   module: off · manual optional · auto-ask required · auto-rule shown) · Package & SKU · **Handling** (the console's:
-  six category chips · toggles · Tags, + Grow's load type as ONE toggle — the second branch's **Dedicate Truck** chip
-  (`ChipToggle`; off = shared LTL / LCL, on = full vehicle; owner 2026-10-06, the console's Load type is the same chip) — on
-  adds a **Vehicle Details** card after Handling: the second branch's vehicle selection, the console `/new/vehicle` table
+  six category chips · toggles, then ONE line of fields **Tags · Load type** (owner, 2026-10-06: "in one line") — the load
+  type is ONE toggle, the second branch's **Dedicate Truck** as a `SwitchBox` (`components/consignmentForm`: a switch drawn
+  as a field, the inputs' width and height, no hint line; off = shared LTL / LCL, on = full vehicle; the console's Load
+  type and the Simplified tier use the same SwitchBox, and the console's **Vehicle Type** is disabled — "Turn on Dedicate
+  Truck" — until it is on; switching it off drops the vehicle, which is saved only with a dedicated truck) — on adds a
+  **Vehicle Details** card after Handling: the second branch's vehicle selection, the console `/new/vehicle` table
   (`vehicleTable`: Vehicle Type · No. of Vehicles · Est. Load · Deliver To, + Add vehicle, capacity line) on the Ship From
   hub's fleet with its rate per vehicle, kept in the console's `rows` model) · **Service &
   instructions** (Label Format · instructions · VAS in the lane's currency; VAS alone → the card is titled Value Added
@@ -304,6 +307,9 @@ Product changes layered on the replica (deliberate departures from the live port
   address fields are customised inside the address popup. Rules live in `fe-consignment-form-v2-rules` over the shared config —
   never changes `/add`, Grow or the list. Errors only after an Add Order attempt. OWNER EXCEPTION to the
   type-scale rule, this form only: a 24px row gap (its labels use the shared `field-label` since 2026-10-05).
+  **Grow may hide Consignment Type and Ship By Date** (owner, 2026-10-06; `GROW_UNLOCKED`): system-mandatory, so locked on
+  the console (the type decides each end there), but the Grow form's builder can hide them — hidden, the order books
+  Forward and ships by today (a resumed draft / Modify keeps its own); neither is offered as "Required".
   **Form setup — Console vs Grow, Format, own fields (2026-10-05)**, pure module `LocalConsignments/formSetup.ts`:
   the builder edits ONE of two forms, switched in its bar (**Console | Grow portal**): `?edit=console` /
   `?edit=grow` on `/local/consignments/new` (the Grow one mounts the merchant form itself as its preview; Save /

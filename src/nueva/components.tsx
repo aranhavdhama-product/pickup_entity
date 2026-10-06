@@ -113,9 +113,11 @@ export function Select({
  * Select untouched.
  */
 export function MenuSelect({
-  value, placeholder = 'Select', options = [], onChange, size = 'sm', labels, searchable, creatable, renderOption, renderValue, menuWidth,
+  value, placeholder = 'Select', options = [], onChange, size = 'sm', labels, searchable, creatable, disabled, renderOption, renderValue, menuWidth,
 }: {
   value?: string; placeholder?: string; options?: string[]; onChange?: (v: string) => void; size?: 'sm' | 'lg'; labels?: (v: string) => string; searchable?: boolean; creatable?: boolean
+  /** greyed and closed — the field does not apply yet (e.g. Vehicle Type until Dedicate Truck is on) */
+  disabled?: boolean
   /** optional rich (multi-line) rendering of a menu option; `labels` still drives search and the fallback text */
   renderOption?: (v: string, active: boolean) => ReactNode
   /** optional rich rendering of the selected value inside the closed trigger */
@@ -171,10 +173,11 @@ export function MenuSelect({
   return (
     <div ref={ref} className="relative">
       <button
-        type="button" onClick={() => (open ? setOpen(false) : openMenu())}
+        type="button" disabled={disabled} onClick={() => (open ? setOpen(false) : openMenu())}
         aria-haspopup="listbox" aria-expanded={open}
         className={`flex w-full items-center justify-between gap-2 border border-warm-300 bg-surface text-left
                    focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/20 focus:outline-none transition-shadow
+                   disabled:cursor-not-allowed disabled:bg-warm-50
                    ${lg ? 'h-11 rounded-lg text-[14px] pl-3 pr-3' : 'h-8 rounded-md text-[13px] pl-3 pr-2.5'}`}>
         <span className={`min-w-0 truncate ${shown ? 'text-ink' : 'text-warm-400'}`}>
           {shown ? (renderValue && value ? renderValue(value) : shown) : (placeholder.trim() ? placeholder : 'Select')}

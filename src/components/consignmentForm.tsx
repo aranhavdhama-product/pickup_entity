@@ -93,6 +93,32 @@ export function ChipToggle({ icon: Icon, label, checked, onChange, disabled }: {
   )
 }
 
+/**
+ * A toggle drawn as a field — the same height (h-8) and full width as the inputs beside it in a field grid
+ * (owner, 2026-10-06: "this width should be the same as the rest of the fields"): icon · label · a switch on the
+ * right. The whole box is the switch; on = the chosen style (border-ink + warm-50).
+ */
+export function SwitchBox({ icon: Icon, label, checked, onChange, disabled, title, tall = false }: {
+  icon: ComponentType<{ size?: number | string; className?: string }>
+  label: string; checked: boolean; onChange: (v: boolean) => void; disabled?: boolean; title?: string
+  /** 36px — beside a MultiSelectDropdown (its trigger is h-9) instead of the h-8 inputs */
+  tall?: boolean
+}) {
+  return (
+    <button type="button" role="switch" aria-checked={checked} aria-label={label} title={title} disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={`flex ${tall ? 'h-9' : 'h-8'} w-full items-center gap-2 rounded-md border px-3 text-left text-[13px] transition-colors
+        focus:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-500/20 disabled:cursor-not-allowed disabled:opacity-50
+        ${checked ? 'border-ink bg-warm-50 font-bold text-ink' : 'border-warm-300 bg-surface text-ink-2 hover:border-warm-400 hover:text-ink'}`}>
+      <Icon size={15} className={`shrink-0 ${checked ? 'text-brand-500' : 'text-warm-400'}`} />
+      <span className="min-w-0 flex-1 truncate">{label}</span>
+      <span aria-hidden className={`relative h-4 w-7 shrink-0 rounded-full transition-colors ${checked ? 'bg-brand-500' : 'bg-warm-300'}`}>
+        <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow-ds-1 transition-all ${checked ? 'left-3.5' : 'left-0.5'}`} />
+      </span>
+    </button>
+  )
+}
+
 /** Toggle with the same label-over-control anatomy as Fld — keeps rows level. */
 export function InlineToggle({ label, checked, onChange, disabled }: {
   label: string; checked: boolean; onChange: (v: boolean) => void; disabled?: boolean

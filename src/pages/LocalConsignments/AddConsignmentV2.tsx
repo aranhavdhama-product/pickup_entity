@@ -50,7 +50,7 @@ import {
   Button, DateInput, Input, MenuSelect, Modal, MultiSelectDropdown, Toggle, SearchInput, Tooltip,
 } from '../../nueva/components'
 import {
-  AddMoreButton, ChipToggle, PhoneInput, RadioCard, SwitchField, TimeBox, UnitBox,
+  AddMoreButton, PhoneInput, RadioCard, SwitchBox, SwitchField, TimeBox, UnitBox,
 } from '../../components/consignmentForm'
 import { money, OTHER_ADDRESS, partyOk, prWindow, storeOptionLabel } from '../GrowOrders/utils'
 import { hubName, inboundHubFor, INBOUND_HUBS } from '../../growOrders/hubs'
@@ -575,8 +575,13 @@ const FIELD_DEF = new Map([...CONSIGNMENT_FIELDS, ...V2_FIELDS].map((f) => [f.ke
 /* 2026-10-05 (owner: "in Service Type I can't hide that field"): Service Type is no longer locked — hidden, every
    consignment gets the builder's DEFAULT service (its rule's `defaultValue`); a draft / Modify keeps its own */
 const FORM_LOCKED = new Set(['skuWeight', 'skuDimensions', 'pkgWeight', 'pkgDimensions', 'addrContact'])
+/* owner, 2026-10-06 ("in Grow, Consignment Type and Ship By Date can also be hidden"): system-mandatory, but on the GROW
+   form a merchant may never see them — hidden, every order books Forward and ships by today (a resumed draft / a Modify
+   keeps its own). The console keeps both locked: there the type decides each end (Reverse, Transfer). */
+const GROW_UNLOCKED = new Set(['consignmentType', 'shipByDate'])
 /** a value that is always valid — can be hidden, never "required" */
-const NOT_REQUIRABLE = new Set(['scannable', 'schedulingConfirmation', 'clearanceRequired', 'splittable', 'dedicateTruck', 'serviceType', ...V2_KEYS])
+const NOT_REQUIRABLE = new Set(['scannable', 'schedulingConfirmation', 'clearanceRequired', 'splittable', 'dedicateTruck', 'serviceType',
+  ...GROW_UNLOCKED, ...V2_KEYS])
 /** the typed-text fields a Format can check (2026-10-05) — the system's mandatory identifiers included; custom Text fields too */
 const FORMATABLE = new Set(['orderNumber', 'referenceNumber', 'consignmentNumber', 'exchangeOrderNumber',
   'addrCompanyName', 'addrEmail', 'addrLandmark', 'addrSuburb', 'addrContact', 'specialInstructions',
@@ -1392,7 +1397,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   const growChanges = growSetup && editing ? draftRules : savedGrow
   const merchantRules = useMemo<FormRulesV2>(() => growRules(growBase, growChanges), [growBase, growChanges])
   const rules = merchantMode ? merchantRules : editing ? draftRules : savedRules
-  const lockOf = (k: string): FieldLock => (byKeyMandatory(k) ? 'system' : FORM_LOCKED.has(k) ? 'form' : null)
+  const lockOf = (k: string): FieldLock => (byKeyMandatory(k) && !(merchantMode && GROW_UNLOCKED.has(k)) ? 'system' : FORM_LOCKED.has(k) ? 'form' : null)
   const baseHidden = (k: string) => !!fieldCfg[k]?.hidden || behavior.hidden.includes(k)
   const ownHidden = (k: string) => (merchantMode && MERCHANT_OFF.has(k)) || (!lockOf(k) && (rules[k]?.hidden ?? baseHidden(k)))
   const hiddenWith = (k: string): string | null => {
@@ -1892,7 +1897,8 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   /* the account's own fields in a card (2026-10-05): Required + Format */
   const customReq = (card: CustomFieldCard) => customDefs.filter((d) => d.card === card)
     .flatMap((d) => [...needOk(d.key, filled(cfv[d.key])), fmtOk(d.key, cfv[d.key])])
-  const consignmentReq = [filled(effectiveOrder), filled(effectiveRef), !!c.consignmentType, filled(c.shipByDate), ...(merchantMode ? [] : [!!merchant]),
+  /* a hidden Ship By Date (Grow) is today — never a check the merchant cannot see */
+  const consignmentReq = [filled(effectiveOrder), filled(effectiveRef), !!c.consignmentType, filled(c.shipByDate) || isHidden('shipByDate'), ...(merchantMode ? [] : [!!merchant]),
     ...needOk('consignmentNumber', filled(c.consignmentNumber)),
     /* an Exchange names the order it exchanges (owner, 2026-09-29: fields follow the type) */
     ...(!simple && ctype === 'Exchange' && !hid('exchangeOrderNumber') ? [filled(c.exchangeOrderNumber)] : []),
@@ -1996,7 +2002,8 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     const allowed = vehicleTypesFor(masters.vehicleTypes, shipFromHub, code)
     setRows((rs) => rs.map((r) => ({ ...r, vehicleType: allowed.some((v) => v.code === r.vehicleType) ? r.vehicleType : allowed[0]?.code ?? '' })))
   }
-  const setDedicateTruck = (on: boolean) => setC({ dedicateTruck: on })
+  /* a vehicle is chosen only for a dedicated truck — switching it off drops the choice (owner, 2026-10-06) */
+  const setDedicateTruck = (on: boolean) => { setC({ dedicateTruck: on }); if (!on) setDedicatedType('') }
   const setDrop = (i: number, patch: Partial<Party>) => setDrops((ds) => ds.map((x, j) => (j === i ? { ...x, ...patch } : x)))
   const removeDrop = (i: number) => {
     const idx = i + 1
@@ -2146,7 +2153,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     receiver, drops, shipmentType: isFtl ? 'FTL' : 'Parcel',
     ...(isFtl
       ? { vehicleType, vehicleUnit: units, actualLoad, ftlServiceType: consoleFtl, vehicles }
-      : vehicleChoice
+      : dedicated && vehicleChoice
         ? { vehicleType: vehicleChoice, vehicleUnit: 1, actualLoad: parcelLoadKg, vehicles: [{ vehicleType: vehicleChoice, actualLoadKg: parcelLoadKg, addressIdx: [0] }] }
         : { vehicleType: '', vehicleUnit: 0, actualLoad: 0 }),
     additionalServices: addServices,
@@ -2207,6 +2214,8 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
       service: svcCode, rate: quote?.net ?? 0, etaDays: quote?.days ?? 0, currency,
       consignment: {
         ...c,
+        /* hidden on Grow (owner, 2026-10-06): Forward and today, unless the order already had its own */
+        consignmentType: c.consignmentType || 'Forward', shipByDate: c.shipByDate || today(),
         scannable: !!c.scannable,
         dedicateTruck: ftl, carrier: '', category: [], tags: [], totalLoadingTime: null,
         orderNumber: effectiveOrder.trim(), referenceNumber: effectiveRef.trim(),
@@ -2265,6 +2274,8 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   const scannableInGoods = !isFtl
   const barcodeEach = !isFtl && !useItems && !!c.scannable
   const handlingTogglesVisible = (!hid('scannable') && !scannableInGoods) || !hid('splittable') || !hid('clearanceRequired') || !hid('tags')
+  /* the switches row — on Grow Tags moves to the line below, beside the load type */
+  const switchesRow = merchantMode ? (!hid('splittable') || !hid('clearanceRequired')) : handlingTogglesVisible
   const handlingCustom = arrange(sortApi, 'handling-fields', customEntries('sec-handling'), inMore, secOpen('sec-handling'))
   /* while editing the card always shows — its "+ Add field" lives in it */
   const handlingVisible = handlingChipsVisible || handlingTogglesVisible || handlingCustom.nodes.length > 0 || handlingCustom.waiting > 0 || editing
@@ -2375,9 +2386,9 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
             helper={idPref === 'referenceNumber' ? `${lbl('orderNumber')} is copied from this.` : undefined} />],
           !hid('consignmentNumber') && ['consignmentNumber', <F key="cn" fieldKey="consignmentNumber" label={lbl('consignmentNumber')} value={c.consignmentNumber ?? ''} placeholder="eg, 0001"
             onChange={(v) => setC({ consignmentNumber: v })} />, filled(c.consignmentNumber)],
-          [null, <F key="ct" fieldKey="consignmentType" label={lbl('consignmentType')} required value={ctype}
+          !hid('consignmentType') && [null, <F key="ct" fieldKey="consignmentType" label={lbl('consignmentType')} required value={ctype}
             options={opts(merchantMode ? CONSIGNMENT_TYPES.filter((t) => t !== 'Transfer') : CONSIGNMENT_TYPES)} onChange={changeType} />],
-          [null, <F key="sb" fieldKey="shipByDate" label={lbl('shipByDate')} required type="date" value={c.shipByDate ?? ''} error={err(!filled(c.shipByDate))} onChange={(d) => setC({ shipByDate: d })} />],
+          !hid('shipByDate') && [null, <F key="sb" fieldKey="shipByDate" label={lbl('shipByDate')} required type="date" value={c.shipByDate ?? ''} error={err(!filled(c.shipByDate))} onChange={(d) => setC({ shipByDate: d })} />],
           !hid('exchangeOrderNumber') && (ctype === 'Exchange' || editing) && ['exchangeOrderNumber',
             <F key="ex" fieldKey="exchangeOrderNumber" label={lbl('exchangeOrderNumber')} required={ctype === 'Exchange'} value={c.exchangeOrderNumber ?? ''} placeholder="eg, ABC0000"
               error={ctype === 'Exchange' && !filled(c.exchangeOrderNumber) ? 'Required field.' : undefined}
@@ -2916,7 +2927,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
         }), () => false, true, 'chips').nodes}
       </div>}
       {/* row 2 — how the boxes travel, and their tags; every control on one baseline */}
-      {handlingTogglesVisible && <div className={`${handlingChipsVisible ? 'mt-6' : ''} ${HANDLING_ROW}`}>
+      {switchesRow && <div className={`${handlingChipsVisible ? 'mt-6' : ''} ${HANDLING_ROW}`}>
         {arrange(sortApi, 'handling-switches', [
           !hid('scannable') && !scannableInGoods && [null, (
             <Configurable key="scannable" fieldKey="scannable">
@@ -2936,7 +2947,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
                 checked={!!c.clearanceRequired} onChange={(v) => setC({ clearanceRequired: v })} />
             </Configurable>
           )],
-          !hid('tags') && [null, (
+          !hid('tags') && !merchantMode && [null, (
             <Configurable key="tags" fieldKey="tags">
               <div className="flex items-center gap-2.5">
                 <span className="text-[13px] text-ink">{lbl('tags')}{need('tags') && <span className="text-danger-fg">&nbsp;*</span>}</span>
@@ -2948,6 +2959,22 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
           )],
         ], () => false, true).nodes}
       </div>}
+      {/* Grow (owner, 2026-10-06: "Tags and Dedicate Truck in one line"): the two as fields side by side, labels on top,
+          the field grid's widths — Load type = the Dedicate Truck switch (on = a full vehicle, picked in Vehicle Details) */}
+      {merchantMode && (
+        <div className={`${handlingChipsVisible || switchesRow ? 'mt-6' : ''} grid grid-cols-1 ${FIELD_GAPS} sm:grid-cols-2 lg:grid-cols-4 lg:pr-10`}>
+          {!hid('tags') && (
+            <SFld fieldKey="tags" label={lbl('tags')} required={need('tags')}>
+              <MultiSelectDropdown options={TAG_OPTIONS} values={c.tags ?? []} noun="tags" placeholder="Add tags" onChange={(v) => setC({ tags: v })} />
+            </SFld>
+          )}
+          <SFld label="Load type">
+            <SwitchBox tall={!hid('tags')} icon={Truck} label="Dedicate Truck" checked={mode === 'ftl'} disabled={!!fromOverage || pr?.shipmentType === 'FTL'}
+              onChange={(on) => changeMode(on ? 'ftl' : 'ltl')}
+              title={mode === 'ftl' ? 'Full vehicle (FTL / FCL) — its vehicles are picked in Vehicle Details' : 'Shared vehicle (LTL / LCL) — switch on for a whole vehicle'} />
+          </SFld>
+        </div>
+      )}
       {need('tags') && !(c.tags ?? []).length && <ErrLine className="mt-2">Add at least one tag.</ErrLine>}
     </div>
     {handlingCustom.nodes.length > 0 && <SGrid className={handlingChipsVisible || handlingTogglesVisible ? 'mt-6' : ''}>{handlingCustom.nodes}</SGrid>}
@@ -3583,15 +3610,19 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     !merchantMode && !hid('serviceType') && [null, isFtl
       ? <F key="serviceType" fieldKey="serviceType" label={lbl('serviceType')} required value={ftlService} options={opts(FTL_SERVICE_CODES)} placeholder="eg, Service" onChange={pickFtlService} />
       : <F key="serviceType" fieldKey="serviceType" label={lbl('serviceType')} required value={service} options={opts(SERVICE_TYPES)} placeholder="eg, Service" searchable onChange={setService} />],
-    /* owner, 2026-10-06: the load type is a toggle (the second branch's Dedicate Truck chip) — off = shared, on = full */
+    /* owner, 2026-10-06: the load type is a toggle (the second branch's Dedicate Truck), as wide as the fields beside it —
+       off = a shared vehicle, on = a full one; no hint line (only when the service decides it) */
     !merchantMode && !isFtl && !hid('dedicateTruck') && [null, <SFld key="loadType" fieldKey="dedicateTruck" label={custom('dedicateTruck', 'Dedicate Truck', 'Load type')}
-      helper={dedicatedLocked ? `Set by the service — ${serviceLoad === 'ftl' ? 'full' : 'shared'} vehicle only` : dedicated ? 'Full vehicle (FTL / FCL)' : 'Shared vehicle (LTL / LCL)'}>
-      <ChipToggle icon={Truck} label="Dedicate Truck" checked={dedicated} disabled={dedicatedLocked || !!fromOverage} onChange={setDedicateTruck} />
+      helper={dedicatedLocked ? `Set by the service — ${serviceLoad === 'ftl' ? 'full' : 'shared'} vehicle only` : undefined}>
+      <SwitchBox icon={Truck} label="Dedicate Truck" checked={dedicated} disabled={dedicatedLocked || !!fromOverage} onChange={setDedicateTruck}
+        title={dedicated ? 'Full vehicle (FTL / FCL) — a whole vehicle just for this consignment' : 'Shared vehicle (LTL / LCL) — switch on for a whole vehicle'} />
     </SFld>],
+    /* Vehicle Type applies to a dedicated truck only — disabled (and empty) until Dedicate Truck is on */
     !merchantMode && !isFtl && !hid('vehicleType') && [null, <SFld key="vehicleType" fieldKey="vehicleType" label={lbl('vehicleType')}
-      helper={dedicatedSpec?.capacity || undefined}>
+      helper={dedicated ? dedicatedSpec?.capacity || undefined : undefined}>
       {shipFromHub
-        ? <MenuSelect value={vehicleChoice} placeholder={hubVehicles.length ? 'eg, 8 Ton Truck' : `No vehicles configured at ${shipFromHubName}`}
+        ? <MenuSelect value={dedicated ? vehicleChoice : ''} disabled={!dedicated}
+            placeholder={!dedicated ? 'Turn on Dedicate Truck' : hubVehicles.length ? 'eg, 8 Ton Truck' : `No vehicles configured at ${shipFromHubName}`}
             options={['', ...hubVehicles.map((v) => v.code)]}
             labels={(v) => (v ? vehicleTypeOf(hubVehicles, v)?.name ?? v : '— None —')} searchable onChange={setDedicatedType} />
         : <Input value="" placeholder="Enter Ship From first" disabled onChange={() => undefined} />}
@@ -3634,21 +3665,10 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
 
   /* ============================================================ Grow (merchant): the console's Handling card with the
      load type asked in it · Service & instructions (label, note, VAS) · Service Type (the lane's cards, LAST) */
-  /* owner, 2026-10-06 ("give it like a toggle … see the other branch"): the load type is ONE toggle — the second branch's
-     Dedicate Truck chip: off = a shared vehicle (LTL / LCL), on = a full vehicle just for this order, booked in Vehicle Details */
-  const loadTypeField = (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-      <ChipToggle icon={Truck} label="Dedicate Truck" checked={mode === 'ftl'} disabled={!!fromOverage || pr?.shipmentType === 'FTL'}
-        onChange={(on) => changeMode(on ? 'ftl' : 'ltl')} />
-      <span className="text-[12px] text-ink-3">{mode === 'ftl'
-        ? 'A full vehicle (FTL / FCL) just for this order — pick it in Vehicle Details'
-        : 'Off — it travels in a shared vehicle (LTL / LCL)'}</span>
-    </div>
-  )
   const merchantHandlingSection = (
     <FormCard id="sec-handling" title="Handling" caption="How the goods must be handled on the way, and how they travel.">
-      {handlingVisible && handlingSection.props.children}
-      <div className={handlingVisible ? 'mt-6' : ''}>{loadTypeField}</div>
+      {/* the console's Handling content; its switches row always shows on Grow — the load type is on it */}
+      {handlingSection.props.children}
     </FormCard>
   )
   const merchantExtrasSection = !(svcReveal.nodes.length > 0 || svcReveal.waiting > 0 || extrasVisible || editing) ? null : (
@@ -3811,9 +3831,10 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
           ? <F label={lbl('serviceType')} required value={ftlService} options={opts(FTL_SERVICE_CODES)} onChange={pickFtlService} />
           : <F label={lbl('serviceType')} required value={service} options={opts(SERVICE_TYPES)} searchable onChange={setService} />}
         {!isFtl && (
-          <F label="Load type" value={dedicated ? 'Yes' : 'No'}
-            options={[{ value: 'No', label: 'Shared vehicle (LTL / LCL)' }, { value: 'Yes', label: 'Full vehicle (FTL / FCL)' }]}
-            onChange={(v) => setDedicateTruck(v === 'Yes')} disabled={!!fromOverage} />
+          <SFld label="Load type">
+            <SwitchBox icon={Truck} label="Dedicate Truck" checked={dedicated} disabled={!!fromOverage} onChange={setDedicateTruck}
+              title={dedicated ? 'Full vehicle (FTL / FCL)' : 'Shared vehicle (LTL / LCL)'} />
+          </SFld>
         )}
         <F label={lbl('shipByDate')} required type="date" value={c.shipByDate ?? ''} error={err(!filled(c.shipByDate))} onChange={setSimpleShipBy} />
         {/* Start / End Time share one cell and ARE the delivery window on the Ship By Date */}
