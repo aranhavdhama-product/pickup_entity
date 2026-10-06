@@ -222,6 +222,98 @@ export function saveLayout(p: FormPortal, l: FormLayout) {
   } catch { /* private mode */ }
 }
 
+/* --------------------------------------------------------------- field order ---- */
+
+/**
+ * The order of the fields inside each section (owner, 2026-10-05: "drag and drop and resequence columns in the same
+ * sections"), per portal: `{ <zone>: [entry ids in order] }`. A zone is one group of fields that is laid out together
+ * (Consignment details, an address's contact / address details, a package's fields…); an id is the field's entry id
+ * in that zone. Grow follows the console zone by zone — a zone Grow re-ordered itself is kept in the Grow key.
+ * A field missing from a stored order (added later) keeps its natural place after its natural predecessor.
+ */
+export type FormOrder = Record<string, string[]>
+export const ORDER_KEY = 'fe-consignment-form-v2-order'
+export const ORDER_GROW_KEY = 'fe-consignment-form-v2-order-grow'
+const asOrder = (raw: unknown): FormOrder => {
+  const out: FormOrder = {}
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!Array.isArray(v)) continue
+    const ids = [...new Set(v.filter((x): x is string => typeof x === 'string' && !!x))]
+    if (ids.length) out[k] = ids
+  }
+  return out
+}
+const readOrder = (key: string): FormOrder => {
+  try { return asOrder(JSON.parse(localStorage.getItem(key) ?? '{}')) } catch { return {} }
+}
+/** the console's order; Grow = the console's with Grow's own zones on top */
+export function loadOrder(p: FormPortal = 'console'): FormOrder {
+  const base = readOrder(ORDER_KEY)
+  return p === 'grow' ? { ...base, ...readOrder(ORDER_GROW_KEY) } : base
+}
+export function saveOrder(p: FormPortal, o: FormOrder) {
+  try {
+    if (p === 'console') { localStorage.setItem(ORDER_KEY, JSON.stringify(asOrder(o))); return }
+    const base = readOrder(ORDER_KEY)
+    const diff: FormOrder = {}
+    for (const [k, v] of Object.entries(asOrder(o))) if (JSON.stringify(v) !== JSON.stringify(base[k] ?? null)) diff[k] = v
+    if (Object.keys(diff).length) localStorage.setItem(ORDER_GROW_KEY, JSON.stringify(diff))
+    else localStorage.removeItem(ORDER_GROW_KEY)
+  } catch { /* private mode */ }
+}
+/** `items` in the stored order; an item the order does not know goes right after its natural predecessor */
+export function applyOrder<T>(items: T[], idOf: (t: T) => string, order: string[] | undefined): T[] {
+  if (!order?.length || items.length < 2) return items
+  const byId = new Map(items.map((t) => [idOf(t), t]))
+  const out = order.filter((id) => byId.has(id))
+  const natural = items.map(idOf)
+  natural.forEach((id, i) => {
+    if (out.includes(id)) return
+    let at = 0
+    for (let j = i - 1; j >= 0; j--) { const k = out.indexOf(natural[j]); if (k >= 0) { at = k + 1; break } }
+    out.splice(at, 0, id)
+  })
+  return out.map((id) => byId.get(id)!)
+}
+/** `ids` with `moved` placed before / after `target` */
+export function moveId(ids: string[], moved: string, target: string, after: boolean): string[] {
+  if (moved === target) return ids
+  const rest = ids.filter((x) => x !== moved)
+  const at = rest.indexOf(target)
+  if (at < 0) return ids
+  rest.splice(after ? at + 1 : at, 0, moved)
+  return rest
+}
+
+/* ------------------------------------------------------------------- summary ---- */
+
+/**
+ * The form's Summary card (owner, 2026-10-05: "allow to show summary or not … for both consignment and Grow portal —
+ * their summary section can be different"): on / off and which lines it shows, kept SEPARATELY per portal (the console
+ * summary is the ops view, Grow's the merchant view — different lines, so Grow does not follow the console here). The
+ * lines' order uses the field order (zone `summary`).
+ */
+export interface FormSummary { enabled: boolean; hidden: string[] }
+export const SUMMARY_KEY = 'fe-consignment-form-v2-summary'
+export const SUMMARY_GROW_KEY = 'fe-consignment-form-v2-summary-grow'
+/* the console form stays as people know it (off); merchants get the summary before checkout (on) */
+export const DEFAULT_SUMMARY: Record<FormPortal, FormSummary> = { console: { enabled: false, hidden: [] }, grow: { enabled: true, hidden: [] } }
+export function loadSummary(p: FormPortal): FormSummary {
+  const d = DEFAULT_SUMMARY[p]
+  try {
+    const r = JSON.parse(localStorage.getItem(p === 'grow' ? SUMMARY_GROW_KEY : SUMMARY_KEY) ?? 'null') as Record<string, unknown> | null
+    if (!r || typeof r !== 'object') return d
+    return {
+      enabled: typeof r.enabled === 'boolean' ? r.enabled : d.enabled,
+      hidden: Array.isArray(r.hidden) ? [...new Set(r.hidden.filter((x): x is string => typeof x === 'string'))] : d.hidden,
+    }
+  } catch { return d }
+}
+export function saveSummary(p: FormPortal, v: FormSummary) {
+  try { localStorage.setItem(p === 'grow' ? SUMMARY_GROW_KEY : SUMMARY_KEY, JSON.stringify(v)) } catch { /* private mode */ }
+}
+
 /* ----------------------------------------------------------- custom fields ---- */
 
 export type CustomFieldKind = 'text' | 'number' | 'date' | 'list' | 'yesno'
