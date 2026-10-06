@@ -1242,7 +1242,7 @@ function PartyBlock({ party, set, nameLabel, requireContact, hid, variant = 'ful
 }
 
 /** The chosen address, read back as a card: who · how to reach them · where. */
-function AddressCard({ party, missing, invalid = [], onEdit, tag, editTip = 'Edit this address' }: {
+function AddressCard({ party, missing, invalid = [], onEdit, tag, editTip = 'Edit this address', hubOnly = false }: {
   party: Party; missing: string[]; tag?: string
   /** the pencil — while the form is edited: opens the pop-up to set up the address fields */
   onEdit?: () => void
@@ -1250,6 +1250,8 @@ function AddressCard({ party, missing, invalid = [], onEdit, tag, editTip = 'Edi
   editTip?: string
   /** typed in the wrong format (the builder's Format rules) */
   invalid?: string[]
+  /** an end that can only be a hub (its picker is Facility) — the empty card asks for a hub */
+  hubOnly?: boolean
 }) {
   const showErrors = useContext(ShowErrorsCtx)
   const empty = !filled(party.name) && !filled(party.line1)
@@ -1259,7 +1261,7 @@ function AddressCard({ party, missing, invalid = [], onEdit, tag, editTip = 'Edi
   return (
     <div className={`rounded-lg border bg-surface p-4 ${bad ? 'border-danger-fg' : 'border-warm-200'}`}>
       {empty
-        ? <p className="text-[13px] text-ink-3">No address yet — pick a saved one or add a new address.</p>
+        ? <p className="text-[13px] text-ink-3">{hubOnly ? 'No hub yet — pick one.' : 'No address yet — pick a saved one or add a new address.'}</p>
         : (
           <div className="flex items-start gap-3">
             <MapPinned size={16} className="mt-0.5 shrink-0 text-ink-3" />
@@ -1386,11 +1388,11 @@ const FIELD_GROUP_IDS = ['sec-consignment', 'addresses', 'sec-packages', 'sec-ha
 /** the Ship From → Ship To card's choices while the form is edited — RadioCards (owner, 2026-10-06) */
 const ARRANGE_OPTIONS: { value: AddressArrangement; label: string; sub: string }[] = [
   { value: 'side', label: 'Side by side', sub: 'Ship From left, Ship To right' },
-  { value: 'stack', label: 'One under the other', sub: 'Ship To below Ship From, more room' },
+  { value: 'stack', label: 'One under the other', sub: 'Ship To under Ship From, more room' },
 ]
 const ENTRY_OPTIONS: { value: AddressEntry; label: string; sub: string }[] = [
-  { value: 'cards', label: 'Saved card', sub: 'Pick a saved address; edit it in a pop-up' },
-  { value: 'inline', label: 'Fields on form', sub: 'Type it here, or search saved addresses' },
+  { value: 'cards', label: 'Saved card', sub: 'Pick a saved address, change it in a pop-up' },
+  { value: 'inline', label: 'Fields on form', sub: 'Type the address here, or search saved ones' },
 ]
 const ADDRESS_LAYOUT_ROWS: { key: 'addresses' | 'shipFrom' | 'shipTo' | 'rto'; label: string; options: { value: string; label: string; sub: string }[] }[] = [
   { key: 'addresses', label: 'Layout', options: ARRANGE_OPTIONS },
@@ -2780,7 +2782,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
                 a hub picked as Ship From included; only a hub-only end has no address fields */}
             <AddressCard party={p} missing={missingOf(p, role)} invalid={invalidOf(p, role)}
               onEdit={editing ? (src !== 'facilities' ? () => openAddressSetup(role, idx) : undefined) : () => openAddress(role, idx, false)}
-              editTip={editing ? 'Set up the address fields' : undefined}
+              editTip={editing ? 'Set up the address fields' : undefined} hubOnly={src === 'facilities'}
               tag={facility ? 'Hub' : at >= 0 ? book[at].tag ?? 'Saved' : role === 'from' && fromList ? 'Saved' : filled(p.name) ? 'New' : undefined} />
             {editing && src !== 'facilities' && (
               <button type="button" onClick={() => openAddressSetup(role, idx)}
@@ -2947,9 +2949,9 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
       {/* while the form is edited (setup) the pop-up is the address fields' preview: a click on a field opens its card above
           the dialog; Esc closes that card first, then the pop-up; closing puts the address back as it was */}
       <Modal open={!!addr && (!addr.setup || editing)} wide
-        title={addr?.setup ? `Address fields${addr.role === 'rto' ? ' · return address' : ''}`
+        title={addr?.setup ? (addr.role === 'rto' ? 'Return address fields' : 'Address fields')
           : addr ? `${addr.isNew ? 'New' : 'Edit'} ${roleTitle[addr.role]}${addr.role === 'to' && allDrops.length > 1 ? ` · Address ${addr.idx + 1}` : ''}` : ''}
-        subtitle={addr?.setup ? 'Click a field to change it — every address uses these fields.'
+        subtitle={addr?.setup ? 'Click a field to change it. All addresses use these fields.'
           : addr?.role === 'from' ? 'Where the carrier collects the consignment.' : addr?.role === 'to' ? 'Who receives it, and where.' : 'Where it comes back if it cannot be delivered.'}
         onClose={addr?.setup ? () => (selKey ? setSelKey(null) : closeSetup()) : cancelAddress}
         footer={addr?.setup
@@ -3044,7 +3046,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   const consoleLayout = growSetup && editing ? loadLayout('console') : null
   const addressLayoutPanel = editing && (
     <div className="mb-6 rounded-lg border border-dashed border-warm-300 p-4">
-      <p className="mb-3 text-[13px] font-bold text-ink">How addresses are shown <span className="font-normal text-ink-3">— one way for every consignment</span></p>
+      <p className="mb-3 text-[13px] font-bold text-ink">How addresses are shown <span className="font-normal text-ink-3">— the same on every consignment</span></p>
       <div className="grid gap-3">
         {ADDRESS_LAYOUT_ROWS.map((row) => (
           <div key={row.key} className="flex flex-wrap items-center gap-x-4 gap-y-2">

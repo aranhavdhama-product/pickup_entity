@@ -364,18 +364,27 @@ Product changes layered on the replica (deliberate departures from the live port
   to it (`AnchoredCard`: portaled, below the field or above it, follows the scroll; outside click / Esc / Done closes) —
   Name on the form · Show on the form · Required · Put under "More" · What can be typed (the Format editor, live, with Try
   it) · Remove field (own fields) · Use the console setting (Grow). NO side panel: the form-level choices sit on the cards
-  they change — each address's **Entered as** Saved card | Fields on form (on Ship From, Ship To and the RTO address, each
-  its own), the **Packages / SKUs** sections (the Package & SKU card), Grow's **Show as** Grid | List (its Service Type card) —
+  they change — the Ship From → Ship To card's dashed **How addresses are shown** panel (RadioCards, 2026-10-06: **Layout**
+  Side by side | One under the other; Ship From, Ship To and RTO address each **Saved card** | **Fields on form**), the
+  **Packages / SKUs** sections (the Package & SKU card), Grow's **Show as** Grid | List (its Service Type card) —
   and the bar's **All fields** opens every field by card in one searchable dialog (a show / hide switch per field, the
-  picked field's settings beside the list, + Add field — the dialog asks where; the address card's "Address fields" link
-  opens it on Addresses). The Format dialog is gone (Format lives in the card; the icons came back 2026-10-05, see below). **Layout** =
-  `formSetup.loadLayout/saveLayout` (`fe-consignment-form-v2-layout` = `{ shipFrom, shipTo, rto, services }`, a stored
+  picked field's settings beside the list, + Add field — the dialog asks where). **Address fields** (owner, 2026-10-06: "in
+  the popup I can't edit the fields"): while editing, an address card's pencil and its **Set up the address fields** link
+  open the address POP-UP as their preview (title Address fields / Return address fields; footer Show hidden fields ·
+  Done; no Save this address) — its fields are click targets and their settings card sits ABOVE the pop-up (z-80); Esc
+  closes the card, then the pop-up; the address is put back as it was. A hub-coded Ship From has it too; only a hub-only
+  end (Facility picker) has none. The Format dialog is gone (Format lives in the card; the icons came back 2026-10-05, see below). **Layout** =
+  `formSetup.loadLayout/saveLayout` (`fe-consignment-form-v2-layout` = `{ shipFrom, shipTo, rto, services, addresses }`, a stored
   `address` from the first version applies to all three; Grow's differences in `…-layout-grow`): **Fields on form** = that
   address typed in the card under a search of the saved ones (name · number · address · company), CONTACT DETAILS /
-  ADDRESS DETAILS in two columns (`HalfGrid`, one below 380px), More address details, "Save this address" (kept when the
-  consignment is submitted or saved for later). **Ship From | Ship To ALWAYS side by side** (owner, 2026-10-06: "side by
+  ADDRESS DETAILS in two columns side by side (`HalfGrid`, one below 380px) or four across stacked (`QuadGrid`, two below
+  880px), More address details, "Save this address" (kept when the
+  consignment is submitted or saved for later). **Ship From | Ship To side by side** by default (owner, 2026-10-06: "side by
   side, one and one, like in the second branch") — Saved card or Fields on form, both portals, the Summary on or off; they
-  stack only when the CARD is under 720px (container query). Like the second branch's combined card, a SAVED address
+  stack when the CARD is under 720px (container query), or always with Layout **One under the other** (`addresses: 'stack'`;
+  not on the Simplified tier). An end with the card's full width (stacked, card ≥ 600px) puts its picker + New address (or
+  the on-form search) on the LEFT and its address card in the column on the RIGHT; Grow's pickup window keeps to the left
+  half. Like the second branch's combined card, a SAVED address
   picked in the on-form search folds into its address card (pencil = its fields in place, Done folds it back, Clear empties
   it; `openSlots`); a typed address keeps its fields; the builder preview and an incomplete address after an Add attempt
   always show the fields. A hub end stays a picker + card. A window's two cells sit side by side from 500px.
