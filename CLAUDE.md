@@ -330,6 +330,16 @@ Product changes layered on the replica (deliberate departures from the live port
   asks is kept on Modify) and shown as **Additional details** in the console view and in the Grow view's Consignment
   details (Grow shows only fields its form shows). Entry points: the form's "Edit consignment form", and
   Settings → Consignment Order → Form Fields → **Customise the forms**.
+  **Share form (2026-10-06, owner: "changes are not reflected for other user")** — the setup lives in each browser's
+  localStorage and there is no server, so a saved form travels as a LINK: `LocalConsignments/formShare.ts` (pure) packs
+  EVERY setup key (`SHARE_KEYS` — rule: a new form-setup key must join it) into `#form-setup=z.<deflate+base64url>`
+  (`j.` = plain JSON); the hash never reaches a server. `main.tsx` applies it BEFORE render (all or nothing; keys from a
+  newer link skipped; null = the default; not the Simplified tier — a visitor on Simplified moves to the full form),
+  clears the hash, shows one toast (**Undo** when it replaced the visitor's own setup — the shared toast's additive
+  `action`, 8 s) and reloads on a same-page hash paste. Sharer side, console only: header **Share form** · editing bar
+  **Share form** (off while unsaved) · **Share** on the saved toast → `ShareFormDialog` with the Console
+  (`/local/consignments/new`) and Grow (`/grow/orders/add`) links; merchants never see it. A link is a copy of that
+  moment — a later Save needs a new link; a central store (an `/api` route + Upstash Redis or Vercel Blob) is not built.
   **Builder v3 (2026-10-05, owner: "it has to be easy to use", then "I don't want the side bar — find another way — but
   I love the idea")** — click-to-select: the preview's fields are click targets (dashed frame, brand frame when selected;
   state as tags on the frame: Grow · Hidden · More · Format · lock) and a click opens that field's SETTINGS CARD right next
