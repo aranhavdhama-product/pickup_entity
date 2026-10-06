@@ -10,8 +10,9 @@
  *   Custom fields     `fe-consignment-form-v2-custom` — fields the account adds beside the system's, ONE list
  *                     for both portals; each portal's rules say whether a field is shown there.
  *
- * A rule may carry a `format` (what may be typed: a preset or a custom regular expression, + length).
- * Layout (how addresses and services are shown) and "How goods are entered" are per portal the same way.
+ * A rule may carry a `format` (what may be typed: a preset or a custom regular expression, + length). The Package & SKU
+ * card's two sections are rules too (`PKG_SECTION`, `SKU_SECTION`). Layout (how addresses and services are shown) is per
+ * portal the same way.
  * Every key here is listed in ./formSync SETUP_KEYS — a NEW setup key must join it, or it is not kept on the server.
  */
 
@@ -123,7 +124,9 @@ export function asRules(raw: unknown): FormRulesV2 {
 const keyOf = (p: FormPortal) => (p === 'grow' ? FORM_RULES_GROW_KEY : FORM_RULES_V2_KEY)
 /** the console form's rules, or the Grow form's OWN changes (see `growRules` for what Grow shows) */
 export const loadRules = (p: FormPortal): FormRulesV2 => {
-  try { return asRules(JSON.parse(localStorage.getItem(keyOf(p)) ?? '{}')) } catch { return {} }
+  let r: FormRulesV2 = {}
+  try { r = asRules(JSON.parse(localStorage.getItem(keyOf(p)) ?? '{}')) } catch { /* a broken value = no rules */ }
+  return withLegacyGoods(p, r)
 }
 export const saveRules = (p: FormPortal, r: FormRulesV2) => {
   try { localStorage.setItem(keyOf(p), JSON.stringify(asRules(r))) } catch { /* private mode */ }
@@ -141,37 +144,42 @@ export const withoutKeys = (r: FormRulesV2, keys: Iterable<string>): FormRulesV2
   return out
 }
 
-/* ----------------------------------------------------- how goods are entered ---- */
+/* --------------------------------------------------- Package & SKU sections ---- */
 
-export type GoodsSetting = 'sku' | 'separate' | 'combined'
-/** owner, 2026-10-05: "SKUs, then packages" (option 2) is the default */
-export const DEFAULT_GOODS_SETTING: GoodsSetting = 'separate'
-/* v2 of the key (2026-10-05): the first key also caught the old default ('sku') whenever the builder was saved, so it
-   cannot tell a choice from a default — read once as a fallback, keeping only a non-default choice */
+/**
+ * What the Package & SKU card asks (owner, 2026-10-06: "do not ask How goods are entered — in the form builder we can
+ * hide the SKU section or the package section"): two rule keys, hidden per portal like any field (Grow follows the
+ * console). Both shown = each package with its SKUs · SKUs hidden = packages only · Packages hidden = SKU-based (a SKU
+ * and how many — the packages are worked out). Never both: the one still shown is locked.
+ */
+export const PKG_SECTION = 'pkgSection'
+export const SKU_SECTION = 'skuSection'
+/* The retired "How goods are entered" keys (until 2026-10-06; v2 because the first key also caught the old default).
+   They are still read — `sku` = the Packages section hidden — until the builder's Save writes the rules and clears them. */
 export const GOODS_SETTING_KEY = 'fe-consignment-form-v2-goods-v2'
 export const GOODS_SETTING_KEY_V1 = 'fe-consignment-form-v2-goods'
 export const GOODS_SETTING_GROW_KEY = 'fe-consignment-form-v2-goods-grow'
-const asGoods = (v: string | null): GoodsSetting | null => (v === 'sku' || v === 'separate' || v === 'combined' ? v : null)
-const consoleGoods = (): GoodsSetting => {
+type LegacyGoods = 'sku' | 'separate' | 'combined'
+const asGoods = (v: string | null): LegacyGoods | null => (v === 'sku' || v === 'separate' || v === 'combined' ? v : null)
+const legacyConsoleSku = () => {
   const v2 = asGoods(localStorage.getItem(GOODS_SETTING_KEY))
-  if (v2) return v2
-  const v1 = asGoods(localStorage.getItem(GOODS_SETTING_KEY_V1))
-  return v1 && v1 !== 'sku' ? v1 : DEFAULT_GOODS_SETTING
+  /* the first key's 'sku' was its default, not a choice */
+  return v2 ? v2 === 'sku' : false
 }
-/** the console's setting; Grow's own when it has one, else the console's */
-export function loadGoodsSetting(p: FormPortal = 'console'): GoodsSetting {
+/** a portal's rules with the retired goods setting read in as the section hides (only while neither is set) */
+function withLegacyGoods(p: FormPortal, r: FormRulesV2): FormRulesV2 {
+  if (r[PKG_SECTION] || r[SKU_SECTION]) return r
   try {
-    const own = p === 'grow' ? asGoods(localStorage.getItem(GOODS_SETTING_GROW_KEY)) : null
-    return own ?? consoleGoods()
-  } catch { return DEFAULT_GOODS_SETTING }
+    const consoleSku = legacyConsoleSku()
+    if (p === 'console') return consoleSku ? { ...r, [PKG_SECTION]: { hidden: true } } : r
+    /* Grow kept a value only while it differed from the console's */
+    const grow = asGoods(localStorage.getItem(GOODS_SETTING_GROW_KEY))
+    return grow && (grow === 'sku') !== consoleSku ? { ...r, [PKG_SECTION]: { hidden: grow === 'sku' } } : r
+  } catch { return r }
 }
-export function saveGoodsSetting(p: FormPortal, v: GoodsSetting) {
-  try {
-    if (p === 'console') localStorage.setItem(GOODS_SETTING_KEY, v)
-    /* Grow keeps a value only while it differs from the console's — otherwise it follows */
-    else if (v === loadGoodsSetting('console')) localStorage.removeItem(GOODS_SETTING_GROW_KEY)
-    else localStorage.setItem(GOODS_SETTING_GROW_KEY, v)
-  } catch { /* private mode */ }
+/** the builder's Save wrote both portals' rules (with the retired setting read in) — the old keys can go */
+export function clearLegacyGoods() {
+  try { for (const k of [GOODS_SETTING_KEY, GOODS_SETTING_KEY_V1, GOODS_SETTING_GROW_KEY]) localStorage.removeItem(k) } catch { /* private mode */ }
 }
 /** the console form's Simplified | full choice (per viewer — not shared; a share link opens the full form) */
 export const FORM_TIER_KEY = 'console-consignment-form-v2-tier'
@@ -180,7 +188,7 @@ export const FORM_TIER_KEY = 'console-consignment-form-v2-tier'
 
 /**
  * How the form LOOKS (owner, 2026-10-05: "give Ship To / Ship From in two options", then "individually configured,
- * RTO also"), per portal like the goods setting — Grow keeps only what differs from the console:
+ * RTO also"), per portal — Grow keeps only what differs from the console:
  *   shipFrom · shipTo · rto   each address on its own:
  *             'cards'  = a saved-address picker read back as a card, Add / Edit in a popup (the form until now)
  *             'inline' = the fields on the form itself, under a search of the saved addresses

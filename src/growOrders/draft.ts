@@ -28,8 +28,7 @@ export interface ParcelItem {
   dimUom?: string
   /** skuDetails[].weightUom (weightKg holds the number) */
   weightUom?: string
-  /** the line's number in the form's SKU list ("SKUs, then packages") — keeps the list in order while packages pick
-   *  their SKUs (a SKU moved into another package keeps its place in the list) */
+  /** the line's number in the retired "SKUs, then packages" list (2026-10-05 → 10-06) — on old drafts only, unused */
   lineNo?: number
 }
 
@@ -75,7 +74,13 @@ export interface Parcel {
   /** "Barcode on every box" for THIS package (owner, 2026-10-05): the box carries its own barcode, so the line is ONE
    *  box — its quantity stays 1. The consignment's `scannable` is derived from it on the package-based forms. */
   barcodeEach?: boolean
+  /** The unit the package — and the SKUs in it — is entered in (owner, 2026-10-06: "Package Unit selectable, the same
+   *  unit flows to the SKU"). Display only: `weight` / `l w h` and the SKUs' `weightKg` / `…Cm` always stay kg and cm.
+   *  Absent = metric. */
+  unitSystem?: UnitSystem
 }
+/** kg + cm, or lb + in */
+export type UnitSystem = 'metric' | 'imperial'
 
 /**
  * One Value Added Service line — the console's VAS row

@@ -23,6 +23,7 @@ type Kind = 'object' | 'array' | 'goods'
     module, merchants and demo data. */
 export const SETUP_KEYS: Record<string, Kind> = {
   [FORM_RULES_V2_KEY]: 'object', [FORM_RULES_GROW_KEY]: 'object',
+  /* the retired "How goods are entered" (still read as the Package & SKU section hides until the builder's next Save) */
   [GOODS_SETTING_KEY]: 'goods', [GOODS_SETTING_KEY_V1]: 'goods', [GOODS_SETTING_GROW_KEY]: 'goods',
   [LAYOUT_KEY]: 'object', [LAYOUT_GROW_KEY]: 'object',
   [ORDER_KEY]: 'object', [ORDER_GROW_KEY]: 'object',

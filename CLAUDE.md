@@ -263,7 +263,13 @@ Product changes layered on the replica (deliberate departures from the live port
   `draft.CheckoutSidecar` { offered services, locked = Service Type hidden, Grid | List, the field's label, the back URL }
   → `/grow/orders/checkout`). Back from step 2 restores the session draft WITH the chosen service — for a new order, a
   resumed `?draft=` (same orderId) and `?fromOverage` (same scan). Package card (both portals): a chevron-only "more package details" at the END of
-  the package's field row (level with the inputs), Add SKU on its own line below; a SKU's details toggle is a chevron only (words in the tooltip). The old `MerchantOrderForm` / `packageEditor` / `orderSummaryRail` are gone. Selected card = 2px brand
+  the package's field row (level with the inputs), Add SKU on its own line below; a SKU's details toggle is a chevron only (words in the tooltip),
+  shown only while a detail waits under it — a detail NOT under More sits on the SKU line's second row (Grow by default: HSN
+  Code · Origin Country · Cost, owner 2026-10-06; the console folds them all). **Units** (owner, 2026-10-06, both portals): each
+  package's header has **kg · cm | lb · in** (`Parcel.unitSystem`, `UnitPick`); its weight, size, totals and its SKUs' weight /
+  size are shown and typed in it (a new package takes the last one's; the SKU-based list has one in the card header). The
+  numbers are KEPT in kg + cm (rates, checkout, summary, views unchanged); a draft whose SKUs carried the retired per-SKU
+  Weight / Dimension unit is converted on load (`canonParcel`). The old `MerchantOrderForm` / `packageEditor` / `orderSummaryRail` are gone. Selected card = 2px brand
   border, no fill; segments/choices neutral (border-ink + bg-warm-50). Pricing = ONE module
   `src/growOrders/rates.ts` (`quoteLane`/`quoteService`, ESTIMATED; ₱ card for PH, $ card for the
   Chicago/US network; zone same city · region · nationwide), also used by the Rate Calculator and
@@ -299,9 +305,14 @@ Product changes layered on the replica (deliberate departures from the live port
   sits in Consignment details; RTO = one toggle "RTO address same as Ship From address".
   Consignment Type drives the ends (Reverse swaps them, Transfer = hub → hub, RTO / payment only where they
   apply, Exchange requires its order no., Service = goods optional). Consignment Number has no fallback.
-  **How goods are entered** is ONE builder setting (`fe-consignment-form-v2-goods`, no per-order selector):
-  SKU-based (default) · SKUs, then packages (SKU list with a Package column, then the boxes) · Packages with
-  their SKUs; Add SKU sits under its SKUs, Add Package under all packages. **Handling** is its own card (Order
+  **Package & SKU = two sections the builder can hide** (owner, 2026-10-06: "do not ask How goods are entered"): rule keys
+  `pkgSection` / `skuSection` (`formSetup.PKG_SECTION` / `SKU_SECTION`, per portal like any field, Grow follows): both shown
+  = each package with its SKUs (Add SKU under its SKUs, Add Package under all packages) · SKUs hidden = packages only (a
+  draft's SKUs are kept, not checked) · Packages hidden = SKU-based (SKU + quantity, the packages worked out). Never both:
+  the one still shown is locked (`FieldLock 'last'`; Grow's own hide wins over the console's other one). While editing they
+  are two chips with an eye at the top of the card, and rows in All fields. The retired "How goods are entered" keys
+  (`…-goods-v2` / `…-goods` / `…-goods-grow`) are still READ as these hides (`sku` = Packages hidden; "SKUs, then packages"
+  and "Packages with their SKUs" both = both shown) until the builder's next Save writes the rules and clears them. **Handling** is its own card (Order
   Category chips — each hideable — · Barcode · In parts · Clearance · Tags) between Package & SKU and **Service &
   instructions**. Service Type always has a value (hideable since 2026-10-05 — see Builder v3); Vehicle Type is optional. The footer carries the tier switch
   (**Switch to Simplified**, `console-consignment-form-v2-tier`): the original Simplified tier restyled — 3-column
@@ -323,8 +334,8 @@ Product changes layered on the replica (deliberate departures from the live port
   Cancel return to the plain console form; unsaved changes → "Save and switch" dialog). Grow FOLLOWS the console
   form field by field: `fe-consignment-form-v2-rules-grow` holds only what differs (`growRules()` overlay; a "Grow ↺"
   chip on a changed field reverts it; **Match console form** clears them), so a console change still reaches Grow
-  unless Grow set that field itself; MERCHANT_OFF fields never show on Grow, preview included. "How goods are
-  entered" may differ too (`…-goods-grow`, kept only while it differs). Field tools are compact icons with
+  unless Grow set that field itself; MERCHANT_OFF fields never show on Grow, preview included (Grow's dirty check compares
+  what its form SHOWS). Field tools are compact icons with
   tooltips (✱ Required · ☰ More · `.*` **Format** · eye · trash for own fields; lock = system). **Format** = what may
   be typed in a text field (`FORMATABLE` + own Text fields, locked identifiers included; Contact Number via key
   `addrContact`): preset (numbers / letters / letters+numbers / code / email / phone) or a custom regular
@@ -354,7 +365,7 @@ Product changes layered on the replica (deliberate departures from the live port
   Name on the form · Show on the form · Required · Put under "More" · What can be typed (the Format editor, live, with Try
   it) · Remove field (own fields) · Use the console setting (Grow). NO side panel: the form-level choices sit on the cards
   they change — each address's **Entered as** Saved card | Fields on form (on Ship From, Ship To and the RTO address, each
-  its own), **How goods are entered** (the Package & SKU card), Grow's **Show as** Grid | List (its Service Type card) —
+  its own), the **Packages / SKUs** sections (the Package & SKU card), Grow's **Show as** Grid | List (its Service Type card) —
   and the bar's **All fields** opens every field by card in one searchable dialog (a show / hide switch per field, the
   picked field's settings beside the list, + Add field — the dialog asks where; the address card's "Address fields" link
   opens it on Addresses). The Format dialog is gone (Format lives in the card; the icons came back 2026-10-05, see below). **Layout** =
@@ -370,21 +381,20 @@ Product changes layered on the replica (deliberate departures from the live port
   always show the fields. A hub end stays a picker + card. A window's two cells sit side by side from 500px.
   **Package list (owner, 2026-10-05: "100 packages = too much scroll; what if every field is shown")**: with more than
   one package ONE is open for editing (`openPkgId`; the builder preview always has the first open) and every other one
-  is a single row — Package n · type · count × L × W × H · kg each · SKUs · #tracking, the total kg, Duplicate (a copy
+  is a single row — Package n · type · count × L × W × H · weight each · SKUs · #tracking, the total (in the package's units), Duplicate (a copy
   right below, new id, no tracking number) · Remove · open. The open card's header carries its totals (no footer row).
-  Past `PKG_PAGE` (8) rows the list stops at **Show all N packages**; the SKU list of "SKUs, then packages" stops at
-  10 lines the same way. An incomplete package (after an Add attempt) shows an "Incomplete" chip, always stays
+  Past `PKG_PAGE` (8) rows the list stops at **Show all N packages**. An incomplete package (after an Add attempt) shows an "Incomplete" chip, always stays
   visible, and the first one opens itself. However many fields the builder shows, they live only in the open package.
   **Barcode on every box** (owner, 2026-10-06: ONE switch, not one per package — and "back in the Handling section") sits in
   the Handling card's switches row on every form (`consignment.scannable`, `setBarcodeAll`): on = every package
   line is ONE box (`Parcel.barcodeEach`, Quantity locked to 1, `setBarcodeAll`) — a line of N boxes becomes N lines (≤ 200
   boxes in all; above that every quantity → 1 + "add the rest with Duplicate"), a new package follows it; off = counted
   again. **Package row** (owner, 2026-10-06): one wrapping flex row, each field its own width (`PKG_CELL`, given to its
-  drag cell too) — Quantity 88px and Weight 112px fixed, **Package Id in the row** (no longer under More); a field wrapping
-  alone grows only to its max-width. **SKUs, then packages = SKU INTO package** (owner, 2026-10-05: "reverse it"): the SKU
-  list has no Package column; Package 1 "Holds every SKU not put in another package", every other package has **SKUs in this
-  package** (multi-select; a SKU taken out goes back to Package 1; `packInto`), and `ParcelItem.lineNo` keeps the SKU list in
-  its order while packages pick (`sepSort`). Add SKU adds to Package 1.
+  drag cell too) — Quantity 88px and Weight 112px fixed; **Package Id** = key `pkgId`, optional (one is minted per package):
+  in the row on the console, under "More package details" on Grow (owner, 2026-10-06; `GROW_MORE` — Grow does not take the
+  console's More for it, nor for the SKU line's `GROW_SKU_FRONT`), kept on leaving the box (`CommitBox`: the card keys on the
+  id); a field wrapping alone grows only to its max-width. (The "SKUs, then packages" layout — the SKU list, then packages
+  picking their SKUs — is retired, 2026-10-06; `ParcelItem.lineNo` stays on old drafts, unused.)
   **Builder, simpler (owner, 2026-10-05)**: "Show hidden fields" is OFF by default (hiding a field says where to bring it
   back); every field frame carries its icons again (`FieldTools`: ✱ Required · ☰ More · .* Format (opens the card) · eye ·
   trash for own fields · Grow ↺; set ones stay lit, the rest show on hover / when selected) next to the click-to-open card;
