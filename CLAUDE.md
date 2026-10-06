@@ -239,10 +239,16 @@ Product changes layered on the replica (deliberate departures from the live port
   Pallet Space; no Carriers card, no Shipment legs, no form builder, no Simplified tier, no Transfer type, no hubs as
   addresses). Cards: Consignment details · Ship From → Ship To (pickup window under Ship From follows the pickup
   module: off · manual optional · auto-ask required · auto-rule shown) · Package & SKU · **Handling** (the console's:
-  six category chips · toggles · Tags, + Grow's **Load type** Shared | Full vehicle, default Shared) · **Service &
-  instructions** (Label Format · instructions · VAS in the lane's currency) · **Service Type LAST**
-  (`serviceCards.ServiceTypeChooser hideMode`: the lane's rate cards show at once — two per row by default, the builder's
-  Services choice — vehicle cards with count steppers for Full vehicle, which also allows extra drops). The console form's saved customisation (`fe-consignment-form-v2-rules`:
+  six category chips · toggles · Tags, + Grow's load type as ONE toggle — the second branch's **Dedicate Truck** chip
+  (`ChipToggle`; off = shared LTL / LCL, on = full vehicle; owner 2026-10-06, the console's Load type is the same chip) — on
+  adds a **Vehicle Details** card after Handling: the second branch's vehicle selection, the console `/new/vehicle` table
+  (`vehicleTable`: Vehicle Type · No. of Vehicles · Est. Load · Deliver To, + Add vehicle, capacity line) on the Ship From
+  hub's fleet with its rate per vehicle, kept in the console's `rows` model) · **Service &
+  instructions** (Label Format · instructions · VAS in the lane's currency; VAS alone → the card is titled Value Added
+  Services with Add service in its header, no empty band) · **Service Type LAST**
+  (`serviceCards.ServiceTypeChooser hideMode vehiclesElsewhere`: the lane's rate cards show at once — two per row by default,
+  the builder's Services choice; NO transit days on Grow's service cards or footer estimate, owner 2026-10-06; a full
+  vehicle's services are priced from Vehicle Details, which also allows extra drops). The console form's saved customisation (`fe-consignment-form-v2-rules`:
   hidden · labels · More · Required) applies to Grow too (owner, 2026-09-29), plus the Form Fields tab's Required —
   unless the Grow portal form changes that field for Grow (2026-10-05, "Form setup" under Add Consignment v2).
   Sticky footer = the estimate · Go Back · Save for later · Continue to checkout (DRAFT_KEY → `/grow/orders/checkout`,
@@ -332,10 +338,13 @@ Product changes layered on the replica (deliberate departures from the live port
   `formSetup.loadLayout/saveLayout` (`fe-consignment-form-v2-layout` = `{ shipFrom, shipTo, rto, services }`, a stored
   `address` from the first version applies to all three; Grow's differences in `…-layout-grow`): **Fields on form** = that
   address typed in the card under a search of the saved ones (name · number · address · company), CONTACT DETAILS /
-  ADDRESS DETAILS in four columns, More address details, "Save this address" (kept when the consignment is submitted or
-  saved for later); any address on the form → the two ends stack (Ship From above Ship To) — EXCEPT on Grow with the
-  Summary card off (or all its lines hidden): then Ship From and Ship To sit side by side, each address in two columns
-  (`halfAddresses`, `PartyBlock half`; owner, 2026-10-05); a hub end stays a picker + card.
+  ADDRESS DETAILS in two columns (`HalfGrid`, one below 380px), More address details, "Save this address" (kept when the
+  consignment is submitted or saved for later). **Ship From | Ship To ALWAYS side by side** (owner, 2026-10-06: "side by
+  side, one and one, like in the second branch") — Saved card or Fields on form, both portals, the Summary on or off; they
+  stack only when the CARD is under 720px (container query). Like the second branch's combined card, a SAVED address
+  picked in the on-form search folds into its address card (pencil = its fields in place, Done folds it back, Clear empties
+  it; `openSlots`); a typed address keeps its fields; the builder preview and an incomplete address after an Add attempt
+  always show the fields. A hub end stays a picker + card. A window's two cells sit side by side from 500px.
   **Package list (owner, 2026-10-05: "100 packages = too much scroll; what if every field is shown")**: with more than
   one package ONE is open for editing (`openPkgId`; the builder preview always has the first open) and every other one
   is a single row — Package n · type · count × L × W × H · kg each · SKUs · #tracking, the total kg, Duplicate (a copy
@@ -343,10 +352,13 @@ Product changes layered on the replica (deliberate departures from the live port
   Past `PKG_PAGE` (8) rows the list stops at **Show all N packages**; the SKU list of "SKUs, then packages" stops at
   10 lines the same way. An incomplete package (after an Add attempt) shows an "Incomplete" chip, always stays
   visible, and the first one opens itself. However many fields the builder shows, they live only in the open package.
-  **Barcode on every box** (owner, 2026-10-05) is asked on each PACKAGE's heading where packages are typed (`Parcel.barcodeEach`;
-  Handling keeps the switch only for SKU-based and vehicle forms; the consignment's `scannable` = any package has it): on =
-  that line is ONE box — its Quantity is locked to 1, and a line of N boxes becomes N lines (≤ 100; above that Quantity → 1
-  + "add the rest with Duplicate"). **SKUs, then packages = SKU INTO package** (owner, 2026-10-05: "reverse it"): the SKU
+  **Barcode on every box** (owner, 2026-10-06: "in the section top, not on every package") is ONE switch in the Package &
+  SKU card's header, every goods mode (Handling asks it only on a vehicle form; `consignment.scannable`): on = every package
+  line is ONE box (`Parcel.barcodeEach`, Quantity locked to 1, `setBarcodeAll`) — a line of N boxes becomes N lines (≤ 200
+  boxes in all; above that every quantity → 1 + "add the rest with Duplicate"), a new package follows it; off = counted
+  again. **Package row** (owner, 2026-10-06): one wrapping flex row, each field its own width (`PKG_CELL`, given to its
+  drag cell too) — Quantity 88px and Weight 112px fixed, **Package Id in the row** (no longer under More); a field wrapping
+  alone grows only to its max-width. **SKUs, then packages = SKU INTO package** (owner, 2026-10-05: "reverse it"): the SKU
   list has no Package column; Package 1 "Holds every SKU not put in another package", every other package has **SKUs in this
   package** (multi-select; a SKU taken out goes back to Package 1; `packInto`), and `ParcelItem.lineNo` keeps the SKU list in
   its order while packages pick (`sepSort`). Add SKU adds to Package 1.
@@ -356,8 +368,8 @@ Product changes layered on the replica (deliberate departures from the live port
   **Move card** ↑ ↓ on each card's top edge reorders whole cards (zone `__sections` of the field order — saved, reset and,
   on Grow, inherited like the fields'; the Simplified tier keeps its order); a repeating block shows ONE **sample line** in
   the builder (a SKU line with its details, a VAS line) so its fields can be set without adding one — nothing is saved.
-  Grow's **Grid** = the lane's services as compact radio cards two per row (name + carrier · rate + Est. N days,
-  nothing preselected, nothing collapses), `serviceCards.ServiceTypeChooser layout`.
+  Grow's **Grid** = the lane's services as compact radio cards two per row (name + carrier · rate — no days since
+  2026-10-06, nothing preselected, nothing collapses), `serviceCards.ServiceTypeChooser layout`.
   **Field order + Summary (2026-10-05, owner: "drag and drop and resequence columns in the same sections" · "allow to show
   summary or not … their summary section can be different")** — while the form is edited every field is a drag cell
   (`SortCell`, native HTML5 drag: a grip on hover, a brand bar where it lands; the field's settings card also has
@@ -374,16 +386,20 @@ the cards; one line under the other (label above value, the estimated price larg
   (Route · Pieces & weight · Load type · Service Type · Pickup · Value-added services · Estimated price); its on / off and
   hidden lines live per portal on their own (`formSetup.loadSummary/saveSummary`, `fe-consignment-form-v2-summary[-grow]`,
   default console OFF, Grow ON — Grow does NOT follow the console here); while editing the card shows a "Shown on this
-  form" switch and a switch per line. Not on the Simplified tier.
+  form" switch and a switch per line, and it follows **Show hidden fields** like every field (owner, 2026-10-06): switched
+  off (or every line hidden) it leaves the preview, a hidden line too — Show hidden fields brings them back, faded (a toast
+  says so). Not on the Simplified tier.
+  **SKU code / address search lists** (`useAutocomplete`, 2026-10-06 fix): the list follows its box when the page scrolls
+  (it closes only when the box leaves the screen) and a click on a focused box opens it — Add SKU's new line opens its list.
   **Service Type is hideable (2026-10-05, owner: "in Service Type I can't hide that field")** — it left `FORM_LOCKED`, so the
   builder, the Form Fields tab (Shown | Hidden — no Required, it always has a value) and the older hides all reach the v2
   forms. Hidden = nobody chooses: every consignment gets the field's **default service** (its rule's `defaultValue`, picked in
   its settings card under "While it is hidden"; Grow follows the console unless it sets its own). Console: the default when it
   is a known service, else Standard; `/new/vehicle`: the default when it is a vehicle service, else Inland FTL (vehicle rows
   are fitted to its vehicles); a resumed draft / Modify / pickup request keeps its own service. Grow books from the Service
-  Type master's Active rows (its own if still bookable → the default → the first); Shared = no Service Type card (the footer
-  estimate names the service), Full vehicle = the card becomes **Vehicles** (`ServiceTypeChooser servicesHidden`: the count
-  steppers only); the builder preview keeps it, faded. The console's Service & instructions card leaves when everything in it
+  Type master's Active rows (its own if still bookable → the default → the first); no Service Type card (the footer
+  estimate names the service; a full vehicle's vehicles are in Vehicle Details); the builder preview keeps it, faded,
+  while "Show hidden fields" is on. The console's Service & instructions card leaves when everything in it
   is hidden. The Simplified tier is not customisable — it still asks Service Type.
 - **Service Type has no Load type** (owner, 2026-09-29): `draft.loadTypeOf` returns `'both'` for every
   service, so Shared / Full vehicle is the booking's free choice on every form (the old form's Load type is no

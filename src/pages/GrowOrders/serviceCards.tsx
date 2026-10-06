@@ -10,11 +10,11 @@
  * fleet. Every rate is ESTIMATED (growOrders/rates).
  *
  * `layout="grid"` (owner, 2026-10-05, the form builder's Services choice, the default): the live portal's compact
- * "Services" block — the cards two per row inside one quiet frame: a radio, the name + the carrier, the rate +
- * "Est. N days". Nothing is preselected and nothing collapses (the grid is short enough to stay open).
+ * "Services" block — the cards two per row inside one quiet frame: a radio, the name + the carrier, the rate (no
+ * transit days since 2026-10-06). Nothing is preselected and nothing collapses (the grid is short enough to stay open).
  */
 import { useState, type ReactNode } from 'react'
-import { Banknote, Boxes, Home, Pencil, Truck } from 'lucide-react'
+import { Banknote, Boxes, Pencil, Truck } from 'lucide-react'
 import type { ServiceQuote } from '../../growOrders/rates'
 import { money } from './utils'
 import { CountStepper, Segment } from './merchantFormBits'
@@ -24,10 +24,6 @@ export type BookingMode = 'ltl' | 'ftl'
 /** One vehicle a merchant can book at the Ship From hub, with its rate on this lane. */
 export interface FleetVehicle { code: string; name: string; payloadKg: number; capacity: string; rate: number }
 
-const dayName = (iso: string) => {
-  const d = new Date(`${iso}T00:00`)
-  return d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
-}
 
 /** The card anatomy both lists share (also the read-only service card on the Grow View Consignment). */
 export function RateCard({ title, left, right, trailing, selected, onClick, inert }: {
@@ -57,14 +53,14 @@ export function RateCard({ title, left, right, trailing, selected, onClick, iner
   )
 }
 
-/** One service in the grid: a radio, the name and the carrier on the left, the rate and the transit days on the right. */
+/** One service in the grid: a radio, the name and the carrier on the left, the rate on the right (owner, 2026-10-06: no
+    transit days on Grow's service cards). */
 function ServiceChoice({ q, carrier, selected, inert, onClick, currency }: {
   q: ServiceQuote; carrier: string; selected: boolean; inert: boolean; onClick: () => void; currency: string
 }) {
   return (
     <div role="radio" aria-checked={selected} aria-disabled={inert || undefined} tabIndex={inert ? -1 : 0} onClick={inert ? undefined : onClick}
       onKeyDown={(e) => { if (!inert && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onClick() } }}
-      title={inert ? undefined : `Delivery by ${dayName(q.deliveryBy)}`}
       className={`flex min-w-0 items-center gap-4 rounded-lg bg-surface text-left transition-colors
         focus:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-500/20
         ${selected ? 'cursor-pointer border-2 border-brand-500 px-[19px] py-[15px]'
@@ -79,7 +75,6 @@ function ServiceChoice({ q, carrier, selected, inert, onClick, currency }: {
       </span>
       <span className="shrink-0 text-right">
         <span className="block text-[15px] font-bold leading-6 tabular-nums text-ink">{inert ? '—' : money(q.net, currency)}</span>
-        <span className="block text-[13px] text-ink-3">Est. {q.days} day{q.days === 1 ? '' : 's'}</span>
       </span>
     </div>
   )
@@ -88,8 +83,10 @@ function ServiceChoice({ q, carrier, selected, inert, onClick, currency }: {
 /** The body of the Grow form's Service Type card (the card itself is the form's own — AddConsignmentV2 merchant mode). */
 export function ServiceTypeChooser({
   ready, mode, onMode, modeLocked, quotes, selected, onSelect, currency, fleet, counts, onCount, fleetNote,
-  showErrors, serviceLocked, children, hideMode, layout = 'list', carrier = '', servicesHidden = false,
+  showErrors, serviceLocked, children, hideMode, layout = 'list', carrier = '', servicesHidden = false, vehiclesElsewhere = false,
 }: {
+  /** the vehicles are booked in their own card (the form's Vehicle Details, owner 2026-10-06) — no steppers here */
+  vehiclesElsewhere?: boolean
   /** Service Type is hidden on the form: no service list (the default is booked) — only a full vehicle's vehicles show */
   servicesHidden?: boolean
   /** the load type is asked elsewhere (the form's Handling card) — no segment here */
@@ -163,8 +160,7 @@ export function ServiceTypeChooser({
               {shown.map((q) => (
                 <RateCard key={q.code} selected={ready && q.code === selected} inert={!ready} onClick={() => pick(q.code)}
                   title={q.name}
-                  left={<><Home size={16} className="shrink-0 text-brand-500" />Delivery by <b className="text-ink">{q.days} DAY</b>
-                    {ready && <span className="text-ink-3">· {dayName(q.deliveryBy)}</span>}</>}
+                  left={<><Truck size={16} className="shrink-0 text-brand-500" />{carrier || 'Carrier assigned at booking'}</>}
                   right={ready ? money(q.net, currency) : '—'} />
               ))}
             </div>
@@ -173,7 +169,7 @@ export function ServiceTypeChooser({
           </>
         )}
 
-        {ready && mode === 'ftl' && chosen && (
+        {ready && mode === 'ftl' && chosen && !vehiclesElsewhere && (
           <div className={servicesHidden ? '' : 'mt-6'}>
             {/* hidden services: the card itself is titled "Vehicles" */}
             {!servicesHidden && <p className="text-[13px] font-bold text-ink">Vehicles</p>}
