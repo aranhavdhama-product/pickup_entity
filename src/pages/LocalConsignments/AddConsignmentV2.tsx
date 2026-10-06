@@ -68,7 +68,7 @@ import {
   growRules, isCustomKey, loadCustomFields, loadGoodsSetting, loadLayout, loadOrder, loadRules, loadSummary, moveId, newCustomKey, patternError,
   saveCustomFields, saveGoodsSetting, saveLayout, saveOrder, saveRules, saveSummary, withoutKeys, DEFAULT_SUMMARY,
   type CustomFieldCard, type CustomFieldDef, type CustomFieldKind, type FieldFormat, type FieldRuleV2, type FormatPreset, type FormLayout,
-  type FormRulesV2, type GoodsSetting, type FormOrder, type FormSummary, FORM_TIER_KEY,
+  type FormRulesV2, type GoodsSetting, type FormOrder, type FormSummary, type AddressArrangement, type AddressEntry, FORM_TIER_KEY,
 } from './formSetup'
 import ShareFormDialog from './ShareFormDialog'
 import { usePickupModuleConfig } from '../../config/pickupModule'
@@ -998,6 +998,10 @@ function Grid2({ children, className = '' }: { children: ReactNode; className?: 
 function HalfGrid({ children }: { children: ReactNode }) {
   return <div className="@container"><div className={`grid grid-cols-1 ${FIELD_GAPS} @min-[380px]:grid-cols-2`}>{children}</div></div>
 }
+/** "One under the other" (owner, 2026-10-06): an address on the form has the card's full width — 2 columns from 380px, 4 from 880px */
+function QuadGrid({ children }: { children: ReactNode }) {
+  return <div className="@container"><div className={`grid grid-cols-1 ${FIELD_GAPS} @min-[380px]:grid-cols-2 @min-[880px]:grid-cols-4`}>{children}</div></div>
+}
 /** A small bold heading inside a card, with an optional control on its right. */
 function SubTitle({ children, right }: { children: ReactNode; right?: ReactNode }) {
   return (
@@ -1026,7 +1030,7 @@ function DateTimeCell({ label, at, onChange, fallbackTime }: { label: string; at
  * optional ones, each in the main grid or the "More information" fold by its placement (builder).
  * `variant="rto"` = the return address: Contact + Postal Code required, no coordinates / floor.
  */
-function PartyBlock({ party, set, nameLabel, requireContact, hid, variant = 'full', grouped = false, wide = false }: {
+function PartyBlock({ party, set, nameLabel, requireContact, hid, variant = 'full', grouped = false, wide = false, half = false }: {
   party: Party; set: (patch: Partial<Party>) => void; nameLabel: string
   requireContact?: boolean; hid: (k: string) => boolean; variant?: 'full' | 'rto'
   /** the popup: the same order under two quiet headings, Contact then Address */
@@ -1034,6 +1038,8 @@ function PartyBlock({ party, set, nameLabel, requireContact, hid, variant = 'ful
   /** on the form itself (the builder's "Fields on the form"): the headings as CONTACT DETAILS / ADDRESS DETAILS, in
       its half of the card (Ship From | Ship To side by side, owner 2026-10-06), "More address details" below */
   wide?: boolean
+  /** with wide: Ship From | Ship To side by side — two columns at most (else the card's full width, four columns) */
+  half?: boolean
 }) {
   const rto = variant === 'rto'
   const b = useContext(BuilderCtx)
@@ -1100,12 +1106,13 @@ function PartyBlock({ party, set, nameLabel, requireContact, hid, variant = 'ful
         <span className="text-[12px] font-bold uppercase tracking-wide text-ink-3">{t}</span><span className="h-px flex-1 bg-warm-200" />
       </div>
     )
+    const G = half ? HalfGrid : QuadGrid
     return (
       <div>
         {head('Contact details')}
-        <HalfGrid>{who.nodes}</HalfGrid>
+        <G>{who.nodes}</G>
         <div className="mt-8">{head('Address details')}</div>
-        <HalfGrid>{where.nodes}</HalfGrid>
+        <G>{where.nodes}</G>
         {toggle}
       </div>
     )
@@ -1134,10 +1141,12 @@ function PartyBlock({ party, set, nameLabel, requireContact, hid, variant = 'ful
 }
 
 /** The chosen address, read back as a card: who · how to reach them · where. */
-function AddressCard({ party, missing, invalid = [], onEdit, tag }: {
+function AddressCard({ party, missing, invalid = [], onEdit, tag, editTip = 'Edit this address' }: {
   party: Party; missing: string[]; tag?: string
-  /** absent while the form is being edited (the address fields are set through All fields then) */
+  /** the pencil — while the form is edited: opens the pop-up to set up the address fields */
   onEdit?: () => void
+  /** the pencil's tooltip */
+  editTip?: string
   /** typed in the wrong format (the builder's Format rules) */
   invalid?: string[]
 }) {
@@ -1149,7 +1158,7 @@ function AddressCard({ party, missing, invalid = [], onEdit, tag }: {
   return (
     <div className={`rounded-lg border bg-surface p-4 ${bad ? 'border-danger-fg' : 'border-warm-200'}`}>
       {empty
-        ? <p className="text-[13px] text-ink-3">No address yet — pick a saved one above or add a new address.</p>
+        ? <p className="text-[13px] text-ink-3">No address yet — pick a saved one or add a new address.</p>
         : (
           <div className="flex items-start gap-3">
             <MapPinned size={16} className="mt-0.5 shrink-0 text-ink-3" />
@@ -1163,7 +1172,7 @@ function AddressCard({ party, missing, invalid = [], onEdit, tag }: {
               <p className="mt-1 text-[13px] text-ink">{[party.line1, party.line2, party.line3, party.landmark].filter((x) => filled(x)).join(', ')}</p>
               {place && <p className="text-[13px] text-ink-2">{place}</p>}
             </div>
-            {onEdit && <Tip text="Edit this address"><button type="button" onClick={onEdit} aria-label="Edit this address"
+            {onEdit && <Tip text={editTip}><button type="button" onClick={onEdit} aria-label={editTip}
               className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-warm-200 text-ink-2 hover:bg-warm-50 hover:text-ink">
               <Pencil size={14} />
             </button></Tip>}
@@ -1282,6 +1291,21 @@ const GOODS_OPTIONS: { value: GoodsSetting; label: string; sub: string }[] = [
   /* owner, 2026-10-05: the default */
   { value: 'separate', label: 'SKUs, then packages', sub: 'Default · list the SKUs, then the boxes they go in' },
   { value: 'combined', label: 'Packages with their SKUs', sub: 'Each box, and what is packed in it' },
+]
+/** the Ship From → Ship To card's choices while the form is edited — RadioCards like How goods are entered (owner, 2026-10-06) */
+const ARRANGE_OPTIONS: { value: AddressArrangement; label: string; sub: string }[] = [
+  { value: 'side', label: 'Side by side', sub: 'Ship From left, Ship To right' },
+  { value: 'stack', label: 'One under the other', sub: 'Ship To below Ship From, more room' },
+]
+const ENTRY_OPTIONS: { value: AddressEntry; label: string; sub: string }[] = [
+  { value: 'cards', label: 'Saved card', sub: 'Pick a saved address; edit it in a pop-up' },
+  { value: 'inline', label: 'Fields on form', sub: 'Type it here, or search saved addresses' },
+]
+const ADDRESS_LAYOUT_ROWS: { key: 'addresses' | 'shipFrom' | 'shipTo' | 'rto'; label: string; options: { value: string; label: string; sub: string }[] }[] = [
+  { key: 'addresses', label: 'Layout', options: ARRANGE_OPTIONS },
+  { key: 'shipFrom', label: 'Ship From', options: ENTRY_OPTIONS },
+  { key: 'shipTo', label: 'Ship To', options: ENTRY_OPTIONS },
+  { key: 'rto', label: 'RTO address', options: ENTRY_OPTIONS },
 ]
 
 /**
@@ -1824,10 +1848,11 @@ function AddConsignmentV2({ portal = 'console', setup = false, onShare }: {
      The switches belong to one pair of ends: a new pair starts with every stop on. ---- */
   const ctype = TYPE_RULES[c.consignmentType ?? 'Forward'] ? (c.consignmentType ?? 'Forward') : 'Forward'
   const typeRule = TYPE_RULES[ctype]
-  /* any address typed on the form (the card's caption says so). Owner, 2026-10-06 ("side by side, one and one, like in
-     the second branch"): Ship From and Ship To ALWAYS sit side by side — Saved card or Fields on form, both portals, the
-     Summary on or off — each address in two columns; they stack only when the card itself is narrow */
+  /* any address typed on the form (the card's caption says so) */
   const anyInline = inlineOf('from') || inlineOf('to') || (typeRule.rto && c.rtoMode === RTO_MODES[1] && inlineOf('rto'))
+  /* owner, 2026-10-06: Ship From | Ship To side by side (default — Saved card or Fields on form, both portals; they stack
+     only when the card itself is narrow) or one under the other (the builder's Layout). The Simplified tier keeps its own. */
+  const stackAddr = !simple && layout.addresses === 'stack'
   const endOf = (p: Party, code?: string): RouteEnd => {
     const lc = code ?? p.locationCode ?? ''
     if (HUB_CODES.has(lc)) return { kind: 'facility', hub: lc }
@@ -2444,7 +2469,7 @@ function AddConsignmentV2({ portal = 'console', setup = false, onShare }: {
     else if (idx === 0) setReceiver(p)
     else setDrops((ds) => ds.map((x, j) => (j === idx - 1 ? p : x)))
   }
-  const [addr, setAddr] = useState<null | { role: Role; idx: number; snapshot: Party; store: string; isNew: boolean }>(null)
+  const [addr, setAddr] = useState<null | { role: Role; idx: number; snapshot: Party; store: string; isNew: boolean; setup?: boolean }>(null)
   /* "Save this address": a Ship From / merchant-side address joins your addresses (the store list), a
      customer address joins the address book — each is offered under Saved address next time */
   const [saveAddr, setSaveAddr] = useState(false)
@@ -2456,6 +2481,12 @@ function AddConsignmentV2({ portal = 'console', setup = false, onShare }: {
       replaceParty(role, idx, { ...blankParty(), windowStart: cur.windowStart, windowEnd: cur.windowEnd })
       if (role === 'from') setSenderStore(OTHER_ADDRESS)
     }
+  }
+  /** while the form is edited: the same pop-up, to set up the address fields (owner, 2026-10-06: "in the popup I can't edit
+      the fields") — closing it puts the address back as it was */
+  const openAddressSetup = (role: Role, idx: number) => {
+    setSelKey(null)
+    setAddr({ role, idx, snapshot: partyOf(role, idx), store: senderStore, isNew: false, setup: true })
   }
   /** "Save this address": to the address book (a customer's) or to your addresses (the store list) */
   const keepAddress = (role: Role, idx: number) => {
@@ -2498,6 +2529,7 @@ function AddConsignmentV2({ portal = 'console', setup = false, onShare }: {
     if (addr) { replaceParty(addr.role, addr.idx, addr.snapshot); if (addr.role === 'from') setSenderStore(addr.store) }
     setAddr(null)
   }
+  const closeSetup = () => { setSelKey(null); cancelAddress() }
   const book = useReceiverBook(db.orders)
   const bookIdx = (p: Party) => book.findIndex((e) => e.party.name === p.name && e.party.line1 === p.line1)
   const roleTitle: Record<Role, string> = { from: 'Ship From address', to: 'Ship To address', rto: 'return address' }
@@ -2620,6 +2652,11 @@ function AddConsignmentV2({ portal = 'console', setup = false, onShare }: {
       </div>
     )
   }
+  /* picker | its card in two columns while an end has the card's full width (owner, 2026-10-06): always in "One under the
+     other"; in "Side by side" only while the card is too narrow for the two ends (< 720px). Container queries on the parties card. */
+  const split = simple ? null : stackAddr
+    ? { grid: '@min-[600px]:grid-cols-2', pad: '@min-[600px]:pt-[26px]' }
+    : { grid: '@min-[600px]:@max-[720px]:grid-cols-2', pad: '@min-[600px]:@max-[720px]:pt-[26px]' }
   const addressSlot = (role: Role, idx: number, title: ReactNode, right?: ReactNode) => {
     const p = partyOf(role, idx)
     const at = role === 'rto' ? -1 : bookIdx(p)
@@ -2628,15 +2665,6 @@ function AddConsignmentV2({ portal = 'console', setup = false, onShare }: {
     return (
       <div>
         <SubTitle right={<span className="flex flex-wrap items-center justify-end gap-3">
-          {/* how THIS address is entered — set right on it while the form is edited (owner: "individually configured, RTO also") */}
-          {editing && (role !== 'to' || idx === 0) && (
-            <LayoutSeg label="Entered as" value={layout[ADDR_ROLE[role]]}
-              onChange={(v) => setDraftLayout((l) => ({ ...l, [ADDR_ROLE[role]]: v }))}
-              options={[
-                { value: 'cards', label: 'Saved card', tip: 'Pick a saved address; add or edit it in a pop-up' },
-                { value: 'inline', label: 'Fields on form', tip: 'Type the address right here, with a search of saved addresses on top' },
-              ]} />
-          )}
           {!merchantMode && role !== 'rto' && (
             <span className="rounded-full bg-warm-100 px-2.5 py-0.5 text-[12px] text-ink-2">
               {src === 'facilities' ? 'Hub' : src === 'customers' ? 'Customer address' : 'Merchant address'}
@@ -2648,26 +2676,31 @@ function AddConsignmentV2({ portal = 'console', setup = false, onShare }: {
         {inlineOf(role) && src !== 'facilities' && (merchantMode || !facility)
           ? inlineAddress(role, idx)
           : <>
-        <div className={`grid items-end gap-3 ${src === 'facilities' || editing ? '' : 'grid-cols-[minmax(0,1fr)_auto]'}`}>
-          {pickerFor(role, idx)}
-          {src !== 'facilities' && !editing && <button type="button" onClick={() => openAddress(role, idx, true)}
-            className="inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-md border border-brand-500 bg-surface px-3 text-[13px] text-brand-500 hover:bg-warm-50">
-            <Plus size={14} />New address
-          </button>}
-        </div>
-        <div className="mt-4">
-          {/* owner, 2026-09-29: the card stays a card while editing — its fields are set through All fields (2026-10-05) */}
-          {<AddressCard party={p} missing={missingOf(p, role)} invalid={invalidOf(p, role)} onEdit={editing ? undefined : () => openAddress(role, idx, false)}
-                tag={facility ? 'Hub' : at >= 0 ? book[at].tag ?? 'Saved' : role === 'from' && fromList ? 'Saved' : filled(p.name) ? 'New' : undefined} />}
-          {editing && src !== 'facilities' && !facility && (
-            <button type="button" onClick={() => showFieldGroup('addresses')}
-              className="mt-2 inline-flex items-center gap-1 text-[12px] font-bold text-brand-500 hover:text-brand-600">
-              <SlidersHorizontal size={12} />Address fields — change them
-            </button>
-          )}
-          {((role === 'from' && fromKindBad) || (role === 'to' && idx === 0 && toKindBad)) && (
-            <ErrLine className="mt-2">{src === 'facilities' ? 'Pick a hub — this end has no pickup / delivery leg.' : 'Pick an address — this end has a pickup / delivery leg.'}</ErrLine>
-          )}
+        <div className={`grid gap-x-6 gap-y-4 ${split?.grid ?? ''}`}>
+          <div className={`grid min-w-0 items-end gap-3 ${src === 'facilities' || editing ? '' : 'grid-cols-[minmax(0,1fr)_auto]'}`}>
+            {pickerFor(role, idx)}
+            {src !== 'facilities' && !editing && <button type="button" onClick={() => openAddress(role, idx, true)}
+              className="inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-md border border-brand-500 bg-surface px-3 text-[13px] text-brand-500 hover:bg-warm-50">
+              <Plus size={14} />New address
+            </button>}
+          </div>
+          <div className={`min-w-0 ${split?.pad ?? ''}`}>
+            {/* owner, 2026-10-06: while the form is edited the pencil (and the link) open the pop-up to set up its fields —
+                a hub picked as Ship From included; only a hub-only end has no address fields */}
+            <AddressCard party={p} missing={missingOf(p, role)} invalid={invalidOf(p, role)}
+              onEdit={editing ? (src !== 'facilities' ? () => openAddressSetup(role, idx) : undefined) : () => openAddress(role, idx, false)}
+              editTip={editing ? 'Set up the address fields' : undefined}
+              tag={facility ? 'Hub' : at >= 0 ? book[at].tag ?? 'Saved' : role === 'from' && fromList ? 'Saved' : filled(p.name) ? 'New' : undefined} />
+            {editing && src !== 'facilities' && (
+              <button type="button" onClick={() => openAddressSetup(role, idx)}
+                className="mt-2 inline-flex items-center gap-1 text-[12px] font-bold text-brand-500 hover:text-brand-600">
+                <SlidersHorizontal size={12} />Set up the address fields
+              </button>
+            )}
+            {((role === 'from' && fromKindBad) || (role === 'to' && idx === 0 && toKindBad)) && (
+              <ErrLine className="mt-2">{src === 'facilities' ? 'Pick a hub — this end has no pickup / delivery leg.' : 'Pick an address — this end has a pickup / delivery leg.'}</ErrLine>
+            )}
+          </div>
         </div>
           </>}
       </div>
@@ -2691,7 +2724,9 @@ function AddConsignmentV2({ portal = 'console', setup = false, onShare }: {
     const at = role === 'rto' ? -1 : bookIdx(p)
     return (
       <div>
-        <div className="flex items-center gap-3">
+        {/* folded + a full-width end (One under the other): the search on the left, the card on the right */}
+        <div className={`grid gap-x-6 gap-y-4 ${split?.grid ?? ''}`}>
+        <div className="flex min-w-0 items-center gap-3">
           <div className="min-w-0 flex-1">
             <AddressSearch hits={hitsFor(role)} onPick={(h) => applyPick(role, idx, h.value)}
               placeholder={`Search ${what}${srcs.includes('facilities') ? ' or hubs' : ''} by name, number, address or company`} />
@@ -2709,13 +2744,20 @@ function AddConsignmentV2({ portal = 'console', setup = false, onShare }: {
             </button>
           )}
         </div>
-        <div className={folded ? 'mt-4' : 'mt-6'}>
-          {folded
-            ? <AddressCard party={p} missing={missing} invalid={invalid} onEdit={() => setSlotOpen(id, true)}
-                tag={at >= 0 ? book[at].tag ?? 'Saved' : 'Saved'} />
-            : <PartyBlock wide party={p} set={patchParty(role, idx)} nameLabel={role === 'to' ? 'Customer Name' : 'Sender Name'}
-                requireContact={role !== 'from'} hid={hid} variant={role === 'rto' ? 'rto' : 'full'} />}
+        {folded && (
+          <div className="min-w-0">
+            <AddressCard party={p} missing={missing} invalid={invalid} onEdit={() => setSlotOpen(id, true)}
+              tag={at >= 0 ? book[at].tag ?? 'Saved' : 'Saved'} />
+          </div>
+        )}
         </div>
+        {/* side by side: two columns in its half · one under the other: four across the card */}
+        {!folded && (
+          <div className="mt-6">
+            <PartyBlock wide half={!stackAddr} party={p} set={patchParty(role, idx)} nameLabel={role === 'to' ? 'Customer Name' : 'Sender Name'}
+              requireContact={role !== 'from'} hid={hid} variant={role === 'rto' ? 'rto' : 'full'} />
+          </div>
+        )}
         {typed && !editing && (
           <div className="mt-6 inline-flex">
             <InlineSwitch label="Save this address" title={`It is listed in ${what} next time — saved when the consignment is`}
@@ -2811,17 +2853,27 @@ function AddConsignmentV2({ portal = 'console', setup = false, onShare }: {
   )
   const addressModal = (
     <>
-      <Modal open={!!addr} wide title={addr ? `${addr.isNew ? 'New' : 'Edit'} ${roleTitle[addr.role]}${addr.role === 'to' && allDrops.length > 1 ? ` · Address ${addr.idx + 1}` : ''}` : ''}
-        subtitle={addr?.role === 'from' ? 'Where the carrier collects the consignment.' : addr?.role === 'to' ? 'Who receives it, and where.' : 'Where it comes back if it cannot be delivered.'}
-        onClose={cancelAddress}
-        footer={<><Button variant="outline" onClick={cancelAddress}>Cancel</Button><Button onClick={confirmAddress}>Use this address</Button></>}>
+      {/* while the form is edited (setup) the pop-up is the address fields' preview: a click on a field opens its card above
+          the dialog; Esc closes that card first, then the pop-up; closing puts the address back as it was */}
+      <Modal open={!!addr && (!addr.setup || editing)} wide
+        title={addr?.setup ? `Address fields${addr.role === 'rto' ? ' · return address' : ''}`
+          : addr ? `${addr.isNew ? 'New' : 'Edit'} ${roleTitle[addr.role]}${addr.role === 'to' && allDrops.length > 1 ? ` · Address ${addr.idx + 1}` : ''}` : ''}
+        subtitle={addr?.setup ? 'Click a field to change it — every address uses these fields.'
+          : addr?.role === 'from' ? 'Where the carrier collects the consignment.' : addr?.role === 'to' ? 'Who receives it, and where.' : 'Where it comes back if it cannot be delivered.'}
+        onClose={addr?.setup ? () => (selKey ? setSelKey(null) : closeSetup()) : cancelAddress}
+        footer={addr?.setup
+          ? <>
+              <span className="mr-auto"><InlineSwitch label="Show hidden fields" checked={showHidden} onChange={setShowHidden} /></span>
+              <Button onClick={closeSetup}>Done</Button>
+            </>
+          : <><Button variant="outline" onClick={cancelAddress}>Cancel</Button><Button onClick={confirmAddress}>Use this address</Button></>}>
         {addr && (
           <div className="pb-4 pt-2">
             <PartyBlock grouped party={partyOf(addr.role, addr.idx)} set={patchParty(addr.role, addr.idx)}
               nameLabel={addr.role === 'to' ? 'Customer Name' : 'Sender Name'} requireContact={addr.role !== 'from'} hid={hid}
               variant={addr.role === 'rto' ? 'rto' : 'full'} />
             {/* any address typed here can be kept — Ship From and Ship To alike */}
-            {(addr.isNew || valueOf(addr.role === 'rto' ? 'from' : addr.role, partyOf(addr.role, addr.idx)) === '') && (
+            {!addr.setup && (addr.isNew || valueOf(addr.role === 'rto' ? 'from' : addr.role, partyOf(addr.role, addr.idx)) === '') && (
               <div className="mt-7 flex items-center gap-3 rounded-lg bg-warm-50 px-4 py-3">
                 <Bookmark size={16} className="shrink-0 text-ink-3" />
                 <div className="min-w-0 flex-1">
@@ -2868,7 +2920,8 @@ function AddConsignmentV2({ portal = 'console', setup = false, onShare }: {
   ) : null
   const fromSide = <>
     {addressSlot('from', 0, 'Ship From')}
-    <div>{merchantMode ? merchantPickupWindow : windowCells('from', 0)}</div>
+    {/* Grow's pickup window keeps to the left half when the ends are one under the other */}
+    <div className={merchantMode && stackAddr ? '@min-[600px]:w-1/2 @min-[600px]:pr-3' : ''}>{merchantMode ? merchantPickupWindow : windowCells('from', 0)}</div>
     {typeRule.rto && (
       <div className="mt-6">
         <InlineSwitch label="RTO address same as Ship From address" title="If it can't be delivered, it comes back to the Ship From address"
@@ -2896,19 +2949,54 @@ function AddConsignmentV2({ portal = 'console', setup = false, onShare }: {
     {/* multi-drop is a dedicated-truck booking: every address needs a vehicle */}
     {(isFtl || (merchantMode && mode === 'ftl')) && <div className="mt-6"><AddMoreButton label="Add delivery address" onClick={() => setDrops((ds) => [...ds, blankParty()])} /></div>}
   </>
+  /* while the form is edited: how the addresses are shown — card choices like How goods are entered (owner, 2026-10-06) */
+  const consoleLayout = growSetup && editing ? loadLayout('console') : null
+  const addressLayoutPanel = editing && (
+    <div className="mb-6 rounded-lg border border-dashed border-warm-300 p-4">
+      <p className="mb-3 text-[13px] font-bold text-ink">How addresses are shown <span className="font-normal text-ink-3">— one way for every consignment</span></p>
+      <div className="grid gap-3">
+        {ADDRESS_LAYOUT_ROWS.map((row) => (
+          <div key={row.key} className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <span className="flex w-28 shrink-0 items-center gap-1.5 text-[13px] text-ink-2">
+              {row.label}
+              {consoleLayout && draftLayout[row.key] !== consoleLayout[row.key] && (
+                <Tip text="Changed for Grow — the console form differs"><span className={`${CHIP} bg-brand-50 font-bold text-brand-600`}>Grow</span></Tip>
+              )}
+            </span>
+            <div className="flex flex-wrap gap-3" role="radiogroup" aria-label={row.label}>
+              {row.options.map((o) => (
+                <RadioCard key={o.value} label={o.label} sub={o.sub} checked={draftLayout[row.key] === o.value}
+                  onClick={() => setDraftLayout((l) => ({ ...l, [row.key]: o.value }) as FormLayout)} />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
   const partiesSection = (
     <FormCard id="sec-parties" title="Ship From → Ship To"
       caption={ctype === 'Transfer' ? 'Stock moving between two facilities — pick a hub at each end.'
         : anyInline ? 'Search a saved address, or type the address here.'
         : merchantMode ? 'Pick a saved address or add a new one.' : 'Pick a saved address or add a new one — Shipment legs decide whether each end is an address or a hub.'}>
+      {addressLayoutPanel}
       {/* owner, 2026-10-06: Ship From | Ship To, one beside the other, however the addresses are entered (the second
           branch's combined card) — a container query, so they stack only when the CARD is narrow (the Summary beside the
-          form, a pinned rail), never because of the viewport alone */}
+          form, a pinned rail), never because of the viewport alone; or, by the builder's Layout, one under the other */}
       <div className="@container">
-        <div className="grid gap-y-10 @min-[720px]:grid-cols-2">
-          <div className="min-w-0 @min-[720px]:pr-8">{fromSide}</div>
-          <div className="min-w-0 border-t border-warm-200 pt-8 @min-[720px]:border-l @min-[720px]:border-t-0 @min-[720px]:pl-8 @min-[720px]:pt-0">{toSide}</div>
-        </div>
+        {stackAddr
+          ? (
+            <div>
+              <div className="min-w-0">{fromSide}</div>
+              <div className="mt-10 min-w-0 border-t border-warm-200 pt-8">{toSide}</div>
+            </div>
+          )
+          : (
+            <div className="grid gap-y-10 @min-[720px]:grid-cols-2">
+              <div className="min-w-0 @min-[720px]:pr-8">{fromSide}</div>
+              <div className="min-w-0 border-t border-warm-200 pt-8 @min-[720px]:border-l @min-[720px]:border-t-0 @min-[720px]:pl-8 @min-[720px]:pt-0">{toSide}</div>
+            </div>
+          )}
       </div>
       {!merchantMode && legsLine}
       {addressModal}
@@ -4150,7 +4238,7 @@ function AddConsignmentV2({ portal = 'console', setup = false, onShare }: {
   const defaultName = (k: string) => customOf(k)?.label ?? (V2_KEYS.has(k) ? FIELD_DEF.get(k)!.defaultLabel : fieldLabel(k, fieldCfg))
   const pickField = (k: string) => {
     setSelKey(k)
-    window.setTimeout(() => document.querySelector(`[data-field="${CSS.escape(k)}"]`)?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 30)
+    window.setTimeout(() => fieldEl(k)?.scrollIntoView({ block: 'center', behavior: 'smooth' }), 30)
   }
   const toggleGroup = (id: string) => setOpenGroups((st) => { const n = new Set(st); if (n.has(id)) n.delete(id); else n.add(id); return n })
   const needle = allQuery.trim().toLowerCase()
@@ -4180,7 +4268,7 @@ function AddConsignmentV2({ portal = 'console', setup = false, onShare }: {
   /** move a field one place earlier / later in its zone (the keyboard way to do what dragging does) — read off the
       screen, so it moves among the fields as they stand */
   const nudge = (k: string, dir: -1 | 1) => {
-    const cell = document.querySelector(`[data-field="${CSS.escape(k)}"]`)?.closest<HTMLElement>('[data-sort-id]')
+    const cell = fieldEl(k)?.closest<HTMLElement>('[data-sort-id]')
     const zone = cell?.dataset.sortZone
     if (!cell || !zone) return
     const ids = zoneIds(cell, zone)
@@ -4188,7 +4276,7 @@ function AddConsignmentV2({ portal = 'console', setup = false, onShare }: {
     const j = i + dir
     if (i < 0 || j < 0 || j >= ids.length) return
     setDraftOrder((o) => ({ ...o, [zone]: moveId(ids, ids[i], ids[j], dir > 0) }))
-    window.setTimeout(() => document.querySelector(`[data-field="${CSS.escape(k)}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 30)
+    window.setTimeout(() => fieldEl(k)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 30)
   }
   /** one field's settings — the same body in the card beside the field and in All fields */
   const fieldSettings = (k: string, close: () => void) => {
@@ -4503,24 +4591,34 @@ function PanelHeading({ children, right }: { children: ReactNode; right?: ReactN
  * screen and following the field as the page scrolls. A click outside closes it; a click on another field moves it there;
  * a menu's list or a dialog opened from it does not count as outside.
  */
+/** a field's element in the preview — the one in an open dialog first (the address pop-up while the form is edited), never the
+    same field behind it */
+const fieldEl = (k: string) => {
+  const sel = `[data-field="${CSS.escape(k)}"]`
+  return document.querySelector(`[data-modal-open] ${sel}`) ?? document.querySelector(sel)
+}
 const CARD_W = 380
 function AnchoredCard({ anchorKey, onClose, children }: { anchorKey: string; onClose: () => void; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null)
-  const [pos, setPos] = useState<{ top?: number; bottom?: number; left: number; maxHeight: number } | null>(null)
+  /* the field sits in a dialog (the address pop-up): the card goes above it, and the rest of that dialog is "outside" */
+  const inModal = useRef(false)
+  const [pos, setPos] = useState<{ top?: number; bottom?: number; left: number; maxHeight: number; modal: boolean } | null>(null)
   useLayoutEffect(() => {
     const place = () => {
       const vw = window.innerWidth, vh = window.innerHeight
-      const el = document.querySelector(`[data-field="${CSS.escape(anchorKey)}"]`)
+      const el = fieldEl(anchorKey)
+      const modal = el ? !!el.closest('[data-modal-open]') : !!document.querySelector('[data-modal-open]')
+      inModal.current = modal
       /* the field left the preview (hidden while "Show hidden fields" is off): the card waits in the middle */
-      if (!el) { setPos({ top: 120, left: Math.max(16, (vw - CARD_W) / 2), maxHeight: vh - 160 }); return }
+      if (!el) { setPos({ top: 120, left: Math.max(16, (vw - CARD_W) / 2), maxHeight: vh - 160, modal }); return }
       const r = el.getBoundingClientRect()
       const gap = 14
       const below = vh - r.bottom - gap - 16
       const above = r.top - gap - 16
       const left = Math.min(Math.max(16, r.left - 6), vw - CARD_W - 16)
       setPos(below >= 420 || below >= above
-        ? { top: r.bottom + gap, left, maxHeight: Math.max(240, below) }
-        : { bottom: vh - r.top + gap, left, maxHeight: Math.max(240, above) })
+        ? { top: r.bottom + gap, left, maxHeight: Math.max(240, below), modal }
+        : { bottom: vh - r.top + gap, left, maxHeight: Math.max(240, above), modal })
     }
     place()
     window.addEventListener('scroll', place, true)
@@ -4531,16 +4629,20 @@ function AnchoredCard({ anchorKey, onClose, children }: { anchorKey: string; onC
     const down = (e: MouseEvent) => {
       const t = e.target as Element | null
       if (!t || ref.current?.contains(t)) return
-      if (t.closest?.('[role="listbox"], [data-modal-open], [data-field]')) return
+      if (t.closest?.('[role="listbox"], [data-field]')) return
+      /* a dialog opened from the card is not outside — the dialog the FIELD sits in is */
+      if (!inModal.current && t.closest?.('[data-modal-open]')) return
       onClose()
     }
     window.addEventListener('mousedown', down)
     return () => window.removeEventListener('mousedown', down)
   }, [onClose])
   if (!pos) return null
+  const { modal, ...box } = pos
   return createPortal(
-    <div ref={ref} role="dialog" aria-label="Field settings" style={{ ...pos, width: CARD_W }}
-      className="fe-nueva fixed z-[60] flex flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-ds-overlay">
+    /* above the nueva Modal (z-70) when its field is in one; menus (z-95) and tooltips (z-100) stay above it */
+    <div ref={ref} role="dialog" aria-label="Field settings" style={{ ...box, width: CARD_W }}
+      className={`fe-nueva fixed ${modal ? 'z-[80]' : 'z-[60]'} flex flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-ds-overlay`}>
       {children}
     </div>,
     document.body,
