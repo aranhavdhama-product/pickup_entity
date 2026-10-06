@@ -480,6 +480,10 @@ effects (a cancelled/rescheduled PR leaving its trip) flow through `onPickupRequ
   `splitFromPrId` and is never a Duplicate of its sibling. ONE pickup-point key: `prActions.pickupPointKey`
   (store code for a known location; + address line only for "Other address…"). Split / Merge are LTL only;
   a multi-select Split = `splitAllPickupRequests` (one request per consignment).
+  Audit rules (2026-10-06, the flow-by-status run): Assign carrier waits for slot confirmation like routing; Carrier
+  accepted needs ≥ 1 booked consignment; a blind request takes its consignments' drop hub once they share one; leaving a
+  trip, only a 3PL keeps Planned / Assigned; removing the last consignment of an order-backed request cancels it (both
+  portals); Add consignments matches FTL ↔ FTL and parcel ↔ parcel only.
 - Rules live in the store, not in pages: multi-PR policy (merge on create), same-day
   cutoff (`pickupSlots.ts`), auto re-attempt on failure, "no orders left" → Pickup Failed,
   unpicked released at completion, handover auto-closes when scans reconcile, a forwarded
