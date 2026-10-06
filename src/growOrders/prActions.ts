@@ -203,6 +203,8 @@ export function prActionState(action: PrAction, p: PrFacts, ctx: PrActionCtx): P
     case 'carrierAccepted':
       if (p.carrierMode !== 'CARRIER') return no('Only a 3PL pickup is accepted by a carrier')
       if (p.handover.closedAt) return no('Handover already closed')
+      /* accepting IS the handover — an empty (blind) request would only fail as "No orders to collect" */
+      if (p.status !== 'Completed' && !p.orderIds.length) return no('Nothing booked on it yet — add consignments first')
       return p.status === 'Assigned' || p.status === 'Out For Pickup' || p.status === 'Completed'
         ? ok : no(`${p.status} — the carrier accepts once assigned`)
 
