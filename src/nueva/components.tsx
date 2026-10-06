@@ -1144,10 +1144,12 @@ export function PageSize({ value = 10, onChange }: { value?: number; onChange?: 
 
 /* ---------------- Multi-select dropdown (searchable, select-all) ---------------- */
 export function MultiSelectDropdown({
-  options, values, onChange, placeholder = 'Select', noun = 'items',
+  options, values, onChange, placeholder = 'Select', noun = 'items', searchPlaceholder = 'Search masters',
 }: {
   options: string[]; values: string[]; onChange: (v: string[]) => void
   placeholder?: string; noun?: string
+  /** additive (2026-10-05): the search box's hint — default as before */
+  searchPlaceholder?: string
 }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
@@ -1181,7 +1183,7 @@ export function MultiSelectDropdown({
           <div className="p-2 border-b border-line">
             <div className="relative">
               <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-warm-400" />
-              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search masters"
+              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={searchPlaceholder}
                 className="h-8 w-full rounded-md border border-warm-300 bg-surface pl-8 pr-2 text-[13px] text-ink placeholder:text-warm-400" />
             </div>
           </div>

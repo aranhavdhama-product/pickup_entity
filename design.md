@@ -72,8 +72,9 @@ Soft-tint **pill** variants remain available for non-table contexts
 ## 2. Typography — Lato
 
 A humanist sans with warm terminals. Restrained sizes — body sits at 13–14px,
-page titles at 18px. Weights run **300 / 400 / 700 / 900**. Lato ships no 500 or
-600, so any medium/semibold resolves to **700**.
+page titles at 18px. Weights run **300 / 400 / 700 / 900**, plus **500 for field labels only** (owner, 2026-10-05:
+the `field-label` utility — Lato 500 · 14px / 20px · rgb(76, 87, 97); Google's Lato has no 500, so the official Lato 2.0
+Medium is bundled in `public/fonts`). Any other medium/semibold resolves to **700**.
 
 | Role | Size / Weight |
 |------|---------------|

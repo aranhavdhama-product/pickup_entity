@@ -35,7 +35,7 @@ import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleMinus, Info, Lock, MapPinned, Package, Pencil, Plus, RotateCcw,
-  Bookmark, Copy, GripVertical, ListChecks, ScanBarcode, SlidersHorizontal, Trash2, Truck, X, Crown, Flame, GlassWater, Layers, Users, Weight, Monitor, Store,
+  ArrowDown, ArrowUp, Asterisk, Bookmark, Copy, Eye, EyeOff, GripVertical, ListChecks, ListCollapse, Regex, ScanBarcode, SlidersHorizontal, Trash2, Truck, X, Crown, Flame, GlassWater, Layers, Users, Weight, Monitor, Store,
 } from 'lucide-react'
 import { blankParty, CURRENCY } from '../../growOrders/seed'
 import { growOrderActions, orderById, pickupRequestById, useGrowOrders } from '../../growOrders/store'
@@ -146,6 +146,10 @@ const newParcel = (): Parcel => ({
   trackingNumber: '', palletSpace: '', description: '',
 })
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
+/** the SKU list of "SKUs, then packages" in its own order (each line's `lineNo`, else where it stands) — so a SKU a
+    package picks keeps its number and its place in the list */
+const sepSort = <T,>(rows: T[], itOf: (r: T) => ParcelItem): T[] => rows.map((r, idx) => ({ r, idx, no: itOf(r).lineNo ?? idx + 1 }))
+  .sort((a, b) => a.no - b.no || a.idx - b.idx).map((x) => x.r)
 /** packages listed before "Show all" (owner, 2026-10-05: "if I have 100 packages this form is too much scroll") */
 const PKG_PAGE = 8
 const newVas = (): VasLine => ({ level: 'SKU', skuCode: '', service: '', serviceTimeMin: 0, remark: '' })
@@ -499,7 +503,7 @@ function SFld({ label, required, info, error, errorNow, helper, className = '', 
   const pickable = editing && !!fieldKey && b!.known(fieldKey)
   return (
     <div data-field={pickable ? fieldKey : undefined}
-      className={`relative min-w-0 ${className} ${pickable ? pickFrame(b!.selected === fieldKey, !!b!.lock(fieldKey!)) : ''}`}>
+      className={`relative min-w-0 ${className} ${pickable ? `group/field ${pickFrame(b!.selected === fieldKey, !!b!.lock(fieldKey!))}` : ''}`}>
       {editing
         ? <BuilderLabel label={label} fieldKey={fieldKey} required={required} />
         : (
@@ -606,6 +610,10 @@ interface Builder {
   /** the field whose settings card is open (click-to-select) */
   selected: string | null
   select: (k: string | null) => void
+  /** it can wait under "More" (not locked, not row-level) */
+  movable: (k: string) => boolean
+  /** the eye on the field's frame — hides / shows it at once */
+  hide: (k: string, hidden: boolean) => void
 }
 const BuilderCtx = createContext<Builder | null>(null)
 /** false until the first Add Order attempt — then every missing field says so */
@@ -652,18 +660,7 @@ function FieldChips({ k, className = '', hideHidden = false, overlay = false }: 
   const b = useContext(BuilderCtx)!
   const lock = b.lock(k)
   const f = b.format(k)
-  if (overlay) {
-    const tags = [b.overridden(k) && 'Grow', b.isHidden(k) ? 'Hidden' : b.inMore(k) && 'More', f && 'Format'].filter(Boolean) as string[]
-    if (!tags.length && !lock) return null
-    return (
-      <span aria-hidden className="pointer-events-none absolute -top-[14px] right-1 z-20 inline-flex items-center gap-1">
-        {tags.map((t) => (
-          <span key={t} className={`${CHIP} border ${t === 'Grow' ? 'border-brand-100 bg-brand-50 font-bold text-brand-600' : 'border-line bg-surface text-ink-2'}`}>{t}</span>
-        ))}
-        {lock && <span className="inline-flex h-[18px] w-[18px] items-center justify-center rounded-full border border-line bg-surface text-warm-400"><Lock size={10} /></span>}
-      </span>
-    )
-  }
+  if (overlay) return <FieldTools k={k} />
   return (
     <span className={`inline-flex shrink-0 items-center gap-1 ${className}`}>
       {b.overridden(k) && <span className={`${CHIP} bg-brand-50 font-bold text-brand-600`}>Grow</span>}
@@ -673,6 +670,59 @@ function FieldChips({ k, className = '', hideHidden = false, overlay = false }: 
       {lock && <Tip text={lock === 'system' ? 'Needed by the system — always shown and required' : 'This form needs it — always shown'}>
         <span aria-label="Locked" className="inline-flex h-[18px] w-4 items-center justify-center text-warm-400"><Lock size={11} /></span>
       </Tip>}
+    </span>
+  )
+}
+/**
+ * A field's quick tools on its frame (owner, 2026-10-05: "I love your popup to edit the fields, but bring the icons back
+ * too"): ✱ Required · ☰ More · .* Format · eye · trash (own fields). What is SET stays lit, so the frame still says it at
+ * a glance; every tool shows on hover or while the field is selected. A click acts at once — Format opens the field's
+ * card, where the rule is written. A locked field shows only its lock.
+ */
+function FieldTools({ k }: { k: string }) {
+  const b = useContext(BuilderCtx)!
+  const lock = b.lock(k)
+  const own = b.ownHidden(k)
+  const parent = b.hiddenWith(k)
+  const req = b.required(k)
+  const more = b.inMore(k)
+  const fmt = b.format(k)
+  const open = b.selected === k
+  const tool = (key: string, on: boolean, tip: string, icon: ReactNode, onClick: () => void, disabled = false) => (
+    <span key={key} className={on || open ? 'inline-flex' : 'hidden group-hover/field:inline-flex'}>
+      <Tip text={tip}>
+        <button type="button" aria-label={tip} aria-pressed={on} disabled={disabled}
+          onClick={(e) => { e.stopPropagation(); onClick() }}
+          className={`inline-flex h-[22px] w-[22px] items-center justify-center rounded-full border shadow-ds-1 transition-colors disabled:cursor-not-allowed disabled:opacity-40
+            ${on ? 'border-brand-200 bg-brand-50 text-brand-600' : 'border-line bg-surface text-ink-3 hover:text-ink'}`}>
+          {icon}
+        </button>
+      </Tip>
+    </span>
+  )
+  return (
+    <span className="absolute -top-[15px] right-1 z-20 inline-flex items-center gap-1">
+      {b.overridden(k) && (
+        <Tip text="Changed for Grow — click to use the console setting again">
+          <button type="button" onClick={(e) => { e.stopPropagation(); b.revert(k) }}
+            className={`${CHIP} gap-1 border border-brand-100 bg-brand-50 font-bold text-brand-600 hover:border-brand-300`}>Grow<RotateCcw size={10} /></button>
+        </Tip>
+      )}
+      {lock
+        ? <Tip text={lock === 'system' ? 'Needed by the system — always shown and required' : 'This form needs it — always shown'}>
+            <span className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-line bg-surface text-warm-400"><Lock size={10} /></span>
+          </Tip>
+        : <>
+            {b.requirable(k) && tool('req', req, req ? 'Required — click to make it optional' : 'Make it required', <Asterisk size={12} />,
+              () => b.set(k, { required: !req }), own || !!parent)}
+            {b.movable(k) && tool('more', more, more ? 'Under “More” — click to show it up front' : 'Put it under “More”', <ListCollapse size={12} />,
+              () => b.set(k, { more: !more }), own || !!parent || req)}
+            {b.formatable(k) && tool('fmt', !!fmt, fmt ? `Format: ${formatSummary(fmt)} — click to change it` : 'Set what can be typed', <Regex size={12} />,
+              () => b.select(k))}
+            {tool('eye', own || !!parent, parent ? `Hidden because ${b.label(parent)} is hidden` : own ? 'Hidden — click to show it' : 'Hide this field',
+              own || parent ? <EyeOff size={12} /> : <Eye size={12} />, () => b.hide(k, !own), !!parent)}
+            {b.custom(k) && tool('del', false, 'Remove this field', <Trash2 size={11} />, () => b.removeCustom(k))}
+          </>}
     </span>
   )
 }
@@ -700,7 +750,7 @@ function Configurable({ fieldKey, children }: { fieldKey: string; children: Reac
   const b = useContext(BuilderCtx)
   if (!b?.editing) return <>{children}</>
   return (
-    <div data-field={fieldKey} className={`relative ${pickFrame(b.selected === fieldKey, false)}`}>
+    <div data-field={fieldKey} className={`group/field relative ${pickFrame(b.selected === fieldKey, false)}`}>
       <FieldChips k={fieldKey} overlay />
       <div className={b.isHidden(fieldKey) ? 'pointer-events-none opacity-40' : ''}>{children}</div>
       <PickHit k={fieldKey} label={b.label(fieldKey)} />
@@ -850,6 +900,30 @@ function AddRowLink({ label, onClick }: { label: string; onClick: () => void }) 
       className="-ml-1.5 inline-flex h-7 items-center gap-1 rounded-md px-1.5 text-[13px] font-bold text-brand-500 hover:bg-warm-50 hover:text-brand-600">
       <Plus size={14} />{label}
     </button>
+  )
+}
+/** the field-order zone that holds the CARDS' order (owner, 2026-10-05: "move sections up and down") */
+const SECTION_ZONE = '__sections'
+const SECTION_TITLES: Record<string, string> = {
+  'sec-consignment': 'Consignment details', 'sec-parties': 'Ship From → Ship To', 'sec-packages': 'Package & SKU',
+  'sec-vehicle': 'Vehicle Details', 'sec-handling': 'Handling', 'sec-extras': 'Service & instructions', 'sec-service': 'Service',
+  'sec-carrier': 'Carriers', 'sec-summary': 'Summary',
+}
+/** While the form is edited: a small pill on a card's top edge — move the whole card one place up or down. */
+function SectionMover({ title, first, last, onMove }: { title: string; first: boolean; last: boolean; onMove: (dir: -1 | 1) => void }) {
+  const btn = (dir: -1 | 1, disabled: boolean) => (
+    <Tip text={disabled ? (dir < 0 ? 'Already the first card' : 'Already the last card') : `Move ${title} ${dir < 0 ? 'up' : 'down'}`}>
+      <button type="button" disabled={disabled} aria-label={`Move ${title} ${dir < 0 ? 'up' : 'down'}`} onClick={() => onMove(dir)}
+        className="inline-flex h-6 w-6 items-center justify-center rounded-full text-ink-2 hover:bg-warm-100 hover:text-ink disabled:cursor-not-allowed disabled:opacity-30">
+        {dir < 0 ? <ArrowUp size={13} /> : <ArrowDown size={13} />}
+      </button>
+    </Tip>
+  )
+  return (
+    <div className="absolute -top-3.5 right-6 z-20 inline-flex items-center gap-0.5 rounded-full border border-line bg-surface py-0.5 pl-2.5 pr-0.5 shadow-ds-1">
+      <span className="mr-1 text-[11px] text-ink-3">Move card</span>
+      {btn(-1, first)}{btn(1, last)}
+    </div>
   )
 }
 /** This form's card — the shared StagingCard's look, the caption moved into an ⓘ (the header is one line). */
@@ -1314,7 +1388,8 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   const fmtOk = (k: string, v: string | undefined | null) => !fmtErr(k, v)
   /* editing = the live preview: every field renders (hidden ones faded) so it can be brought back */
   /* the builder's eye (icon only): hidden fields shown faded (default) or left out while editing */
-  const [showHidden, setShowHidden] = useState(true)
+  /* owner, 2026-10-05: off by default — the preview reads as the real form; turn it on (or use All fields) to bring one back */
+  const [showHidden, setShowHidden] = useState(false)
   /* a field the Grow portal never has (MERCHANT_OFF) stays out of its preview too — nothing to switch on */
   const hid = (key: string) => (merchantMode && MERCHANT_OFF.has(key)) || (editing ? !showHidden && isHidden(key) : isHidden(key))
   const lbl = (key: string) => rules[key]?.label?.trim() || customOf(key)?.label
@@ -1370,6 +1445,11 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     custom: customOf, removeCustom,
     overridden: (k) => growSetup && editing && !!draftRules[k], revert: (k) => setDraftRules((r) => withoutKeys(r, [k])),
     selected: editing ? selKey : null, select: setSelKey,
+    movable: (k) => movable(k),
+    hide: (k, on) => {
+      setRule(k, { hidden: on })
+      if (on && !showHidden) toast.info(`${lbl(k)} is hidden — All fields or “Show hidden fields” brings it back`)
+    },
   }
   /* how goods are entered — edited with the rest of the form, saved with it (Grow may differ from the console) */
   const [savedGoods, setSavedGoods] = useState<GoodsSetting>(() => loadGoodsSetting(formPortal))
@@ -1918,7 +1998,10 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   const [focusLine, setFocusLine] = useState<{ i: number; k: number } | null>(null)
   const addItem = (i: number) => {
     setFocusLine({ i, k: (parcels[i].items ?? []).length })
-    setItems(i, (items) => [...items, blankItem()])
+    /* SKUs, then packages: a new line takes the next number in the SKU list */
+    const top = parcels.flatMap((p) => p.items ?? []).reduce((n, it, idx) => Math.max(n, it.lineNo ?? idx + 1), 0)
+    const next = separateLayout ? { ...blankItem(), lineNo: top + 1 } : blankItem()
+    setItems(i, (items) => [...items, next])
   }
   /** line `k` of package `i`, created blank when a row edits a SKU that is not there yet (the Simplified table) */
   const padTo = (items: ParcelItem[], k: number) => (items.length > k ? items : [...items, ...Array.from({ length: k + 1 - items.length }, blankItem)])
@@ -1931,12 +2014,35 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   const setItem = (i: number, k: number, patch: Partial<ParcelItem>) =>
     setItems(i, (items) => padTo(items, k).map((it, m) => (m === k ? { ...it, ...patch } : it)))
   const removeItem = (i: number, k: number) => setItems(i, (items) => items.filter((_, m) => m !== k))
-  /** a SKU line to another package (the two-list layout's Package column) */
-  const moveItem = (from: number, k: number, to: number) => {
-    const it = parcels[from]?.items?.[k]
-    if (to === from || !it) return
-    setParcels((ps) => ps.map((x, j) => (j === from ? reweigh({ ...x, items: (x.items ?? []).filter((_, m) => m !== k) }, packageTypes)
-      : j === to ? reweigh({ ...x, items: [...(x.items ?? []), it] }, packageTypes) : x)))
+  /** "SKUs in this package" (SKUs, then packages — owner, 2026-10-05: the PACKAGE picks its SKUs): package `j` holds
+      exactly `want`; a SKU taken out of it goes back to the first package, which holds every SKU not put in another
+      one. Every line keeps its number in the SKU list. */
+  const packInto = (j: number, want: ParcelItem[]) => setParcels((ps) => {
+    const num = new Map(sepSort(ps.flatMap((p) => p.items ?? []), (it) => it).map((it, n) => [it, n + 1]))
+    const wantSet = new Set(want)
+    const mine = ps[j]?.items ?? []
+    const items = ps.map((p, idx) => (p.items ?? []).filter((it) => (idx === j ? wantSet.has(it) || isBlankItem(it) : !wantSet.has(it))))
+    items[j] = [...items[j], ...want.filter((it) => !mine.includes(it))]
+    if (j !== 0) items[0] = [...items[0], ...mine.filter((it) => !isBlankItem(it) && !wantSet.has(it))]
+    return ps.map((p, idx) => reweigh({ ...p, items: items[idx].map((it) => ({ ...it, lineNo: num.get(it) })) }, packageTypes))
+  })
+  /** "Barcode on every box" on a package (owner, 2026-10-05: "if enabled the quantity is stuck to 1"): on = this line is
+      ONE box with its own barcode — a line of N boxes becomes N lines, one per box; off = boxes of this spec are counted */
+  const setBarcode = (i: number, on: boolean) => {
+    const src = parcels[i]
+    if (!src) return
+    const n = Math.max(1, src.quantity || 1)
+    if (!on || n === 1) { setParcel(i, { barcodeEach: on, ...(on ? { quantity: 1 } : {}) }); return }
+    if (n > 100) {
+      setParcel(i, { barcodeEach: true, quantity: 1 })
+      toast.info(`Quantity set to 1 — add the other ${n - 1} boxes with Duplicate`)
+      return
+    }
+    const one: Parcel = { ...src, barcodeEach: true, quantity: 1 }
+    const copies = Array.from({ length: n - 1 }, (): Parcel => ({ ...one, packageId: newPackageId(), trackingNumber: '',
+      items: separateLayout ? [] : (src.items ?? []).map((it) => ({ ...it })) }))
+    setParcels((ps) => [...ps.slice(0, i), one, ...copies, ...ps.slice(i + 1)])
+    toast.success(`${n} boxes, one line each — every box gets its own barcode`)
   }
   /** remove a package; in the two-list layout its SKUs stay (they move to the first package) */
   const removeParcel = (i: number) => setParcels((ps) => {
@@ -2030,6 +2136,8 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     authority: saved?.authority || 'Leave at the door', instructions, secure, service: svc.code, rate: svc.price, etaDays: svc.days,
     consignment: {
       ...c,
+      /* owner, 2026-10-05: on the package-based forms "Barcode on every box" is asked per package */
+      scannable: useItems || isFtl ? !!c.scannable : goods.some((p) => p.barcodeEach),
       dedicateTruck: isFtl || dedicated,
       orderNumber: effectiveOrder.trim(), referenceNumber: effectiveRef.trim(),
       /* owner, 2026-09-29: no fallback — a blank Consignment Number stays blank */
@@ -2079,6 +2187,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
       service: svcCode, rate: quote?.net ?? 0, etaDays: quote?.days ?? 0, currency,
       consignment: {
         ...c,
+        scannable: useItems ? !!c.scannable : goods.some((p) => p.barcodeEach),
         dedicateTruck: ftl, carrier: '', category: [], tags: [], totalLoadingTime: null,
         orderNumber: effectiveOrder.trim(), referenceNumber: effectiveRef.trim(),
         consignmentNumber: c.consignmentNumber?.trim() || effectiveRef.trim(),
@@ -2131,7 +2240,9 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
      narrows the vehicle types). ---- */
   /* Handling shows only when something in it is visible (see the card) */
   const handlingChipsVisible = GOODS_CATEGORIES.some(({ name }) => !hid(catKey(name)))
-  const handlingTogglesVisible = !hid('scannable') || !hid('splittable') || !hid('clearanceRequired') || !hid('tags')
+  /* owner, 2026-10-05: "Barcode on every box" is asked on each package's heading where packages are typed */
+  const scannableOnPackages = !useItems && !isFtl
+  const handlingTogglesVisible = (!hid('scannable') && !scannableOnPackages) || !hid('splittable') || !hid('clearanceRequired') || !hid('tags')
   const handlingCustom = arrange(sortApi, 'handling-fields', customEntries('sec-handling'), inMore, secOpen('sec-handling'))
   /* while editing the card always shows — its "+ Add field" lives in it */
   const handlingVisible = handlingChipsVisible || handlingTogglesVisible || handlingCustom.nodes.length > 0 || handlingCustom.waiting > 0 || editing
@@ -2147,6 +2258,10 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     : simple ? ['sec-consignment', 'sec-parties', isFtl ? 'sec-vehicle' : 'sec-packages', 'sec-carrier'] : isFtl
     ? ['sec-consignment', 'sec-parties', ...svcSec, 'sec-vehicle', ...(handlingVisible ? ['sec-handling'] : []), 'sec-carrier', ...sumSec]
     : ['sec-consignment', 'sec-parties', 'sec-packages', ...(handlingVisible ? ['sec-handling'] : []), ...svcSec, 'sec-carrier', ...sumSec]
+  /* owner, 2026-10-05 ("allow the user to move sections up and down"): the cards follow the saved order (zone
+     SECTION_ZONE of the field order, so it is edited, saved, reset and — on Grow — inherited like the fields'); a card
+     the order does not know sits after its natural predecessor. The Simplified tier keeps its own order. */
+  const orderedSections = simple ? sections : applyOrder(sections, (x) => x, fieldOrder[SECTION_ZONE])
   const doneOf: Record<string, boolean> = {
     'sec-consignment': done(consignmentReq),
     'sec-parties': done(fromReq) && done(toReq) && done(rtoReq) && done(routeReq),
@@ -2168,7 +2283,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
       /* a folded package hides its errors — open the first incomplete one */
       const badPkg = !useItems && !isFtl ? parcels.find((p) => !pkgOk(p)) : undefined
       if (badPkg?.packageId) setOpenPkgId(badPkg.packageId)
-      const first = sections.find((s) => !doneOf[s])
+      const first = orderedSections.find((s) => !doneOf[s])
       if (first) setTimeout(() => jumpTo(first), 60)
       return
     }
@@ -2744,7 +2859,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
       {/* row 2 — how the boxes travel, and their tags; every control on one baseline */}
       {handlingTogglesVisible && <div className={`${handlingChipsVisible ? 'mt-6' : ''} ${HANDLING_ROW}`}>
         {arrange(sortApi, 'handling-switches', [
-          !hid('scannable') && [null, (
+          !hid('scannable') && !scannableOnPackages && [null, (
             <Configurable key="scannable" fieldKey="scannable">
               <InlineSwitch label={custom('scannable', 'Scannable', 'Barcode on every box')} title={SWITCH_HINTS.scannable}
                 checked={!!c.scannable} onChange={(v) => setC({ scannable: v })} />
@@ -2907,19 +3022,14 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   /* ---- Package & SKU, rebuilt (owner, 2026-09-29): one entry style per account (the builder's "How goods
      are entered"), and every Add button BELOW what it adds to — Add SKU under its SKUs, Add Package under
      all the packages. */
-  const SKU_COLS_SEP = 'grid grid-cols-[28px_minmax(0,1.2fr)_minmax(0,1.3fr)_minmax(0,1fr)_84px_104px_minmax(0,1.5fr)_80px_96px] items-start gap-x-3'
-  const pkgLabel = (j: number) => {
-    const g = parcels[j]
-    return g ? `Package ${j + 1} · ${packageValue(g, packageTypes) === CUSTOM_PACKAGE ? 'Custom' : g.packageTypeName}` : `Package ${j + 1}`
-  }
-  const skuTable = (withPkg: boolean, rows: ReactNode) => (
+  /* owner, 2026-10-05: a SKU line no longer picks its package — the PACKAGE picks its SKUs ("SKU into package") */
+  const skuTable = (rows: ReactNode) => (
     <div className="overflow-x-auto">
-      <div className={withPkg ? 'min-w-[980px]' : 'min-w-[860px]'}>
-        <div className={`${withPkg ? SKU_COLS_SEP : SKU_COLS} border-b border-warm-200 pb-2 text-[13px] text-ink-2`}>
+      <div className="min-w-[860px]">
+        <div className={`${SKU_COLS} border-b border-warm-200 pb-2 text-[13px] text-ink-2`}>
           <span>#</span>
           <span>SKU Code<span className="text-danger-fg"> *</span></span>
           <span>Name<span className="text-danger-fg"> *</span></span>
-          {withPkg && <span>Package<span className="text-danger-fg"> *</span></span>}
           <span>Quantity<span className="text-danger-fg"> *</span></span>
           <span>Unit Weight<span className="text-danger-fg"> *</span></span>
           <span>Dimensions (cm)<span className="text-danger-fg"> *</span></span>
@@ -2930,31 +3040,35 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
       </div>
     </div>
   )
-  /** one SKU line — code (master or typed) · name · [package] · quantity · unit weight · L × W × H · total · details */
-  const skuRow = (it: ParcelItem, i: number, k: number, n: number, withPkg: boolean) => {
-    const key = `${i}:${k}`
+  /** one SKU line — code (master or typed) · name · quantity · unit weight · L × W × H · total · details. `preview` = the
+      builder's SAMPLE line (owner, 2026-10-05: "one should be shown, otherwise I have to click Add before I can configure
+      them"): every column and the details fold show, and nothing is written. */
+  const skuRow = (it: ParcelItem, i: number, k: number, n: number, preview = false) => {
+    const key = preview ? `sample:${i}` : `${i}:${k}`
+    const upd = (patch: Partial<ParcelItem>) => { if (!preview) setItem(i, k, patch) }
     const open = skuMore.has(key) !== (!!it.skuCode && !isMasterSku(it))
     const missing = [!it.skuCode && 'SKU code', !filled(it.name) && 'name', !(it.quantity >= 1) && 'quantity',
       !(it.weightKg > 0) && 'weight', !((it.lengthCm ?? 0) > 0 && (it.widthCm ?? 0) > 0 && (it.heightCm ?? 0) > 0) && 'dimensions']
       .filter(Boolean) as string[]
     const vol = (it.lengthCm ?? 0) * (it.widthCm ?? 0) * (it.heightCm ?? 0)
     return (
-      <div key={key} className="border-b border-warm-200 py-3 last:border-0">
-        <div className={withPkg ? SKU_COLS_SEP : SKU_COLS}>
+      <div key={key} className={`relative border-b border-warm-200 py-3 last:border-0 ${preview ? 'rounded-md bg-warm-25' : ''}`}>
+        {preview && (
+          <span className="pointer-events-none absolute -top-2 left-9 z-10 rounded-full border border-line bg-surface px-1.5 text-[11px] leading-4 text-ink-3">
+            Sample line — how a SKU is entered (not saved)
+          </span>
+        )}
+        <div className={SKU_COLS}>
           <span className="flex h-8 items-center text-[13px] text-ink-3">{n + 1}</span>
-          <SkuCode item={it} skus={masters.skus} onPick={(sk) => pickSku(i, k, sk)} onUnlink={() => setItem(i, k, { skuCode: null })}
-            onCustom={(code) => setItem(i, k, { skuCode: code })} autoFocus={focusLine?.i === i && focusLine.k === k} />
+          <SkuCode item={it} skus={masters.skus} onPick={(sk) => { if (!preview) pickSku(i, k, sk) }} onUnlink={() => upd({ skuCode: null })}
+            onCustom={(code) => upd({ skuCode: code })} autoFocus={!preview && focusLine?.i === i && focusLine.k === k} />
           {/* a master SKU's name comes with it; a typed one is yours to name */}
-          <Input value={it.name} placeholder="eg, Refrigerator 300 L" disabled={isMasterSku(it)} onChange={(v) => setItem(i, k, { name: v })} />
-          {withPkg && (
-            <MenuSelect value={String(i)} options={parcels.map((_, j) => String(j))} labels={(v) => pkgLabel(Number(v))}
-              onChange={(v) => moveItem(i, k, Number(v))} />
-          )}
-          <NumBox integer min={1} blankZero placeholder="1" value={it.quantity} error={err(it.quantity < 1)} onChange={(q) => setItem(i, k, { quantity: q })} />
+          <Input value={it.name} placeholder="eg, Refrigerator 300 L" disabled={isMasterSku(it)} onChange={(v) => upd({ name: v })} />
+          <NumBox integer min={1} blankZero placeholder="1" value={it.quantity} error={err(it.quantity < 1)} onChange={(q) => upd({ quantity: q })} />
           <NumBox unit={(it.weightUom ?? 'KG').toLowerCase()} blankZero placeholder="0" value={it.weightKg} error={err(!(it.weightKg > 0))}
-            onChange={(w) => setItem(i, k, { weightKg: w })} />
+            onChange={(w) => upd({ weightKg: w })} />
           <DimsBox l={it.lengthCm ?? 0} w={it.widthCm ?? 0} h={it.heightCm ?? 0} error
-            onChange={(d) => setItem(i, k, { ...(d.l !== undefined ? { lengthCm: d.l } : {}), ...(d.w !== undefined ? { widthCm: d.w } : {}), ...(d.h !== undefined ? { heightCm: d.h } : {}) })} />
+            onChange={(d) => upd({ ...(d.l !== undefined ? { lengthCm: d.l } : {}), ...(d.w !== undefined ? { widthCm: d.w } : {}), ...(d.h !== undefined ? { heightCm: d.h } : {}) })} />
           <span className="flex min-h-8 flex-col items-end justify-center text-[13px] tabular-nums text-ink-2">
             <span>{it.weightKg && it.quantity ? `${round2(it.weightKg * it.quantity)} kg` : '-'}</span>
             {vol * it.quantity > 0 && <span className="text-[12px] text-ink-3">{(vol * it.quantity / 1e6).toFixed(3)} m³</span>}
@@ -2966,14 +3080,14 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
               {/* owner, 2026-09-29: a chevron only — the words are in the tooltip */}
               {open ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
             </button></Tip>
-            <Tip text="Remove SKU"><button type="button" aria-label={`Remove SKU ${n + 1}`} onClick={() => removeItem(i, k)}
+            <Tip text="Remove SKU"><button type="button" aria-label={`Remove SKU ${n + 1}`} onClick={() => { if (!preview) removeItem(i, k) }}
               className="inline-flex h-8 w-7 items-center justify-center rounded-md text-ink-3 hover:bg-warm-100 hover:text-brand-500">
               <Trash2 size={14} />
             </button></Tip>
           </span>
         </div>
-        {missing.length > 0 && <ErrLine className="mt-1.5 pl-10">Required: {missing.join(', ')}</ErrLine>}
-        {(open || editing || skuDetailRequired) && skuDetailsGrid(it, (patch) => setItem(i, k, patch))}
+        {missing.length > 0 && !preview && <ErrLine className="mt-1.5 pl-10">Required: {missing.join(', ')}</ErrLine>}
+        {(open || editing || skuDetailRequired) && skuDetailsGrid(it, upd)}
       </div>
     )
   }
@@ -2984,7 +3098,9 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
       [null, <div key="type" title={packageTypeTitle}>
         <F label="Package Type" required value={packageValue(p, packageTypes)} options={packageTypeOpts} onChange={(v) => pickPackageType(i, v)} />
       </div>],
-      [null, <FNum key="qty" label="Quantity" required integer min={1} blankZero placeholder="eg, 1" value={p.quantity} error={err(!(p.quantity > 0))}
+      /* owner, 2026-10-05: a package with its own barcode is ONE box — its quantity stays 1 */
+      [null, <FNum key="qty" label="Quantity" required integer min={1} blankZero placeholder="eg, 1" value={p.barcodeEach ? 1 : p.quantity}
+        error={err(!(p.quantity > 0))} disabled={!!p.barcodeEach} helper={p.barcodeEach ? 'One box — it has its own barcode' : undefined}
         onChange={(q) => setParcel(i, { quantity: q })} />],
       /* a preset's size IS its master row — typed only for a Custom package */
       [null, <SFld key="dims" fieldKey="pkgDimensions" label="Dimensions (cm)" helper={isCustom ? undefined : 'From the package type'}>
@@ -3070,6 +3186,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
           focus:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-500/20 ${bad ? 'border-danger-fg/50' : 'border-warm-200'}`}>
         <span className="w-[84px] shrink-0 text-[13px] font-bold text-ink">Package {i + 1}</span>
         <span className="min-w-0 flex-1 truncate text-[13px] text-ink-2" title={pkgLine(p)}>{pkgLine(p)}</span>
+        {p.barcodeEach && <Tip text="One box with its own barcode"><span className="inline-flex shrink-0 text-ink-3"><ScanBarcode size={15} /></span></Tip>}
         {bad && <span className="shrink-0 rounded-full bg-danger-bg px-2 text-[11px] font-bold leading-5 text-danger-fg">Incomplete</span>}
         <span className="w-20 shrink-0 text-right text-[13px] tabular-nums text-ink">{kg}</span>
         {actions}
@@ -3085,6 +3202,14 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
           <span className="min-w-0 flex-1 truncate text-[12px] text-ink-3">
             Total {kg} · {vol ? `${round2(vol * p.quantity).toLocaleString()} cm³` : '-'} · {plural(n, 'SKU')}
           </span>
+          {!hid('scannable') && scannableOnPackages && (
+            <span className="shrink-0" onClick={(e) => e.stopPropagation()}>
+              <Configurable fieldKey="scannable">
+                <InlineSwitch label={custom('scannable', 'Scannable', 'Barcode on every box')} title={`${SWITCH_HINTS.scannable} On = this package is one box; its quantity stays 1.`}
+                  checked={!!p.barcodeEach} onChange={(on) => setBarcode(i, on)} />
+              </Configurable>
+            </span>
+          )}
           {actions}
         </div>
         <div className="px-4 py-5">{body}</div>
@@ -3120,14 +3245,44 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
      line just added always show */
   const skuShown = (it: ParcelItem, i: number, k: number, n: number) => allSkus || skuLines.length <= PKG_PAGE + 3 || n < PKG_PAGE + 2
     || (focusLine?.i === i && focusLine.k === k) || (showErrors && !(skuLineOk(it) && skuRuleOk(it)))
-  const hiddenSkus = skuLines.filter(({ it, i, k }, n) => !skuShown(it, i, k, n)).length
-  /* SKUs, then packages: the SKU list (each line picks its package), then the boxes */
+  /* the SKU list in its own order (a SKU a package picks keeps its place) */
+  const sepLines = sepSort(skuLines, (l) => l.it)
+  const hiddenSkus = sepLines.filter(({ it, i, k }, n) => !skuShown(it, i, k, n)).length
+  /* "SKUs in this package" (owner, 2026-10-05: "SKU into package, not package in SKU"): Package 1 holds every SKU not
+     put in another package; any other package ticks the SKUs packed in it */
+  const packable = sepLines.filter(({ it }) => !isBlankItem(it))
+  const packLabel = (it: ParcelItem) => {
+    const n = sepLines.findIndex((l) => l.it === it)
+    return `${n + 1} · ${it.skuCode || it.name || 'SKU'}${it.skuCode && filled(it.name) ? ` — ${it.name}` : ''} × ${it.quantity || 0}`
+  }
+  const packPicker = (p: Parcel, i: number) => {
+    const mine = skusOf(p)
+    const names = mine.map((it) => it.skuCode || it.name).join(', ')
+    if (parcels.length === 1 || i === 0) return (
+      <p className="mt-4 text-[13px] text-ink-2">
+        <span className="font-bold text-ink">{parcels.length === 1 ? 'Holds every SKU' : 'Holds every SKU not put in another package'}</span>
+        {names ? ` — ${names}` : packable.length ? '' : ' — list the SKUs above'}
+      </p>
+    )
+    return (
+      <div className="mt-5 lg:w-1/2">
+        <p className="mb-1.5 field-label">SKUs in this package</p>
+        <MultiSelectDropdown options={packable.map(({ it }) => packLabel(it))} values={mine.map(packLabel)} noun="SKUs" searchPlaceholder="Search the SKUs above"
+          placeholder={packable.length ? 'Pick the SKUs packed in it' : 'List the SKUs above first'}
+          onChange={(vals) => packInto(i, vals.map((v) => packable.find(({ it }) => packLabel(it) === v)?.it).filter((x): x is ParcelItem => !!x))} />
+        <p className="mt-1 text-[12px] text-ink-3">A SKU you take out goes back to Package 1.</p>
+      </div>
+    )
+  }
+  /* SKUs, then packages: the SKU list, then the boxes — each box picks what is packed in it */
   const separateBlock = (
     <div>
       <SubTitle>SKUs</SubTitle>
-      {skuLines.length > 0 && skuTable(true, skuLines.map(({ it, i, k }, n) => (skuShown(it, i, k, n) ? skuRow(it, i, k, n, true) : null)))}
+      {sepLines.length > 0
+        ? skuTable(sepLines.map(({ it, i, k }, n) => (skuShown(it, i, k, n) ? skuRow(it, i, k, n) : null)))
+        : editing ? skuTable(skuRow(blankItem(), 0, 0, 0, true)) : null}
       <div className="mt-2 flex flex-wrap items-center gap-x-6 gap-y-2 lg:pr-10">
-        <AddRowLink label="Add SKU" onClick={() => addItem(parcels.length - 1)} />
+        <AddRowLink label="Add SKU" onClick={() => addItem(0)} />
         {(hiddenSkus > 0 || (allSkus && skuLines.length > PKG_PAGE + 2)) && (
           <button type="button" onClick={() => setAllSkus((v) => !v)}
             className="inline-flex items-center gap-1 text-[13px] font-bold text-ink-2 hover:text-ink">
@@ -3139,9 +3294,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
       <div className="mt-8"><SubTitle>Packages</SubTitle></div>
       {packageList((p, i) => <>
         {packageFields(p, i)}
-        <p className="mt-4 text-[12px] text-ink-3">
-          {skusOf(p).length ? `Holds ${skusOf(p).map((it) => it.skuCode || it.name).join(', ')}` : 'No SKUs in it yet — pick this package on a SKU above'}
-        </p>
+        {packPicker(p, i)}
       </>)}
       {addPackageBar}
     </div>
@@ -3150,7 +3303,9 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   const combinedBlock = (
     <div>
       {packageList((p, i) => packageFields(p, i,
-        (p.items ?? []).length > 0 ? <div className="mt-6 lg:pr-10">{skuTable(false, (p.items ?? []).map((it, k) => skuRow(it, i, k, k, false)))}</div> : null,
+        (p.items ?? []).length > 0 ? <div className="mt-6 lg:pr-10">{skuTable((p.items ?? []).map((it, k) => skuRow(it, i, k, k)))}</div>
+          /* the builder shows a sample SKU line, so its fields can be set without adding one */
+          : editing ? <div className="mt-6 lg:pr-10">{skuTable(skuRow(blankItem(), i, 0, 0, true))}</div> : null,
         <AddRowLink label="Add SKU" onClick={() => addItem(i)} />))}
       {addPackageBar}
     </div>
@@ -3159,7 +3314,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     <FormCard id="sec-packages" title="Package & SKU"
       caption={typeRule.goodsOptional ? 'Parts or goods to carry for the visit — optional for a Service.'
         : useItems ? 'Pick the SKUs and how many — sizes and weights come from the SKU master, or type a new SKU.'
-        : separateLayout ? 'List the SKUs, then the packages they go in.'
+        : separateLayout ? 'List the SKUs, then the packages — each package picks the SKUs packed in it.'
         : "Each package, and the SKUs packed in it. A package's weight adds up from its type and SKUs unless you type one."}>
       {/* the account's one way of entering goods — asked here only while editing the form */}
       {editing && !isFtl && (
@@ -3242,6 +3397,8 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     ? VAS_SERVICES.map((v) => ({ value: v, label: laneVasPrice(v, currency) ? `${v} · ${money(laneVasPrice(v, currency), currency)}` : v }))
     : VAS_OPTS
   const VAS_COLS = 'grid grid-cols-[120px_minmax(0,1.6fr)_minmax(0,1.6fr)_112px_minmax(0,1.2fr)_32px] items-start gap-x-3'
+  /* the builder shows one sample service line (owner, 2026-10-05) — the real list otherwise */
+  const vasShown: VasLine[] = (c.vas ?? []).length || !editing ? (c.vas ?? []) : [{ ...newVas(), level: isFtl ? 'CONSIGNMENT' : 'SKU' }]
   /* owner, 2026-09-29: a block whose fields are all hidden leaves no divider and no space */
   const extrasVisible = extrasReveal.nodes.length > 0 || extrasReveal.waiting > 0 || !hid('vas')
   const extrasSection = !extrasVisible ? null : (
@@ -3255,7 +3412,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
           isFtl ? { ...newVas(), level: 'CONSIGNMENT' } : { ...newVas(), level: skuLineOpts.length ? 'SKU' : 'PACKAGE', packageId: goods.length === 1 ? goods[0].packageId : undefined }] })} />}>
           Value Added Services
         </SubTitle>
-        {(c.vas ?? []).length === 0
+        {vasShown.length === 0
           ? <p className="text-[13px] text-ink-3">Add a service to a package or a SKU — installation, assembly, a tail-lift…</p>
           : (
             <div className="overflow-x-auto">
@@ -3268,7 +3425,8 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
                   <span>Remark</span>
                   <span />
                 </div>
-                {(c.vas ?? []).map((v, i) => {
+                {editing && !(c.vas ?? []).length && <p className="pt-2 text-[11px] text-ink-3">Sample line — how a service is added (not saved)</p>}
+                {vasShown.map((v, i) => {
                   const missing = [!v.service && 'service', v.level === 'SKU' && !v.skuCode && 'SKU', v.level === 'PACKAGE' && !v.packageId && 'package'].filter(Boolean) as string[]
                   return (
                     <div key={i} className="border-b border-warm-200 py-2.5 last:border-0">
@@ -3660,7 +3818,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
           <div className="min-w-0">
             <p className="flex items-center gap-1.5 text-[15px] font-bold text-ink">
               {growSetup ? 'Editing the Grow portal form' : 'Editing the console form'}
-              <InfoTip text="Click any field to change it — its name, whether it shows, whether it is required, what can be typed. Tags on a field show what is set; a lock = needed by the system. How each address, the goods and the services are shown is set on their cards. All fields lists everything." />
+              <InfoTip text="Click a field to open its settings, or use the small icons on it: ✱ required · ☰ under More · .* what can be typed · eye show / hide. A lit icon = set; a lock = needed by the system. Move card moves a whole card up or down; drag a field to move it inside its card. All fields lists everything, hidden ones too." />
             </p>
             <p className="text-[13px] text-ink-2">
               {growSetup
@@ -3978,7 +4136,20 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
       )}
 
       <div className="grid min-w-0 gap-6">
-        {sections.map((id) => <div key={id} className="min-w-0">{byId[id]}</div>)}
+        {orderedSections.filter((id) => byId[id]).map((id, n, list) => (
+          <div key={id} className="relative min-w-0">
+            {editing && !simple && list.length > 1 && (
+              <SectionMover title={SECTION_TITLES[id] ?? 'this card'} first={n === 0} last={n === list.length - 1}
+                onMove={(dir) => {
+                  const next = [...list]
+                  const j = n + dir
+                  ;[next[n], next[j]] = [next[j], next[n]]
+                  setDraftOrder((o) => ({ ...o, [SECTION_ZONE]: next }))
+                }} />
+            )}
+            {byId[id]}
+          </div>
+        ))}
       </div>
       {fieldCard}
       {allFieldsDialog}

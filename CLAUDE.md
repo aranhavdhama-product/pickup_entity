@@ -31,7 +31,10 @@ Every pre-split URL still resolves in ONE hop via `routes/LegacyRedirect.tsx`
 console). Before building or restyling any page, read `design.md` and use its tokens
 and component specs. Key points:
 
-- **Font:** Lato (300/400/700/900; no 500/600 — medium/semibold → 700).
+- **Font:** Lato (300/400/700/900; no 600 — semibold → 700). **Field labels** (owner, 2026-10-05) = the `field-label`
+  utility in `src/index.css`: Lato **500** · 14px / 20px · `ink-2` rgb(76, 87, 97) — every label above an input (nueva
+  `Field`, both consignment forms, Grow form bits, the date picker, live-master forms). Google's Lato has no 500, so the
+  official Lato 2.0 Medium is bundled at `public/fonts/lato-medium.woff2` (SIL OFL) — never drop that `@font-face`.
 - **Accent:** a single brand orange (`--color-brand-500` `#F26C2E`); 50/100 for tints.
 - **Neutrals:** warm gray ramp; warm off-white app background `#F7F6F3`.
 - **Radii:** 6px (buttons/inputs/cards), 12px (overlays), pill (status chips).
@@ -294,7 +297,7 @@ Product changes layered on the replica (deliberate departures from the live port
   (local `FormCard` + `InfoTip`); row-adders are compact `+ Add SKU` links;
   address fields are customised inside the address popup. Rules live in `fe-consignment-form-v2-rules` over the shared config —
   never changes `/add`, Grow or the list. Errors only after an Add Order attempt. OWNER EXCEPTION to the
-  type-scale rule, this form only: local SFld (13px ink labels) and a 24px row gap.
+  type-scale rule, this form only: a 24px row gap (its labels use the shared `field-label` since 2026-10-05).
   **Form setup — Console vs Grow, Format, own fields (2026-10-05)**, pure module `LocalConsignments/formSetup.ts`:
   the builder edits ONE of two forms, switched in its bar (**Console | Grow portal**): `?edit=console` /
   `?edit=grow` on `/local/consignments/new` (the Grow one mounts the merchant form itself as its preview; Save /
@@ -325,7 +328,7 @@ Product changes layered on the replica (deliberate departures from the live port
   its own), **How goods are entered** (the Package & SKU card), Grow's **Show as** Grid | List (its Service Type card) —
   and the bar's **All fields** opens every field by card in one searchable dialog (a show / hide switch per field, the
   picked field's settings beside the list, + Add field — the dialog asks where; the address card's "Address fields" link
-  opens it on Addresses). The old per-label icon tools and the Format dialog are gone. **Layout** =
+  opens it on Addresses). The Format dialog is gone (Format lives in the card; the icons came back 2026-10-05, see below). **Layout** =
   `formSetup.loadLayout/saveLayout` (`fe-consignment-form-v2-layout` = `{ shipFrom, shipTo, rto, services }`, a stored
   `address` from the first version applies to all three; Grow's differences in `…-layout-grow`): **Fields on form** = that
   address typed in the card under a search of the saved ones (name · number · address · company), CONTACT DETAILS /
@@ -339,7 +342,21 @@ Product changes layered on the replica (deliberate departures from the live port
   right below, new id, no tracking number) · Remove · open. The open card's header carries its totals (no footer row).
   Past `PKG_PAGE` (8) rows the list stops at **Show all N packages**; the SKU list of "SKUs, then packages" stops at
   10 lines the same way. An incomplete package (after an Add attempt) shows an "Incomplete" chip, always stays
-  visible, and the first one opens itself. However many fields the builder shows, they live only in the open package. Grow's **Grid** = the lane's services as compact radio cards two per row (name + carrier · rate + Est. N days,
+  visible, and the first one opens itself. However many fields the builder shows, they live only in the open package.
+  **Barcode on every box** (owner, 2026-10-05) is asked on each PACKAGE's heading where packages are typed (`Parcel.barcodeEach`;
+  Handling keeps the switch only for SKU-based and vehicle forms; the consignment's `scannable` = any package has it): on =
+  that line is ONE box — its Quantity is locked to 1, and a line of N boxes becomes N lines (≤ 100; above that Quantity → 1
+  + "add the rest with Duplicate"). **SKUs, then packages = SKU INTO package** (owner, 2026-10-05: "reverse it"): the SKU
+  list has no Package column; Package 1 "Holds every SKU not put in another package", every other package has **SKUs in this
+  package** (multi-select; a SKU taken out goes back to Package 1; `packInto`), and `ParcelItem.lineNo` keeps the SKU list in
+  its order while packages pick (`sepSort`). Add SKU adds to Package 1.
+  **Builder, simpler (owner, 2026-10-05)**: "Show hidden fields" is OFF by default (hiding a field says where to bring it
+  back); every field frame carries its icons again (`FieldTools`: ✱ Required · ☰ More · .* Format (opens the card) · eye ·
+  trash for own fields · Grow ↺; set ones stay lit, the rest show on hover / when selected) next to the click-to-open card;
+  **Move card** ↑ ↓ on each card's top edge reorders whole cards (zone `__sections` of the field order — saved, reset and,
+  on Grow, inherited like the fields'; the Simplified tier keeps its order); a repeating block shows ONE **sample line** in
+  the builder (a SKU line with its details, a VAS line) so its fields can be set without adding one — nothing is saved.
+  Grow's **Grid** = the lane's services as compact radio cards two per row (name + carrier · rate + Est. N days,
   nothing preselected, nothing collapses), `serviceCards.ServiceTypeChooser layout`.
   **Field order + Summary (2026-10-05, owner: "drag and drop and resequence columns in the same sections" · "allow to show
   summary or not … their summary section can be different")** — while the form is edited every field is a drag cell

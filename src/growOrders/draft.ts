@@ -28,6 +28,9 @@ export interface ParcelItem {
   dimUom?: string
   /** skuDetails[].weightUom (weightKg holds the number) */
   weightUom?: string
+  /** the line's number in the form's SKU list ("SKUs, then packages") — keeps the list in order while packages pick
+   *  their SKUs (a SKU moved into another package keeps its place in the list) */
+  lineNo?: number
 }
 
 /**
@@ -69,6 +72,9 @@ export interface Parcel {
   description?: string
   /** declared value of ONE package of this spec (merchant order form), in the order's currency */
   declaredValue?: number
+  /** "Barcode on every box" for THIS package (owner, 2026-10-05): the box carries its own barcode, so the line is ONE
+   *  box — its quantity stays 1. The consignment's `scannable` is derived from it on the package-based forms. */
+  barcodeEach?: boolean
 }
 
 /**
