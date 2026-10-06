@@ -2677,7 +2677,7 @@ function AddConsignmentV2({ portal = 'console', setup = false, onShare }: {
           ? inlineAddress(role, idx)
           : <>
         <div className={`grid gap-x-6 gap-y-4 ${split?.grid ?? ''}`}>
-          <div className={`grid min-w-0 items-end gap-3 ${src === 'facilities' || editing ? '' : 'grid-cols-[minmax(0,1fr)_auto]'}`}>
+          <div className={`grid min-w-0 items-end gap-3 self-start ${src === 'facilities' || editing ? '' : 'grid-cols-[minmax(0,1fr)_auto]'}`}>
             {pickerFor(role, idx)}
             {src !== 'facilities' && !editing && <button type="button" onClick={() => openAddress(role, idx, true)}
               className="inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-md border border-brand-500 bg-surface px-3 text-[13px] text-brand-500 hover:bg-warm-50">
@@ -2726,7 +2726,7 @@ function AddConsignmentV2({ portal = 'console', setup = false, onShare }: {
       <div>
         {/* folded + a full-width end (One under the other): the search on the left, the card on the right */}
         <div className={`grid gap-x-6 gap-y-4 ${split?.grid ?? ''}`}>
-        <div className="flex min-w-0 items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3 self-start">
           <div className="min-w-0 flex-1">
             <AddressSearch hits={hitsFor(role)} onPick={(h) => applyPick(role, idx, h.value)}
               placeholder={`Search ${what}${srcs.includes('facilities') ? ' or hubs' : ''} by name, number, address or company`} />
