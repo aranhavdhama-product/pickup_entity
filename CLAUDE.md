@@ -333,6 +333,21 @@ Product changes layered on the replica (deliberate departures from the live port
   saved for later); any address on the form → the two ends stack (Ship From above Ship To); a hub end stays a picker +
   card. Grow's **Grid** = the lane's services as compact radio cards two per row (name + carrier · rate + Est. N days,
   nothing preselected, nothing collapses), `serviceCards.ServiceTypeChooser layout`.
+  **Field order + Summary (2026-10-05, owner: "drag and drop and resequence columns in the same sections" · "allow to show
+  summary or not … their summary section can be different")** — while the form is edited every field is a drag cell
+  (`SortCell`, native HTML5 drag: a grip on hover, a brand bar where it lands; the field's settings card also has
+  **Earlier / Later**). A field moves only inside its ZONE: `consignment` · `contact` / `address` (one order for every
+  address) · `package` · `sku-details` · `handling-chips` · `handling-switches` · `handling-fields` · `service` (the
+  console's Service Type / Load type / Vehicle Type join it) · `instructions` · `summary`. Order =
+  `formSetup.loadOrder/saveOrder` (`fe-consignment-form-v2-order`, `{ zone: [entry ids] }`; an entry's id = its element
+  key; Grow follows the console zone by zone, its own zones in `…-order-grow`); `applyOrder` keeps a field the order does
+  not know after its natural predecessor. **More** keeps its meaning: a More field waits in its NEW place and is revealed
+  there. **Summary** = an optional card at the end of the form (`sec-summary`), the console's ops lines (Merchant · Type ·
+  Route · Legs · Pieces & weight · Service Type · Load type · Carrier · Pickup / Delivery window) and Grow's merchant lines
+  (Route · Pieces & weight · Load type · Service Type · Pickup · Value-added services · Estimated price); its on / off and
+  hidden lines live per portal on their own (`formSetup.loadSummary/saveSummary`, `fe-consignment-form-v2-summary[-grow]`,
+  default console OFF, Grow ON — Grow does NOT follow the console here); while editing the card shows a "Shown on this
+  form" switch and a switch per line. Not on the Simplified tier.
   **Service Type is hideable (2026-10-05, owner: "in Service Type I can't hide that field")** — it left `FORM_LOCKED`, so the
   builder, the Form Fields tab (Shown | Hidden — no Required, it always has a value) and the older hides all reach the v2
   forms. Hidden = nobody chooses: every consignment gets the field's **default service** (its rule's `defaultValue`, picked in

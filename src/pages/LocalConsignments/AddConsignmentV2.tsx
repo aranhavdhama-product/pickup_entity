@@ -742,6 +742,8 @@ interface SortApi {
   /** the form is being edited — the cells are draggable */
   active: boolean
   drag: { zone: string; id: string } | null
+  /** the cell being dragged, read at once (state lands a render later; drag events do not wait) */
+  dragging: () => { zone: string; id: string } | null
   over: { zone: string; id: string; after: boolean } | null
   start: (zone: string, id: string) => void
   hover: (zone: string, id: string, after: boolean) => void
@@ -750,6 +752,9 @@ interface SortApi {
   move: (zone: string, ids: string[], moved: string, target: string, after: boolean) => void
 }
 const SortCtx = createContext<SortApi | null>(null)
+/** the one field being dragged on the page — read at once by the drag events (React state lands a render later) */
+let liveDragValue: { zone: string; id: string } | null = null
+const liveDrag = { get: () => liveDragValue, set: (v: { zone: string; id: string } | null) => { liveDragValue = v } }
 /** a zone's entries in the saved order, through the More fold; drag cells while the form is edited */
 function arrange(sort: SortApi | null, zone: string, entries: RevealEntry[], inMore: (k: string) => boolean, open: boolean, gap?: 'chips') {
   const live = entries.filter((e): e is LiveEntry => !!e)
@@ -772,12 +777,13 @@ function SortCell({ zone, id, gap, children }: { zone: string; id: string; gap?:
       onDragStart={(e) => { e.stopPropagation(); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', id); s.start(zone, id) }}
       onDragEnd={(e) => { e.stopPropagation(); s.end() }}
       onDragOver={(e) => {
-        if (!s.drag || s.drag.zone !== zone) return
+        const d = s.dragging()
+        if (!d || d.zone !== zone) return
         e.preventDefault(); e.stopPropagation()
-        if (s.drag.id !== id) s.hover(zone, id, side(e))
+        if (d.id !== id) s.hover(zone, id, side(e))
       }}
       onDrop={(e) => {
-        const d = s.drag
+        const d = s.dragging()
         if (!d || d.zone !== zone) return
         e.preventDefault(); e.stopPropagation()
         s.move(zone, zoneIds(e.currentTarget, zone), d.id, id, side(e))
@@ -1383,9 +1389,10 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   const [over, setOver] = useState<SortApi['over']>(null)
   const sortApi: SortApi = {
     order: (zone) => fieldOrder[zone], active: editing, drag, over,
-    start: (zone, id) => setDrag({ zone, id }),
+    dragging: liveDrag.get,
+    start: (zone, id) => { liveDrag.set({ zone, id }); setDrag({ zone, id }) },
     hover: (zone, id, after) => setOver((o) => (o && o.zone === zone && o.id === id && o.after === after ? o : { zone, id, after })),
-    end: () => { setDrag(null); setOver(null) },
+    end: () => { liveDrag.set(null); setDrag(null); setOver(null) },
     move: (zone, ids, moved, target, after) => setDraftOrder((o) => ({ ...o, [zone]: moveId(ids, moved, target, after) })),
   }
   const startEditing = () => {
