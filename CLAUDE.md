@@ -433,6 +433,20 @@ column universe; Download = a local CSV) · `/grow/orders/help` (`HelpCenterPage
 content — the live `/faq/` was never captured). `GrowOrdersLayout` `PAGE_SLUGS` lists every literal page slug so
 only a real order id gets the `/grow/orders/:id` order-view chrome — add a new page's slug there.
 
+**Taken from Ankit's branches (2026-10-06, selective merge — owner: "keep our latest changes").** From
+`grow-ship-from-port` (merged whole): the console's staging form `/console/order-management/consignment-order/add`
+(`ConsignmentAdd/index.tsx`) has Grow's Ship From / Ship To widget — address card + search, phone code + number in one
+field (`MenuSelect menuWidth`), RTO folded into Ship From as one toggle. From `new-merchant-portal-main` ONLY these
+add-ons: the **new-account onboarding** dashboard (sample merchant `NEW_MERCHANT` "New Merchant Co." with
+`Merchant.isNewAccount` → "Send Your First Order": Complete Profile · Get a Quote · Book Your Shipment, until all three are
+done; `growOrders/onboarding.ts`, key `grow-onboarding-v1`) · the Grow rail **auto-collapses** on the Consignment Order
+list, Add (+ `/vehicle`), checkout and an order view (`ShellSidebar defaultCollapsed hoverExpand`: hover = an overlay,
+its pin keeps it open, `fe-shell-sidebar-pinned-open`; the local app passes neither) · `SearchBox` turns a pasted Excel
+column into a comma list, and the Grow list matches ANY of them; a search down to ONE row selects it so its actions open
+(`DataTable autoSelectId`). NOT taken (they would undo the owner's later decisions): their Grow `AddOrderPage` form,
+checkout and payment widget, CSR / postpaid / LiteExpress personas, pickup pages and dialogs, the 5-tab list, the
+console form builder (`formBuilderV2`, `packageSku*`), the `AddConsignmentV2` refactor, the "Label: n" tab counts.
+
 ## First-mile pickup program — `/local/*` + `/driver` (2026-09-23)
 
 Design spec: `docs/superpowers/specs/2026-09-23-first-mile-pickup-program-design.md`

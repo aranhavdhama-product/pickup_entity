@@ -161,6 +161,10 @@ export default function GrowOrdersLayout() {
   /* `/grow/orders/:id` is the Shipments list with the View Consignment overlay open on it — same full-bleed chrome */
   const orderView = isOrderViewPath(path)
   const listPage = LIST_PAGES.includes(path) || orderView
+  /* order creation (and the main Consignments list it returns to) wants the full width
+     the rail would otherwise take — collapsed by default, a hover away when it's needed */
+  const autoCollapseNav = path === '/grow/orders' || path === '/grow/orders/add' || path === '/grow/orders/add/vehicle'
+    || path === '/grow/orders/checkout' || orderView
 
   /* the masters load once per app load, from this one mount — the Create
      Consignment form reads the same store and never fetches for itself */
@@ -168,7 +172,7 @@ export default function GrowOrdersLayout() {
 
   return (
     <div className="fe-nueva flex h-screen overflow-hidden bg-canvas" style={cssVars}>
-      <ShellSidebar items={nav} activeId={route.nav} homeTo="/grow/orders" />
+      <ShellSidebar items={nav} activeId={route.nav} homeTo="/grow/orders" defaultCollapsed={autoCollapseNav} hoverExpand={autoCollapseNav} />
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <ShellHeader title={route.title} right={<MerchantSwitcher />} />
         <main className="flex-1 overflow-auto">

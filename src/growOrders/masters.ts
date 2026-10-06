@@ -52,6 +52,15 @@ export interface Merchant {
    * no address line at all.
    */
   party: Party | null
+  /**
+   * A freshly-registered account with nothing set up yet — Dashboard shows the
+   * "Send Your First Order" onboarding checklist instead of the usual KPIs/
+   * charts, until Complete Profile / Get a Quote / Book Your Shipment are all
+   * done, then it reverts on its own. Only ever set on the sample merchant
+   * below; a live businessUnit row never has this, so it degrades safely to
+   * "not a new account" (the ordinary dashboard).
+   */
+  isNewAccount?: boolean
 }
 
 export type LocationType = 'MERCHANT_LOCATION' | 'CUSTOMER_LOCATION' | 'PUDO' | 'HUB' | 'PARCEL_LOCKER'
@@ -151,6 +160,7 @@ export interface Masters {
 
 export const SAMPLE_MERCHANTS: Merchant[] = [
   { code: '2GO_PH', name: '2GO Philippines', party: null },
+  { code: 'NEW_MERCHANT', name: 'New Merchant Co.', party: null, isNewAccount: true },
 ]
 
 export const SAMPLE_LOCATIONS: MasterLocation[] = STORES.map((s) => ({

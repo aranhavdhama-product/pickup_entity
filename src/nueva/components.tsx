@@ -655,8 +655,8 @@ export function MultiSelect({ value, options, labels, onChange, placeholder = 'S
         className="h-10 w-full flex items-center gap-2 rounded-md border border-warm-300 bg-surface px-3 cursor-pointer
                    hover:border-warm-400 transition-colors">
         {value.length === 0
-          ? <span className="text-[13px] text-warm-400">{placeholder}</span>
-          : <span className="truncate text-[13px] text-ink">{value.length === 1 ? label(value[0]) : `${value.length} selected`}</span>}
+          ? <span className="min-w-0 flex-1 truncate whitespace-nowrap text-[13px] text-warm-400">{placeholder}</span>
+          : <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{value.length === 1 ? label(value[0]) : `${value.length} selected`}</span>}
         <ChevronDown size={15} className={`ml-auto shrink-0 text-warm-400 transition-transform ${open ? 'rotate-180' : ''}`} />
       </div>
       {value.length > 0 && (
@@ -806,14 +806,26 @@ export function SelectionMenu({ count, actions, onClear, className = 'absolute r
 }
 
 export function DataTable({
-  columns, rows, selectable, rowKey = 'id', onEdit, onRowClick, extraActions, selectionActions,
+  columns, rows, selectable, rowKey = 'id', onEdit, onRowClick, extraActions, selectionActions, autoSelectId,
 }: {
   columns: Column[]; rows: any[]; selectable?: boolean; rowKey?: string
   onEdit?: (row: any) => void; onRowClick?: (row: any) => void; extraActions?: (row: any) => ReactNode
   /** consignment-style multiselect: floating actions panel shown while rows are selected */
   selectionActions?: (selectedRows: any[], clear: () => void) => SelectionAction[]
+  /** when set (e.g. the caller's search narrowed to exactly one row), that row is
+   * selected automatically so its action panel opens with no extra click — the
+   * user can still dismiss it, which stays dismissed until this id changes. */
+  autoSelectId?: string | null
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  /* adjusted during render, not an effect — a NEW autoSelectId (a fresh single
+   * search match) forces the selection right before this render paints, but a
+   * user's manual clear() in between two renders of the SAME id is left alone. */
+  const [autoSelectedFor, setAutoSelectedFor] = useState<string | null | undefined>(undefined)
+  if (autoSelectId !== undefined && autoSelectId !== autoSelectedFor) {
+    setAutoSelectedFor(autoSelectId)
+    if (autoSelectId) setSelected(new Set([autoSelectId]))
+  }
   /** any declared width switches the grid to a fixed layout; none = unchanged */
   const sized = columns.some((c) => c.width)
   const allChecked = rows.length > 0 && selected.size === rows.length
