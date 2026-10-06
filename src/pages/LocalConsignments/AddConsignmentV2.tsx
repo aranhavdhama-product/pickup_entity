@@ -29,6 +29,7 @@
  * needs. Rules = a v2-ONLY key (`fe-consignment-form-v2-rules`) over the shared config — /add, Grow and the list
  * never change. Errors appear only after an Add Order attempt. Labels 13px ink (owner exception to the type scale).
  * Deep links: `?draft=`, `?fromPickup=`, `?fromOverage=`, `?step=1|2` (packages / carriers).
+ * Grow: Service Type is chosen at checkout (step 2 · Service & payment); the builder previews it under "Next step".
  */
 import { createContext, Fragment, isValidElement, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
@@ -47,12 +48,12 @@ import {
 } from '../../growOrders/masters'
 import { toast } from '../../nueva/toast'
 import {
-  Button, DateInput, Input, MenuSelect, Modal, MultiSelectDropdown, Toggle, SearchInput, Tooltip,
+  Button, DateInput, Input, MenuSelect, Modal, MultiSelectDropdown, Toggle, SearchInput, Tooltip, WizardSteps,
 } from '../../nueva/components'
 import {
   AddMoreButton, PhoneInput, RadioCard, SwitchBox, SwitchField, TimeBox, UnitBox,
 } from '../../components/consignmentForm'
-import { money, OTHER_ADDRESS, partyOk, prWindow, storeOptionLabel } from '../GrowOrders/utils'
+import { money, ORDER_STEPS, OTHER_ADDRESS, partyOk, prWindow, storeOptionLabel } from '../GrowOrders/utils'
 import { hubName, inboundHubFor, INBOUND_HUBS } from '../../growOrders/hubs'
 import { usePickupLocations, useReceiverBook } from '../GrowOrders/pickupLocations'
 import {
@@ -60,7 +61,8 @@ import {
 } from './shipmentLegs'
 import {
   ADDITIONAL_SERVICES, DEFAULT_FTL_SERVICE, DRAFT_KEY, FTL_SERVICE_CODES, FTL_SERVICE_TYPES, PARCEL_SERVICES, SERVICE_TYPES, VEHICLE_SPECS,
-  clearDraftKeys, draftFromOrder, loadTypeOf, ftlQuoteVehicles, ftlServiceType, setDraftSidecar, totalLoadKg, vehiclesFor,
+  clearDraftKeys, draftFromOrder, loadTypeOf, ftlQuoteVehicles, ftlServiceType, readOverageSidecar, setCheckoutSidecar, setDraftSidecar,
+  totalLoadKg, vehiclesFor,
   vehiclesOf, type ConsignmentFields, type CustomFieldValue, type FtlVehicle, type OrderDraft, type Parcel, type ParcelItem, type VasLine,
 } from '../../growOrders/draft'
 import {
@@ -1357,7 +1359,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     () => packageTypesForMerchant(masters.packageTypes, merchant?.code ?? null),
     [masters.packageTypes, merchant?.code])
   const ownPresets = ownPackageTypes(masters.packageTypes, merchant?.code ?? null)
-  const { pathname } = useLocation()
+  const { pathname, search } = useLocation()
   const [params] = useSearchParams()
   /* ?step=1|2 — QA shortcut: sample parties + identifiers + carrier prefilled, scrolled to the packages (1) / carriers (2) */
   const jump = Math.min(2, Math.max(0, Number(params.get('step')) || 0))
@@ -1369,9 +1371,16 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   const [saved] = useState<OrderDraft | null>(() => {
     /* the Grow portal form's preview starts empty — never a merchant's session draft */
     if (growSetup) return null
+    /* what step 2's Back left in the session — only for THIS order (the same draft id; the same overage scan) */
+    const session = merchantMode ? readSessionDraft() : null
+    const ovParam = params.get('fromOverage')
+    const ovSide = readOverageSidecar()
+    const sessionHere = session
+      && (!ovParam || (!!ovSide && `${ovSide.prId}:${ovSide.overageId}` === ovParam))
+      && (!draftId || session.orderId === draftId) ? session : null
     const o = draftId ? orderById(draftId) : null
-    if (o) return o.draft ?? (!merchantMode && !o.isDraft ? draftFromOrder(o) : null)
-    return merchantMode && !params.get('fromOverage') ? readSessionDraft() : null
+    if (o) return sessionHere ?? o.draft ?? (!merchantMode && !o.isDraft ? draftFromOrder(o) : null)
+    return sessionHere
   })
   const resumeId = draftId ?? saved?.orderId ?? null
   const pr = pickupRequestById(params.get('fromPickup'))
@@ -1741,9 +1750,9 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   const growDefault = [ownGrow, ruleDefault].find((code) => !!code && services.some((x) => x.code === code)) ?? services[0]?.code ?? ''
   const growService = serviceHidden ? growDefault : service
   const offered = serviceHidden ? services.filter((x) => x.code === growDefault) : services
-  /* Grow's Service Type card: gone while the field is hidden (a full vehicle's vehicles are booked in Vehicle Details) —
-     except in the builder's preview with "Show hidden fields" (faded, so the field can be brought back) */
-  const growServiceCard = !serviceHidden || (editing && showHidden)
+  /* Grow's Service Type is chosen at checkout (step 2 · Service & payment, owner 2026-10-06) — its card shows only in
+     the builder's preview, under "Next step" (hidden: only with "Show hidden fields", faded, so it can be brought back) */
+  const growServiceCard = editing && (!serviceHidden || showHidden)
   const laneOk = laneReady(sender) && allDrops.every(laneReady)
   const weightOk = goods.length > 0 && goods.every(packageReady)
   const ready = laneOk && weightOk
@@ -1784,6 +1793,8 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   const quote = quotes.find((q) => q.code === selected) ?? null
   const ftlOk = mode !== 'ftl' || (mVehicles.length > 0 && rows.every((r) => !!r.vehicleType && r.count >= 1 && r.loadKg > 0 && r.addressIdx.length > 0)
     && allDrops.every((_, i) => mVehicles.some((v) => v.addressIdx.includes(i))))
+  /* Grow step 1: the service is picked at checkout — until then the form shows the lowest rate for this route */
+  const cheapest = merchantMode && ready && ftlOk && quotes.length ? Math.min(...quotes.map((q) => q.net)) : null
   /* a new load type swaps the card list and drops the chosen service; switching a full vehicle on starts its Vehicle
      Details with the hub's first vehicle carrying the whole load to every Ship To address */
   const changeMode = (m: BookingMode) => {
@@ -2004,8 +2015,9 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   /* owner, 2026-09-29: Vehicle Type is optional; Service Type is required */
   const vehicleReq: boolean[] = []
   const serviceReq = merchantMode
-    /* Grow: a load type, a priced service card and (full vehicle) at least one vehicle */
-    ? [!!mode, !!quote, ftlOk]
+    /* Grow step 1: a load type, a priced route (addresses + weights), at least one bookable service and (full vehicle)
+       the vehicles — the service itself is chosen at checkout */
+    ? [!!mode, ready, quotes.length > 0, ftlOk]
     : [...vehicleReq, !!(isFtl ? consoleFtl : consoleService), ...needOk('labelFormat', !!c.labelFormat),
       ...needOk('totalLoadingTime', (c.totalLoadingTime ?? 0) > 0)]
   const handlingReq = [...needOk('tags', (c.tags ?? []).length > 0), ...customReq('sec-handling')]
@@ -2320,8 +2332,9 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   /* owner, 2026-10-06 ("summary should be a vertical card, not a horizontal one"): the Summary is no longer a card in
      the flow — it is the vertical card beside the form (see the layout at the bottom), so it takes no place here */
   const sumSec: string[] = []
+  /* Grow: no Service Type card on step 1 — it is chosen at checkout; the builder previews it after the cards, unmovable */
   const sections = merchantMode ? ['sec-consignment', 'sec-parties', 'sec-packages', 'sec-handling', ...(mode === 'ftl' ? ['sec-vehicle'] : []),
-    'sec-extras', ...(growServiceCard ? ['sec-service'] : []), ...sumSec]
+    'sec-extras', ...sumSec]
     : simple ? ['sec-consignment', 'sec-parties', isFtl ? 'sec-vehicle' : 'sec-packages', 'sec-carrier'] : isFtl
     ? ['sec-consignment', 'sec-parties', ...svcSec, 'sec-vehicle', ...(handlingVisible ? ['sec-handling'] : []), 'sec-carrier', ...sumSec]
     : ['sec-consignment', 'sec-parties', 'sec-packages', ...(handlingVisible ? ['sec-handling'] : []), ...svcSec, 'sec-carrier', ...sumSec]
@@ -2357,9 +2370,13 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     /* addresses typed on the form with "Save this address" on are kept now that the consignment is */
     if (anyInline) keepTypedAddresses()
     if (merchantMode) {
-      /* Grow: the booking goes to checkout (payment), which creates the order */
+      /* Grow: step 2 (checkout) picks the service and takes the payment, then creates the order */
       sessionStorage.setItem(DRAFT_KEY, JSON.stringify(buildMerchantDraft()))
       setDraftSidecar({ pickupId: pr?.id ?? null, overage: fromOverage ? { prId: fromOverage.pr.id, overageId: fromOverage.scan.id } : null })
+      setCheckoutSidecar({
+        services: offered.map((s) => s.code), locked: serviceHidden, layout: layout.services,
+        label: lbl('serviceType'), back: `${pathname}${search}`,
+      })
       nav('/grow/orders/checkout')
       return
     }
@@ -3787,9 +3804,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
           { value: 'list', label: 'List', tip: 'One full-width card per service' },
         ]} />
       ) : undefined}
-      caption={layout.services === 'grid'
-        ? `Estimated delivery time and rate for this route${mode === 'ftl' ? ' with the vehicles in Vehicle Details' : ''} — nothing is preselected. Dedicate Truck is in Handling.`
-        : `${mode === 'ftl' ? 'Full vehicle' : 'Shared vehicle'} services and estimated rates for this route — pick one. Dedicate Truck is in Handling.`}>
+      caption={`Merchants pick it on the next step (Service & payment), with the estimated rate for this route. ${layout.services === 'grid' ? 'Two per row.' : 'One per row.'} Dedicate Truck is in Handling.`}>
       {editing ? <Configurable fieldKey="serviceType">{serviceChooser}</Configurable> : serviceChooser}
       {showErrors && !ready && (
         <ErrLine className="mt-3">Add {[!laneReady(sender) && 'a Ship From address', !allDrops.every(laneReady) && 'a Ship To address',
@@ -3864,7 +3879,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     },
     service: merchantMode ? {
       title: 'Service', jump: growServiceCard ? 'sec-service' : null,
-      value: quote ? `${quote.name} · ${growCarrier}` : muted('no service selected yet'),
+      value: quote ? `${quote.name} · ${growCarrier}` : muted('Chosen in the next step'),
       sub: vasNames.length ? `+ ${vasNames.join(', ')}` : '',
     } : {
       title: 'Service', jump: consoleServiceCard ? 'sec-service' : null,
@@ -3899,11 +3914,13 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     ? [[<span title="Estimated — the carrier confirms the delivery date">ETA<span className="text-brand-500">*</span></span>,
         etaDays != null ? plural(etaDays, 'day') : '—']]
     : merchantMode
-      ? [
-        ['Delivery', quote ? money(quote.net - vasAmount, currency) : '—'],
+      ? quote ? [
+        ['Delivery', money(quote.net - vasAmount, currency)],
         ...(vasAmount > 0 ? [['Value-added services', money(vasAmount, currency)] as [ReactNode, ReactNode]] : []),
-        [<span title="Estimated, before tax — checkout shows the tax">Total</span>, quote ? money(quote.net, currency) : '—', true],
+        [<span title="Estimated, before tax — checkout shows the tax">Total</span>, money(quote.net, currency), true],
       ]
+        /* step 1 without a service: the lowest rate for this route (the service is picked on the next step) */
+        : [[<span title="Estimated, before tax — you pick the service on the next step">Estimated from</span>, cheapest != null ? money(cheapest, currency) : '—', true]]
       : [
         [isFtl ? 'Vehicles' : 'Pieces', isFtl ? String(vehicles.length) : String(goodsPieces)],
         [isFtl ? 'Load' : 'Chargeable weight', kgText(isFtl ? actualLoad : weights.chargeable), true],
@@ -4107,13 +4124,17 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     </div>
   )
   const builderBar = merchantMode && !editing ? (
-    <div className="mb-6 flex items-start gap-3">
-      {backBtn}
-      <div className="min-w-0">
-        <h1 className="text-[18px] font-bold leading-8 text-ink">Create Order</h1>
-        <p className="text-[13px] text-ink-2">{SUBTITLE}</p>
+    <>
+      <div className="mb-4 flex items-start gap-3">
+        {backBtn}
+        <div className="min-w-0">
+          <h1 className="text-[18px] font-bold leading-8 text-ink">Create Order</h1>
+          <p className="text-[13px] text-ink-2">{SUBTITLE}</p>
+        </div>
       </div>
-    </div>
+      {/* owner, 2026-10-06: two steps — this form, then the service + the payment at checkout (step 2 = Continue) */}
+      <WizardSteps steps={ORDER_STEPS} active={0} onSelect={(i) => { if (i === 1) proceed() }} />
+    </>
   ) : editing ? (
     /* the editing bar (owner, 2026-10-05: "needs a better UI") — two rows in one card: what is being edited and how to
        finish it (Cancel / Save) above; which form, and the tools for the whole form, below. Row 2 rounds its own bottom
@@ -4467,6 +4488,16 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
             {byId[id]}
           </div>
         ))}
+        {/* Grow: Service Type is asked on step 2 (checkout) — previewed here, after the step-1 cards, so the field can
+            be renamed, hidden with a default service, or shown as Grid | List; it is not a movable card */}
+        {merchantMode && editing && growServiceCard && (
+          <>
+            <p className="flex items-center gap-3 text-[12px] font-bold uppercase tracking-wide text-ink-3">
+              <span className="h-px flex-1 bg-warm-200" />Next step · Service &amp; payment<span className="h-px flex-1 bg-warm-200" />
+            </p>
+            {merchantServiceSection}
+          </>
+        )}
       </div>
       {summaryShown && (
         <aside className="min-w-0 @min-[1000px]:sticky @min-[1000px]:top-4 @min-[1000px]:max-h-[calc(100vh-2rem)] @min-[1000px]:overflow-y-auto">
@@ -4481,12 +4512,15 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
       {/* sticky footer — the form switch (owner, 2026-09-29: where the section strip was), then Go Back + Add Order */}
       <div className="sticky bottom-0 z-30 mt-6 flex items-center gap-x-4 rounded-xl border border-warm-200 bg-surface px-6 py-3 shadow-ds-1">
         {merchantMode ? (
-          /* Grow: the estimate for what is on screen (checkout confirms it) */
+          /* Grow step 1: the lowest rate for what is on screen (the service is picked at checkout), or the carried
+             service's estimate */
           <div className="min-w-0 text-[13px]">
-            {quote && ftlOk
-              ? <p className="truncate text-ink"><b>{money(quote.net, currency)}</b><span className="text-ink-2"> estimated · {quote.name}{vehicleLine ? ` · ${vehicleLine}` : ''}</span></p>
-              : <p className="truncate text-ink-3">{!mode ? 'Choose a load type in Handling to see rates' : !ready ? 'Rates appear once the addresses and packages are in'
-                : !quote ? (serviceHidden ? 'No service can be booked on this route — please contact support' : 'Choose a service') : 'Add a vehicle'}</p>}
+            {!mode ? <p className="truncate text-ink-3">Choose a load type in Handling to see rates</p>
+              : !ready ? <p className="truncate text-ink-3">Rates appear once the addresses and packages are in</p>
+              : !ftlOk ? <p className="truncate text-ink-3">Add a vehicle</p>
+              : !quotes.length ? <p className="truncate text-ink-3">No service can be booked on this route — please contact support</p>
+              : quote ? <p className="truncate text-ink"><b>{money(quote.net, currency)}</b><span className="text-ink-2"> estimated · {quote.name}{vehicleLine ? ` · ${vehicleLine}` : ''}</span></p>
+              : <p className="truncate text-ink"><span className="text-ink-2">From </span><b>{money(cheapest ?? 0, currency)}</b><span className="text-ink-2"> · choose the service next</span></p>}
           </div>
         ) : (
           <Button variant="outline" disabled={editing} onClick={() => setTier(simple ? 'full' : 'simplified')}>
@@ -4501,7 +4535,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
           {!editing && <Button variant="ghost" onClick={goBack}>Go Back</Button>}
           {/* enabled: a click with gaps shows them (errors appear only after this attempt) */}
           {merchantMode && <Button variant="outline" onClick={saveForLater} disabled={editing}>Save for later</Button>}
-          <Button onClick={proceed} disabled={editing}>{merchantMode ? 'Continue to checkout' : liveEdit ? 'Save changes' : 'Add Order'}</Button>
+          <Button onClick={proceed} disabled={editing}>{merchantMode ? 'Continue' : liveEdit ? 'Save changes' : 'Add Order'}</Button>
         </div>
       </div>
 

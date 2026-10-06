@@ -1,5 +1,6 @@
 /**
- * Service Type — the LAST section of the merchant order form (owner, 2026-09-25: "it is being
+ * Service Type — chosen on Grow's step 2 (checkout, owner 2026-10-06), the lane's cards; the form builder
+ * previews it under "Next step" (owner, 2026-09-25: "it is being
  * derived from the OD pair"). The live Grow portal's block: a white card titled "Service Type"
  * with a pencil top-right; one full-width card per service — the name (17 bold), a house icon +
  * "Delivery by N DAY", a banknote icon + the rate. The selected card carries a 2px brand OUTLINE

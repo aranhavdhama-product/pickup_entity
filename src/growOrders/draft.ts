@@ -205,6 +205,8 @@ export const DRAFT_KEY = 'grow-order-draft'
  *    created for (`?fromPickup=`); checkout attaches the paid order to it.
  *  - `DRAFT_OVERAGE_KEY` — `{prId, overageId}` of the overage scan this order is
  *    being created for (`?fromOverage=`); checkout resolves the scan.
+ * A third one, `DRAFT_CHECKOUT_KEY`, is not an exit: it tells checkout (step 2) how
+ * the service is chosen there (see `CheckoutSidecar`).
  */
 export const DRAFT_PICKUP_KEY = 'grow-order-draft-pickup'
 export const DRAFT_OVERAGE_KEY = 'grow-order-draft-overage'
@@ -225,11 +227,36 @@ export function readOverageSidecar(): OverageSidecar | null {
   } catch { return null }
 }
 
+/**
+ * Form → checkout (Grow, owner 2026-10-06: Service Type is chosen on step 2): what checkout cannot work out
+ * on its own, because Service Type is a FORM field — the services it may offer (only the default while the
+ * field is hidden), hidden or not, Grid | List, the field's label, and the form URL Back returns to.
+ * Session only, rewritten on every Continue.
+ */
+export const DRAFT_CHECKOUT_KEY = 'grow-order-draft-checkout'
+export interface CheckoutSidecar { services: string[]; locked: boolean; layout: 'grid' | 'list'; label: string; back: string }
+export function setCheckoutSidecar(x: CheckoutSidecar) {
+  try { sessionStorage.setItem(DRAFT_CHECKOUT_KEY, JSON.stringify(x)) } catch { /* private mode */ }
+}
+export function readCheckoutSidecar(): CheckoutSidecar | null {
+  try {
+    const v = JSON.parse(sessionStorage.getItem(DRAFT_CHECKOUT_KEY) || 'null') as Partial<CheckoutSidecar> | null
+    if (!v || !Array.isArray(v.services)) return null
+    return {
+      services: v.services.filter((s): s is string => typeof s === 'string' && !!s), locked: !!v.locked,
+      layout: v.layout === 'list' ? 'list' : 'grid',
+      label: typeof v.label === 'string' && v.label.trim() ? v.label : 'Service Type',
+      back: typeof v.back === 'string' && v.back.startsWith('/grow/orders/add') ? v.back : '/grow/orders/add',
+    }
+  } catch { return null }
+}
+
 /** Every exit that abandons the stepper clears the whole hand-off. */
 export function clearDraftKeys() {
   sessionStorage.removeItem(DRAFT_KEY)
   sessionStorage.removeItem(DRAFT_PICKUP_KEY)
   sessionStorage.removeItem(DRAFT_OVERAGE_KEY)
+  sessionStorage.removeItem(DRAFT_CHECKOUT_KEY)
 }
 export const VOL_FACTOR = 3500 // cm³ per kg — 10×10×10 → 0.2857 kg, as on the portal
 export const volKg = (p: Parcel) => (p.l * p.w * p.h) / VOL_FACTOR

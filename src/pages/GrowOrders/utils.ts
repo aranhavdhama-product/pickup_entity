@@ -126,6 +126,10 @@ export const fmtDateTime = (iso: string) => {
 }
 export const money = (n: number, cur = '₱') => `${cur} ${n.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
+/** Grow Create Order's two steps (owner, 2026-10-06): the form (`/grow/orders/add`), then the service + the payment
+    at checkout — the stepper both pages show */
+export const ORDER_STEPS = ['Order details', 'Service & payment']
+
 /* ------------------------------------------------ pickup-request selectors ---- */
 
 /**

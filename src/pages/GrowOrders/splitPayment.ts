@@ -2,7 +2,7 @@
  * Split payment for the Grow checkout (owner, 2026-10-05: "allow me to select multiple
  * payment options") — the STATE and the pure helpers behind `SplitPaymentSheet`
  * (paymentSheet.tsx). The hook lives in the checkout page, not in the sheet, so what the
- * merchant ticked survives a trip to the Summary step and back.
+ * merchant ticked survives a change of service.
  *
  * The merchant ticks one or more methods (Wallet · Card · Pay later · Cash on delivery) and
  * gives each an amount that adds up to the payable amount:
@@ -10,7 +10,8 @@
  *  · every other ticked method is filled automatically from what is left — the Wallet first
  *    (never more than its balance), then the rest in the order they were ticked, so the
  *    newest method ends up with the remainder;
- *  · un-ticking a method frees its amount.
+ *  · un-ticking a method frees its amount;
+ *  · a new payable amount (checkout: another service picked) clears the typed amounts.
  * Ready = amounts add up to the payable amount to the cent, every amount is above zero, the
  * wallet part is within the balance (it is capped as it is typed) and the card details are valid.
  *
@@ -140,7 +141,10 @@ export function useSplitPayment({ amount, currency, allowCod }: { amount: number
     const pref = settings.defaultPayMethod as PayMethod
     return allowed.includes(pref) ? [pref] : ['Wallet']
   })
-  const [typed, setTyped] = useState<Amounts>({})
+  /* amounts typed for ONE payable amount — another service (another amount) starts the split afresh */
+  const [typedFor, setTypedFor] = useState<{ at: number; v: Amounts }>({ at: amount, v: {} })
+  const typed = typedFor.at === amount ? typedFor.v : {}
+  const setTyped = (f: (t: Amounts) => Amounts) => setTypedFor((x) => ({ at: amount, v: f(x.at === amount ? x.v : {}) }))
   const [raw, setRaw] = useState('') // card digits — component state only, never persisted
   const [name, setName] = useState('')
   const [expiry, setExpiry] = useState('')

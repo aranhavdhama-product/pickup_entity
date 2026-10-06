@@ -248,14 +248,21 @@ Product changes layered on the replica (deliberate departures from the live port
   (`vehicleTable`: Vehicle Type · No. of Vehicles · Est. Load · Deliver To, + Add vehicle, capacity line) on the Ship From
   hub's fleet with its rate per vehicle, kept in the console's `rows` model) · **Service &
   instructions** (Label Format · instructions · VAS in the lane's currency; VAS alone → the card is titled Value Added
-  Services with Add service in its header, no empty band) · **Service Type LAST**
-  (`serviceCards.ServiceTypeChooser hideMode vehiclesElsewhere`: the lane's rate cards show at once — two per row by default,
-  the builder's Services choice; NO transit days on Grow's service cards or footer estimate, owner 2026-10-06; a full
-  vehicle's services are priced from Vehicle Details, which also allows extra drops). The console form's saved customisation (`fe-consignment-form-v2-rules`:
+  Services with Add service in its header, no empty band). **TWO STEPS** (owner, 2026-10-06: "Service Type in next step"):
+  the form is step 1 (`ORDER_STEPS` in `GrowOrders/utils.ts`: Order details › Service & payment, nueva `WizardSteps` under the
+  title) with NO Service Type card — **Service Type is chosen on step 2 = `/grow/orders/checkout`**
+  (`serviceCards.ServiceTypeChooser hideMode vehiclesElsewhere`: the lane's rate cards, two per row by default, the builder's
+  Services choice, the carrier on each card; NO transit days, owner 2026-10-06; a full vehicle's services are priced from
+  Vehicle Details, which also allows extra drops). The Grow builder still previews the card, after the step-1 cards under a
+  "Next step · Service & payment" divider (not movable; hide / default service / Grid | List work as before). Step 1 needs a
+  load type, a priced route, ≥ 1 bookable service and the vehicles — not a picked service. The console form's saved customisation (`fe-consignment-form-v2-rules`:
   hidden · labels · More · Required) applies to Grow too (owner, 2026-09-29), plus the Form Fields tab's Required —
   unless the Grow portal form changes that field for Grow (2026-10-05, "Form setup" under Add Consignment v2).
-  Sticky footer = the estimate · Go Back · Save for later · Continue to checkout (DRAFT_KEY → `/grow/orders/checkout`,
-  a session draft is restored on Back). Package card (both portals): a chevron-only "more package details" at the END of
+  Sticky footer = "From ₱X · choose the service next" (the lowest rate on the route; a carried service's estimate once one
+  is chosen) · Go Back · Save for later · **Continue** (DRAFT_KEY + the session sidecar `grow-order-draft-checkout` =
+  `draft.CheckoutSidecar` { offered services, locked = Service Type hidden, Grid | List, the field's label, the back URL }
+  → `/grow/orders/checkout`). Back from step 2 restores the session draft WITH the chosen service — for a new order, a
+  resumed `?draft=` (same orderId) and `?fromOverage` (same scan). Package card (both portals): a chevron-only "more package details" at the END of
   the package's field row (level with the inputs), Add SKU on its own line below; a SKU's details toggle is a chevron only (words in the tooltip). The old `MerchantOrderForm` / `packageEditor` / `orderSummaryRail` are gone. Selected card = 2px brand
   border, no fill; segments/choices neutral (border-ink + bg-warm-50). Pricing = ONE module
   `src/growOrders/rates.ts` (`quoteLane`/`quoteService`, ESTIMATED; ₱ card for PH, $ card for the
@@ -382,7 +389,8 @@ Product changes layered on the replica (deliberate departures from the live port
   back); every field frame carries its icons again (`FieldTools`: ✱ Required · ☰ More · .* Format (opens the card) · eye ·
   trash for own fields · Grow ↺; set ones stay lit, the rest show on hover / when selected) next to the click-to-open card;
   **Move card** ↑ ↓ on each card's top edge reorders whole cards (zone `__sections` of the field order — saved, reset and,
-  on Grow, inherited like the fields'; the Simplified tier keeps its order); a repeating block shows ONE **sample line** in
+  on Grow, inherited like the fields'; the Simplified tier keeps its order; Grow's step-2 Service Type preview is not
+  movable); a repeating block shows ONE **sample line** in
   the builder (a SKU line with its details, a VAS line) so its fields can be set without adding one — nothing is saved.
   Grow's **Grid** = the lane's services as compact radio cards two per row (name + carrier · rate — no days since
   2026-10-06, nothing preselected, nothing collapses), `serviceCards.ServiceTypeChooser layout`.
@@ -400,8 +408,8 @@ Product changes layered on the replica (deliberate departures from the live port
 the cards; it is NOT one of the movable cards. It looks like the second branch's **Shipment Summary** (owner, 2026-10-06):
   stacked blocks — a 12px bold grey label, **Edit** on the right (jumps to its card), the value, a 12px grey line — then a
   foot of totals. Grow = **Shipment Summary**: Ship From (+ Pickup) · Ship To · LTL / FTL · Packages (packages · SKU units;
-  Dead · Vol · Chargeable; Vehicles) · Service (name · carrier, + VAS) · foot Delivery · Value-added services · Total (net,
-  before tax) · ETA*. Console = **Consignment Summary**: Consignment (merchant · type, Order / Ref) · Ship From (+ pick-up
+  Dead · Vol · Chargeable; Vehicles) · Service (name · carrier, + VAS; "Chosen in the next step" until step 2 picks one) ·
+  foot Delivery · Value-added services · Total (net, before tax) — with no service yet ONE row "Estimated from ₱X" · ETA*. Console = **Consignment Summary**: Consignment (merchant · type, Order / Ref) · Ship From (+ pick-up
   window) · Ship To (+ delivery window) · Shipment legs (+ via hubs) · Packages / FTL · Vehicle Details · Service (+ load type,
   vehicle, VAS) · Carrier · foot Pieces / Vehicles · Chargeable weight / Load · ETA*. Blocks + foot rows = `SUMMARY_LINES`
   (keys; `foot` rows stay at the foot, blocks drag in zone `summary`); its on / off and
@@ -418,16 +426,16 @@ the cards; it is NOT one of the movable cards. It looks like the second branch's
   its settings card under "While it is hidden"; Grow follows the console unless it sets its own). Console: the default when it
   is a known service, else Standard; `/new/vehicle`: the default when it is a vehicle service, else Inland FTL (vehicle rows
   are fitted to its vehicles); a resumed draft / Modify / pickup request keeps its own service. Grow books from the Service
-  Type master's Active rows (its own if still bookable → the default → the first); no Service Type card (the footer
-  estimate names the service; a full vehicle's vehicles are in Vehicle Details); the builder preview keeps it, faded,
-  while "Show hidden fields" is on. The console's Service & instructions card leaves when everything in it
+  Type master's Active rows (its own if still bookable → the default → the first); step 2 shows no Service Type card
+  (the Order summary names the service, the footer estimate too; a full vehicle's vehicles are in Vehicle Details); the
+  builder preview keeps it, faded, while "Show hidden fields" is on. The console's Service & instructions card leaves when everything in it
   is hidden. The Simplified tier is not customisable — it still asks Service Type.
 - **Service Type has no Load type** (owner, 2026-09-29): `draft.loadTypeOf` returns `'both'` for every
   service, so Shared / Full vehicle is the booking's free choice on every form (the old form's Load type is no
   longer locked; Grow's service cards list every service in both modes); the Load type column / filter / form
   field are gone from both Service Type masters.
 `?step=1|2` (+`&type=FTL`) on Create Order prefills sample parties + a package and scrolls to
-Packages (1) / Service Type (2) (QA shortcut). Never reintroduce a Grow-only look: new Grow UI uses the shared console components.
+Packages (1) / Handling (2) (QA shortcut). Never reintroduce a Grow-only look: new Grow UI uses the shared console components.
 - **Money & account pages** (2026-09-25, research `docs/superpowers/research/2026-09-25-grow-portal-pages.md` §4–§9;
   localStorage stores via `src/growOrders/localStore.ts`, deterministic seeds, normalize-on-load; shared bits in
   `GrowOrders/accountBits.tsx`): **Wallet** `/grow/orders/wallet?tab=wallet|payments` (+ `/:id` receipt) = `WalletPage` /
@@ -435,11 +443,19 @@ Packages (1) / Service Type (2) (QA shortcut). Never reintroduce a Grow-only loo
   credit row) · Balance/Credits/Debits tiles · running balance per currency from `walletOf()`; Payments tab = the
   2GO_PH list; seeded opening credit per currency; one payment = one DR entry (a checkout split over several methods
   writes one per method), seeded from paid orders,
-  **payment flow** (2026-10-05) = a TWO-step checkout `GrowOrders/CheckoutPage` — **1 Payment** (Payment Mode, then "How you pay":
+  **payment flow** (2026-10-06: "in second page we have to show summary, ask for carrier selection and ask for payment method")
+  = `GrowOrders/CheckoutPage`, ONE screen = step 2 · Service & payment of Create Order (the stepper, step 1 done; chevron /
+  step 1 / "Back to order details" / Edit = back to the form with the chosen service): left = **Order summary**
+  (`CheckoutSummary.tsx`, ONE compact card: order no. · Ship From → Ship To · packages or vehicles · VAS · "For" a pickup
+  request / overage scan; the service only when the form hides Service Type) · **Service Type** (`quoteLane` on the draft =
+  the form's inputs, so step-2 prices equal the step-1 estimate; offered = the sidecar's services; hidden ⇒ no card, the
+  default service is booked) · **Payment** (Payment Mode · COD amount · remarks, then "How you pay":
   `paymentSheet.tsx` `SplitPaymentSheet`, tick ONE OR MORE of Wallet balance + inline Recharge · Card demo, only the last 4
   digits kept · Pay later on a Postpaid account · COD for a COD order, each with its own amount that must add up to the payable
-  amount; state = `splitPayment.ts` `useSplitPayment`; the method with the largest share is saved as
-  `merchantSettings.defaultPayMethod`) → **2 Summary** (`CheckoutSummary.tsx`, read-only review, then Pay / Place order);
+  amount, which follows the chosen service (typed amounts reset when it changes); state = `splitPayment.ts` `useSplitPayment`;
+  the method with the largest share is saved as `merchantSettings.defaultPayMethod`); right rail = Payment Summary + ONE
+  "Pay ₱X and place order" / "Place order", disabled with its reason until a service is chosen and the split adds up; the
+  order is created from `withService(draft, quote)` (service, rate, ETA; a full vehicle's `ftlServiceType` + FTL line);
   `PaymentSheet` (one method) stays for `PayNowDialog` on Billing / Payments ⋮ for Pending (pay-later /
   COD) debits and `PayNowButton` for the order overlay; `debitsWallet()` = only Wallet/'Credit' debits move the balance,
   `recordSplitPayment(order, parts)` called by CheckoutPage (shipping / tax shared by amount, "Split payment · 1 of 2"),
