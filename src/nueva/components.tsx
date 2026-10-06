@@ -1163,12 +1163,14 @@ export function PageSize({ value = 10, onChange }: { value?: number; onChange?: 
 
 /* ---------------- Multi-select dropdown (searchable, select-all) ---------------- */
 export function MultiSelectDropdown({
-  options, values, onChange, placeholder = 'Select', noun = 'items', searchPlaceholder = 'Search masters',
+  options, values, onChange, placeholder = 'Select', noun = 'items', searchPlaceholder = 'Search masters', size = 'md',
 }: {
   options: string[]; values: string[]; onChange: (v: string[]) => void
   placeholder?: string; noun?: string
   /** additive (2026-10-05): the search box's hint — default as before */
   searchPlaceholder?: string
+  /** additive (2026-10-06): 'sm' = 32px, level with the form's h-8 inputs; 'md' (default) = 36px as before */
+  size?: 'sm' | 'md'
 }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
@@ -1193,7 +1195,7 @@ export function MultiSelectDropdown({
   return (
     <div className="relative" ref={ref}>
       <button type="button" onClick={() => setOpen((o) => !o)}
-        className="w-full h-9 flex items-center justify-between gap-2 rounded-md border border-warm-300 bg-surface pl-3 pr-2 text-left text-[13px]">
+        className={`w-full ${size === 'sm' ? 'h-8' : 'h-9'} flex items-center justify-between gap-2 rounded-md border border-warm-300 bg-surface pl-3 pr-2 text-left text-[13px]`}>
         <span className={`truncate ${values.length ? 'text-ink' : 'text-warm-400'}`}>{label}</span>
         <ChevronDown size={14} className="shrink-0 text-warm-400" />
       </button>

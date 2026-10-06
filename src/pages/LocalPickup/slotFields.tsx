@@ -44,7 +44,7 @@ const plusDays = (d: Date, n: number) => {
   return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`
 }
 
-export function SlotWindowFields({ startAt, endAt, onChange, policy, ok, error, now, calendars, labels, calendarRules = true, minDate }: {
+export function SlotWindowFields({ startAt, endAt, onChange, policy, ok, error, now, calendars, labels, calendarRules = true, minDate, required = true }: {
   startAt: string; endAt: string
   onChange: (w: { startAt: string; endAt: string }) => void
   policy: PickupPolicy
@@ -60,6 +60,8 @@ export function SlotWindowFields({ startAt, endAt, onChange, policy, ok, error, 
   calendarRules?: boolean
   /** first selectable day ('YYYY-MM-DD') when `calendarRules` is false; default today */
   minDate?: string
+  /** additive (2026-10-06): false = an optional window (the Grow form's manual pickup) — no * on the three fields */
+  required?: boolean
 }) {
   const L = { date: labels?.date ?? 'Pickup date', start: labels?.start ?? 'Start time', end: labels?.end ?? 'End time' }
   const cals = calendarRules ? (calendars?.length ? calendars : [policy]) : []
@@ -113,15 +115,15 @@ export function SlotWindowFields({ startAt, endAt, onChange, policy, ok, error, 
   return (
     <div className="flex flex-col gap-2">
       <div className="grid grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)] items-end gap-3">
-        <Field label={L.date} required>
+        <Field label={L.date} required={required}>
           <DateInput value={date} onChange={pickDay} placeholder="Select date" clearable={false}
             min={days[0]} max={days[days.length - 1]} isDisabled={(d) => !allowed.has(d)}
             dayTitle={(d) => { const h = holidayName(d); return h ? `Holiday · ${h}` : undefined }} />
         </Field>
-        <Field label={L.start} required>
+        <Field label={L.start} required={required}>
           <Input type="time" value={startTime} disabled={!date} onChange={setStartTime} />
         </Field>
-        <Field label={L.end} required>
+        <Field label={L.end} required={required}>
           <Input type="time" value={endTime} disabled={!date} onChange={setEndTime} />
         </Field>
       </div>

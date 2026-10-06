@@ -267,9 +267,11 @@ function useAutocomplete<T>(hits: T[], onPick: (x: T) => void) {
     if (!r || r.bottom < 0 || r.top > window.innerHeight) return false
     const below = window.innerHeight - r.bottom
     const up = below < 220 && r.top > below
+    /* wide enough for a SKU's full name, never past the screen's edge */
+    const width = Math.max(r.width, Math.min(440, window.innerWidth - r.left - 16))
     setPos(up
-      ? { bottom: window.innerHeight - r.top + 4, left: r.left, width: Math.max(r.width, 320), maxHeight: Math.min(320, r.top - 12) }
-      : { top: r.bottom + 4, left: r.left, width: Math.max(r.width, 320), maxHeight: Math.min(320, below - 12) })
+      ? { bottom: window.innerHeight - r.top + 4, left: r.left, width, maxHeight: Math.min(320, r.top - 12) }
+      : { top: r.bottom + 4, left: r.left, width, maxHeight: Math.min(320, below - 12) })
     return true
   }
   const setOpen = (v: boolean) => {
@@ -499,7 +501,7 @@ function SkuCode({ item, skus, onPick, onUnlink, onCustom, autoFocus }: {
   return (
     <div ref={ref} className="relative" onFocus={() => { committed.current = false; if (!open) setOpen(true) }} onKeyDown={onKeyDown}
       onMouseDown={() => { if (!open) setOpen(true) }} onBlur={() => { window.setTimeout(commitTyped, 180) }}>
-      <SearchInput value={q} onChange={(v) => { setQ(v); setHi(0); setOpen(true) }} placeholder={onCustom ? 'SKU code — search or type' : 'Search SKU'} />
+      <SearchInput value={q} onChange={(v) => { setQ(v); setHi(0); setOpen(true) }} placeholder={onCustom ? 'Search or type SKU' : 'Search SKU'} />
       {open && hits.length > 0 && (
         <AcPop pos={pos} popRef={popRef}>
           {hits.map((s, i) => s.code === NEW_SKU ? (
@@ -542,6 +544,8 @@ const TYPE_RULES: Record<string, { from: 'merchant' | 'customers' | 'facilities'
 }
 
 const jumpTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+/** a load in words — kg below a tonne (never "0.00 tons"), tonnes with the kg above it */
+const loadText = (kg: number) => (kg >= 1000 ? `${(kg / 1000).toFixed(1)} t (${kg.toLocaleString()} kg)` : `${kg.toLocaleString()} kg`)
 /** what checkout's "Back" left in the session (Grow) */
 const readSessionDraft = (): OrderDraft | null => {
   try { return JSON.parse(sessionStorage.getItem(DRAFT_KEY) || 'null') as OrderDraft | null } catch { return null }
@@ -991,7 +995,7 @@ function RevealToggle({ open, onToggle, waiting, waitingFilled = 0, label = 'inf
   const words = open ? `Less ${label}` : `More ${label} · ${waiting} field${waiting === 1 ? '' : 's'}${waitingFilled ? `, ${waitingFilled} filled` : ''}`
   if (iconOnly) return (
     <Tip text={words}><button type="button" onClick={onToggle} aria-expanded={open} aria-label={words}
-      className={`inline-flex h-7 w-7 items-center justify-center rounded-md text-brand-500 hover:bg-warm-100 ${className}`}>
+      className={`inline-flex h-7 w-7 items-center justify-center rounded-md border border-warm-200 text-ink-3 hover:bg-warm-50 hover:text-ink ${className}`}>
       {open ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
     </button></Tip>
   )
@@ -1088,7 +1092,7 @@ const HANDLING_ROW = 'flex flex-wrap items-center gap-x-8 gap-y-3'
 /** The console field grid — `cols` equal columns (4 default), SGrid's API with this form's gaps. */
 function SGrid({ children, cols = 4, className = '' }: { children: ReactNode; cols?: 3 | 4 | 5 | 7; className?: string }) {
   const c = { 3: 'lg:grid-cols-3', 4: 'lg:grid-cols-4', 5: 'lg:grid-cols-5', 7: 'lg:grid-cols-7' }[cols]
-  return <div className={`grid grid-cols-1 ${FIELD_GAPS} sm:grid-cols-2 ${c} lg:pr-10 ${className}`}>{children}</div>
+  return <div className={`grid grid-cols-1 ${FIELD_GAPS} sm:grid-cols-2 ${c} ${className}`}>{children}</div>
 }
 /** Two equal columns (a party's fields). */
 function Grid2({ children, className = '' }: { children: ReactNode; className?: string }) {
@@ -1268,7 +1272,7 @@ function AddressCard({ party, missing, invalid = [], onEdit, tag, editTip = 'Edi
             <div className="min-w-0 flex-1">
               <p className="flex flex-wrap items-center gap-2 text-[14px] font-bold text-ink">
                 {party.name || <span className="font-normal text-ink-3">No name</span>}
-                {party.businessName && <span className="text-[13px] font-normal text-ink-2">· {party.businessName}</span>}
+                {party.businessName && party.businessName !== party.name && <span className="text-[13px] font-normal text-ink-2">· {party.businessName}</span>}
                 {tag && <span className="rounded-full bg-warm-50 px-2 py-0.5 text-[11px] font-normal text-ink-2">{tag}</span>}
               </p>
               {contact && <p className="mt-1 text-[13px] text-ink-2">{contact}</p>}
@@ -1317,7 +1321,7 @@ function AddressSearch({ hits, onPick, placeholder }: { hits: AddrHit[]; onPick:
                   <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-warm-100 text-ink-3"><MapPinned size={15} /></span>
                   <span className="min-w-0 flex-1 py-1.5">
                     <span className="block truncate text-[13px] font-bold text-ink">
-                      {p.name || p.businessName || 'Unnamed'}{p.businessName && p.name ? <span className="font-normal text-ink-2"> · {p.businessName}</span> : null}
+                      {p.name || p.businessName || 'Unnamed'}{p.businessName && p.name && p.businessName !== p.name ? <span className="font-normal text-ink-2"> · {p.businessName}</span> : null}
                     </span>
                     <span className="block truncate text-[12px] text-ink-3">
                       {[p.contactNumber, [p.line1, p.city, p.state].filter(Boolean).join(', ')].filter(Boolean).join(' · ')}
@@ -1904,10 +1908,10 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     && allDrops.every((_, i) => mVehicles.some((v) => v.addressIdx.includes(i))))
   /* Grow step 1: the service is picked at checkout — until then the form shows the lowest rate for this route */
   const cheapest = merchantMode && ready && ftlOk && quotes.length ? Math.min(...quotes.map((q) => q.net)) : null
-  /* a new load type swaps the card list and drops the chosen service; switching a full vehicle on starts its Vehicle
-     Details with the hub's first vehicle carrying the whole load to every Ship To address */
+  /* a new load type keeps the chosen service — every service is offered in both modes (2026-09-29), and `selected`
+     drops one the new list does not offer; switching a full vehicle on starts its Vehicle Details with the hub's first
+     vehicle carrying the whole load to every Ship To address */
   const changeMode = (m: BookingMode) => {
-    if (m !== mode) setService('')
     if (merchantMode && m === 'ftl' && mode !== 'ftl') {
       setRows([{ vehicleType: fleet[0]?.code ?? '', count: 1, loadKg: Math.round(weights.chargeable) || 0, addressIdx: allDrops.map((_, i) => i) }])
     }
@@ -2760,7 +2764,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
         <SubTitle right={<span className="flex flex-wrap items-center justify-end gap-3">
           {!merchantMode && role !== 'rto' && (
             <span className="rounded-full bg-warm-100 px-2.5 py-0.5 text-[12px] text-ink-2">
-              {src === 'facilities' ? 'Hub' : src === 'customers' ? 'Customer address' : 'Merchant address'}
+              {src === 'facilities' || facility ? 'Hub' : src === 'customers' ? 'Customer address' : 'Merchant address'}
             </span>
           )}
           {right}
@@ -2783,7 +2787,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
             <AddressCard party={p} missing={missingOf(p, role)} invalid={invalidOf(p, role)}
               onEdit={editing ? (src !== 'facilities' ? () => openAddressSetup(role, idx) : undefined) : () => openAddress(role, idx, false)}
               editTip={editing ? 'Set up the address fields' : undefined} hubOnly={src === 'facilities'}
-              tag={facility ? 'Hub' : at >= 0 ? book[at].tag ?? 'Saved' : role === 'from' && fromList ? 'Saved' : filled(p.name) ? 'New' : undefined} />
+              tag={facility ? 'Saved' : at >= 0 ? book[at].tag ?? 'Saved' : role === 'from' && fromList ? 'Saved' : filled(p.name) ? 'New' : undefined} />
             {editing && src !== 'facilities' && (
               <button type="button" onClick={() => openAddressSetup(role, idx)}
                 className="mt-2 inline-flex items-center gap-1 text-[12px] font-bold text-brand-500 hover:text-brand-600">
@@ -2822,7 +2826,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
         <div className="flex min-w-0 items-center gap-3 self-start">
           <div className="min-w-0 flex-1">
             <AddressSearch hits={hitsFor(role)} onPick={(h) => applyPick(role, idx, h.value)}
-              placeholder={`Search ${what}${srcs.includes('facilities') ? ' or hubs' : ''} by name, number, address or company`} />
+              placeholder={`Search ${what}${srcs.includes('facilities') ? ' or hubs' : ''}`} />
           </div>
           {picked && !folded && !editing && (
             <Tip text="Show it as a card again"><button type="button" onClick={() => setSlotOpen(id, false)}
@@ -2912,7 +2916,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   /* owner, 2026-09-29: Shipment legs as ONE simple line below the two addresses — four pills (the three legs, or
      Direct) and, on the right, the hubs it goes through in words */
   const legsLine = (
-    <div className="mt-6 border-t border-warm-200 pt-4 lg:pr-10">
+    <div className="mt-6 border-t border-warm-200 pt-4">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-2">
         <span className="mr-2 flex items-center gap-2 text-[13px] font-bold text-ink">
           Shipment legs<InfoTip text="How it moves. First Mile = pick up and bring to a hub (off: Ship From is a hub). Line Haul = hub to hub. Last Mile = hub to delivery (off: Ship To is a hub). Pick & Del = one trip, no hub." />
@@ -2994,21 +2998,26 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     </p>
   )) : pickupState === 'auto-ask' || (pickupState === 'manual' && !hid('addrWindow')) ? (
     <div className="mt-6">
+      {/* the group's title carries required / optional once — its three fields carry no star of their own */}
       <div className="mb-2 flex items-center gap-3">
-        <span className="text-[13px] text-ink">
-          {askWindow || need('addrWindow') ? <>Pickup window<span className="text-danger-fg">&nbsp;*</span></> : 'Pickup window (optional)'}
+        <span className="text-[14px] font-bold text-ink">
+          Pickup window{askWindow || need('addrWindow')
+            ? <span className="text-danger-fg">&nbsp;*</span>
+            : <span className="ml-1.5 text-[13px] font-normal text-ink-3" title="Leave it empty to book the pickup later from Shipments">· Optional</span>}
         </span>
         {pickupState === 'manual' && hasWindow && !need('addrWindow') && (
           <button type="button" onClick={() => setSender((x) => ({ ...x, windowStart: '', windowEnd: '' }))}
             className="text-[12px] font-bold text-brand-500 hover:text-brand-600">Clear</button>
         )}
       </div>
-      <SlotWindowFields startAt={sender.windowStart ?? ''} endAt={sender.windowEnd ?? ''} policy={pickupPol} ok={slotOk}
+      <SlotWindowFields required={false} startAt={sender.windowStart ?? ''} endAt={sender.windowEnd ?? ''} policy={pickupPol} ok={slotOk}
         onChange={(w) => setSender((x) => ({ ...x, windowStart: w.startAt, windowEnd: w.endAt }))}
         error={windowErr || (showErrors && (askWindow || need('addrWindow')) && !hasWindow ? 'Choose a pickup date and time.' : null)} />
-      <p className="mt-1 text-[12px] text-ink-3">{askWindow
-        ? `Booked automatically in this window · up to ${pickupCfg.bookingHorizonDays} days ahead · same-day cut-off ${pickupCfg.sameDayCutoff}`
-        : 'Leave empty to schedule the pickup later from Shipments'}</p>
+      {askWindow && (
+        <p className="mt-1 text-[12px] text-ink-3">
+          {`Booked automatically in this window · up to ${pickupCfg.bookingHorizonDays} days ahead · same-day cut-off ${pickupCfg.sameDayCutoff}`}
+        </p>
+      )}
     </div>
   ) : null
   const fromSide = <>
@@ -3058,7 +3067,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
             </span>
             <div className="flex flex-wrap gap-3" role="radiogroup" aria-label={row.label}>
               {row.options.map((o) => (
-                <RadioCard key={o.value} label={o.label} sub={o.sub} checked={draftLayout[row.key] === o.value}
+                <RadioCard outline key={o.value} label={o.label} sub={o.sub} checked={draftLayout[row.key] === o.value}
                   onClick={() => setDraftLayout((l) => ({ ...l, [row.key]: o.value }) as FormLayout)} />
               ))}
             </div>
@@ -3107,7 +3116,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   const handlingSection = (
     <FormCard id="sec-handling" title="Handling" caption="How the goods must be handled on the way.">
     <>
-    <div className="lg:pr-10" role="group" aria-label="Handling">
+    <div role="group" aria-label="Handling">
       {/* row 1 — what the goods are like: six pill chips */}
       {handlingChipsVisible && <div className="flex flex-wrap items-center gap-2">
         {arrange(sortApi, 'handling-chips', GOODS_CATEGORIES.filter(({ name }) => !hid(catKey(name))).map(({ name, icon: Icon }): RevealEntry => {
@@ -3150,7 +3159,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
               <div className="flex items-center gap-2.5">
                 <span className="text-[13px] text-ink">{lbl('tags')}{need('tags') && <span className="text-danger-fg">&nbsp;*</span>}</span>
                 <div className="w-56">
-                  <MultiSelectDropdown options={TAG_OPTIONS} values={c.tags ?? []} noun="tags" placeholder="Add tags" onChange={(v) => setC({ tags: v })} />
+                  <MultiSelectDropdown size="sm" options={TAG_OPTIONS} values={c.tags ?? []} noun="tags" placeholder="Add tags" onChange={(v) => setC({ tags: v })} />
                 </div>
               </div>
             </Configurable>
@@ -3160,14 +3169,14 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
       {/* Grow (owner, 2026-10-06: "Tags and Dedicate Truck in one line"): the two as fields side by side, labels on top,
           the field grid's widths — Load type = the Dedicate Truck switch (on = a full vehicle, picked in Vehicle Details) */}
       {merchantMode && (
-        <div className={`${handlingChipsVisible || switchesRow ? 'mt-6' : ''} grid grid-cols-1 ${FIELD_GAPS} sm:grid-cols-2 lg:grid-cols-4 lg:pr-10`}>
+        <div className={`${handlingChipsVisible || switchesRow ? 'mt-6' : ''} grid grid-cols-1 ${FIELD_GAPS} sm:grid-cols-[repeat(auto-fill,minmax(220px,1fr))]`}>
           {!hid('tags') && (
             <SFld fieldKey="tags" label={lbl('tags')} required={need('tags')}>
-              <MultiSelectDropdown options={TAG_OPTIONS} values={c.tags ?? []} noun="tags" placeholder="Add tags" onChange={(v) => setC({ tags: v })} />
+              <MultiSelectDropdown size="sm" options={TAG_OPTIONS} values={c.tags ?? []} noun="tags" placeholder="Add tags" onChange={(v) => setC({ tags: v })} />
             </SFld>
           )}
           <SFld label="Load type">
-            <SwitchBox tall={!hid('tags')} icon={Truck} label="Dedicate Truck" checked={mode === 'ftl'} disabled={!!fromOverage || pr?.shipmentType === 'FTL'}
+            <SwitchBox icon={Truck} label="Dedicate Truck" checked={mode === 'ftl'} disabled={!!fromOverage || pr?.shipmentType === 'FTL'}
               onChange={(on) => changeMode(on ? 'ftl' : 'ltl')}
               title={mode === 'ftl' ? 'Full vehicle (FTL / FCL) — its vehicles are picked in Vehicle Details' : 'Shared vehicle (LTL / LCL) — switch on for a whole vehicle'} />
           </SFld>
@@ -3217,7 +3226,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     const words = open ? 'Hide SKU details' : `More SKU details · ${plural(waiting, 'field')}${waitingFilled ? `, ${waitingFilled} filled` : ''}`
     return (
       <Tip text={words}><button type="button" aria-label={`${label} details`} aria-expanded={open} onClick={onClick}
-        className="inline-flex h-8 w-7 items-center justify-center rounded-md text-brand-500 hover:bg-warm-100">
+        className="inline-flex h-8 w-7 items-center justify-center rounded-md border border-warm-200 text-ink-3 hover:bg-warm-50 hover:text-ink">
         {/* owner, 2026-09-29: a chevron only — the words are in the tooltip */}
         {open ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
       </button></Tip>
@@ -3233,7 +3242,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     pieces: t.pieces + p.quantity, kg: t.kg + p.weight * p.quantity, cm3: t.cm3 + p.l * p.w * p.h * p.quantity,
   }), { pieces: 0, kg: 0, cm3: 0 })
   const itemsBlock = (
-    <div className="lg:pr-10">
+    <div>
       <div className="overflow-x-auto">
         <div className="min-w-[760px]">
           <div className={`${ITEM_COLS} border-b border-warm-200 pb-2 text-[13px] text-ink-2`}>
@@ -3553,11 +3562,14 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   /* the total in lb when every package is in lb, else kg */
   const barU = parcels.length && parcels.every((p) => p.unitSystem === 'imperial') ? IMPERIAL : METRIC
   const addPackageBar = (
-    <div className="mt-4 flex flex-wrap items-center justify-between gap-3 lg:pr-10">
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
       <AddMoreButton label="Add Package" onClick={addParcel} />
-      <span className="text-[13px] text-ink-2">
-        {plural(pieces, 'piece')} · {round2(barU.toW(parcels.reduce((n, p) => n + (p.weight || 0) * (p.quantity || 0), 0)))} {barU.w} in {plural(parcels.length, 'package')}
-      </span>
+      {/* one package: its header already carries the totals */}
+      {parcels.length > 1 && (
+        <span className="text-[13px] text-ink-2">
+          {plural(pieces, 'piece')} · {round2(barU.toW(parcels.reduce((n, p) => n + (p.weight || 0) * (p.quantity || 0), 0)))} {barU.w} in {plural(parcels.length, 'package')}
+        </span>
+      )}
     </div>
   )
   /* each package: its fields, then (unless the builder hid the SKUs) its SKUs and Add SKU under them */
@@ -3565,9 +3577,9 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     <div>
       {packageList((p, i) => packageFields(p, i,
         !skusAsked ? null
-          : (p.items ?? []).length > 0 ? <div className="mt-6 lg:pr-10">{skuTable((p.items ?? []).map((it, k) => skuRow(it, i, k, k)), unitsOf(p.unitSystem))}</div>
+          : (p.items ?? []).length > 0 ? <div className="mt-6">{skuTable((p.items ?? []).map((it, k) => skuRow(it, i, k, k)), unitsOf(p.unitSystem))}</div>
           /* the builder shows a sample SKU line, so its fields can be set without adding one */
-          : editing ? <div className="mt-6 lg:pr-10">{skuTable(skuRow(blankItem(), i, 0, 0, true), unitsOf(p.unitSystem))}</div> : null,
+          : editing ? <div className="mt-6">{skuTable(skuRow(blankItem(), i, 0, 0, true), unitsOf(p.unitSystem))}</div> : null,
         skusAsked ? <AddRowLink label="Add SKU" onClick={() => addItem(i)} /> : undefined))}
       {addPackageBar}
     </div>
@@ -3632,8 +3644,9 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
                 <div className="min-w-0">
                   <MenuSelect value={r.vehicleType} placeholder={types.length ? 'eg, 8 Ton Truck' : 'Enter Ship From first'} options={types.map((x) => x.code)}
                     labels={(v) => typeOf(v)?.name ?? v} searchable onChange={(v) => setRow(i, { vehicleType: v })} />
+                  {/* "Required field." only after an Add Order / Continue attempt, like every other field */}
                   {!r.vehicleType
-                    ? <p className="mt-1.5 pl-2 text-[12px] text-danger-fg">Required field.</p>
+                    ? (showErrors ? <p className="mt-1.5 pl-2 text-[12px] text-danger-fg">Required field.</p> : null)
                     : <p className={`mt-1 text-[12px] ${heavy ? 'text-danger-fg' : 'text-ink-3'}`}>
                         {heavy ? `${r.loadKg.toLocaleString()} kg exceeds ${rowCap.toLocaleString()} kg` : note}
                       </p>}
@@ -3641,12 +3654,12 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
                 <NumBox integer min={1} value={r.count} onChange={(n) => setRow(i, { count: Math.max(1, n) })} />
                 <div>
                   <NumBox unit="kg" blankZero value={r.loadKg} error={err(!(r.loadKg > 0))} onChange={(n) => setRow(i, { loadKg: n })} />
-                  {!(r.loadKg > 0) && <p className="mt-1.5 pl-2 text-[12px] text-danger-fg">Required field.</p>}
+                  {showErrors && !(r.loadKg > 0) && <p className="mt-1.5 pl-2 text-[12px] text-danger-fg">Required field.</p>}
                 </div>
                 {/* one Ship To address: nothing to choose — it is the one */}
                 {addressLabels.length === 1 && r.addressIdx.includes(0)
                   ? <ReadBox value={addressLabels[0]} />
-                  : <MultiSelectDropdown options={addressLabels} noun="addresses" placeholder="Ship To addresses"
+                  : <MultiSelectDropdown size="sm" options={addressLabels} noun="addresses" placeholder="Ship To addresses"
                       values={r.addressIdx.map((a) => addressLabels[a]).filter(Boolean)}
                       onChange={(vals) => setRow(i, { addressIdx: vals.map((v) => addressLabels.indexOf(v)).filter((a) => a >= 0).sort((x, y) => x - y) })} />}
                 <Tip text="Remove vehicle"><button type="button" aria-label={`Remove vehicle row ${i + 1}`} disabled={rows.length === 1} onClick={() => removeVehicle(i)}
@@ -3659,7 +3672,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
         </div>
         <div className="mt-4"><AddMoreButton label="Add vehicle" onClick={addVehicle} /></div>
         <p className="mt-3 text-[12px] text-ink-3">
-          {vs.length} vehicle{vs.length === 1 ? '' : 's'} · load {(load / 1000).toFixed(2)} tons ({load.toLocaleString()} kg) of {cap.toLocaleString()} kg capacity
+          {plural(vs.length, 'vehicle')} · {loadText(load)} of {cap.toLocaleString()} kg
           {over.length > 0 && <span className="text-danger-fg"> · {over.length} overloaded</span>}
           {notServed.length > 0
             ? <span className="text-danger-fg"> · {notServed.map((i) => `Address ${i + 1}`).join(', ')} not assigned to a vehicle</span>
@@ -3678,8 +3691,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   /* Grow, Dedicate Truck on: the same table on the Ship From hub's fleet */
   const growVehicleSection = (
     <FormCard id="sec-vehicle" title="Vehicle Details"
-      caption="A full vehicle just for this order — book the vehicles that fit the load, and the Ship To addresses each one serves.">
-      {fleetNote && <p className="-mt-3 mb-4 text-[12px] text-ink-3">{fleetNote}</p>}
+      caption={`A full vehicle just for this order — book the vehicles that fit the load, and the Ship To addresses each one serves.${fleetNote ? ` ${fleetNote}` : ''}`}>
       {vehicleTable(fleet, (code) => fleet.find((v) => v.code === code)?.payloadKg ?? 0)}
     </FormCard>
   )
@@ -3689,7 +3701,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
      the carrier, and any service on top of the delivery. */
   const extrasReveal = arrange(sortApi, 'instructions', [
     !hid('specialInstructions') && ['specialInstructions', <F key="si" fieldKey="specialInstructions" label={lbl('specialInstructions')} multiline rows={2}
-      className="lg:pr-10" value={c.specialInstructions ?? ''} placeholder="eg, Call the customer 30 minutes before arriving"
+      value={c.specialInstructions ?? ''} placeholder="eg, Call the customer 30 minutes before arriving"
       onChange={(v) => setC({ specialInstructions: v })} />, filled(c.specialInstructions)],
   ], inMore, secOpen('sec-service'))
   const vasOpts = merchantMode
@@ -3715,7 +3727,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
       <div className={extrasReveal.nodes.length ? 'mt-8' : ''}>
         {!alone && <SubTitle right={addVasButton}>{lbl('vas')}</SubTitle>}
         {vasShown.length === 0
-          ? <p className="text-[13px] text-ink-3">Add a service to a package or a SKU — installation, assembly, a tail-lift…</p>
+          ? (alone ? <p className="text-[13px] text-ink-3">No services added.</p> : null)
           : (
             <div className="overflow-x-auto">
               <div className="min-w-[760px]">
@@ -3797,7 +3809,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     </SFld>],
     !hid('labelFormat') && ['labelFormat', <F key="lf" fieldKey="labelFormat" label={lbl('labelFormat')} value={c.labelFormat ?? ''} placeholder="eg, PDF"
       options={opts(LABEL_FORMATS)} onChange={(v) => setC({ labelFormat: v })} />, !!c.labelFormat],
-    !hid('totalLoadingTime') && ['totalLoadingTime', <FNum key="lt" fieldKey="totalLoadingTime" label={lbl('totalLoadingTime')}
+    !hid('totalLoadingTime') && ['totalLoadingTime', <FNum key="lt" fieldKey="totalLoadingTime" label={custom('totalLoadingTime', 'Total Loading Time (minutes)', 'Total Loading Time')}
       blankZero integer unit="min" placeholder="minutes" value={c.totalLoadingTime ?? 0} onChange={(n) => setC({ totalLoadingTime: n || null })} />, (c.totalLoadingTime ?? 0) > 0],
     ...customEntries('sec-service'),
   ], inMore, secOpen('sec-service'))
@@ -3820,11 +3832,19 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   const carrierSection = (
     <FormCard id="sec-carrier" title="Carriers" count={CARRIERS.length}
       caption="Who carries this consignment — pick one.">
-      <div className="rounded-lg bg-warm-50 p-4 lg:mr-10">
-        <div className="flex flex-wrap gap-4" role="radiogroup">
-          {CARRIERS.map((k) => (
-            <RadioCard key={k.code} label={k.code} filled={false} checked={c.carrier === k.code} onClick={() => setC({ carrier: k.code })} />
-          ))}
+      {/* pills on the card — the Handling chips' look (the chosen one: ink border, warm-50, bold, a check) */}
+      <div>
+        <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Carriers">
+          {CARRIERS.map((k) => {
+            const on = c.carrier === k.code
+            return (
+              <button key={k.code} type="button" role="radio" aria-checked={on} onClick={() => setC({ carrier: k.code })}
+                className={`inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[13px] transition-colors
+                  ${on ? 'border-ink bg-warm-50 font-bold text-ink' : 'border-line bg-surface text-ink-2 hover:border-warm-300 hover:text-ink'}`}>
+                {on && <Check size={13} strokeWidth={3} className="text-brand-500" />}{k.code}
+              </button>
+            )
+          })}
         </div>
         {!c.carrier && <ErrLine className="mt-3">Pick a carrier.</ErrLine>}
       </div>
@@ -3898,7 +3918,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   /* ---- the blocks' content ---- */
   /* an address reads back only once it has a name or a line (the default country alone is not an address) */
   const partyText = (p: Party) => (filled(p.name) || filled(p.line1)
-    ? [p.name, p.line1, p.line2, p.city, p.state, p.country, p.postalCode].filter((x) => filled(x)).join(', ') : '')
+    ? [p.name, p.line1, p.line2, p.city, p.state, p.postalCode, p.country].filter((x) => filled(x)).join(', ') : '')
   const skuUnits = goods.reduce((n, p) => n + (p.quantity || 0) * (p.items ?? []).filter((it) => !isBlankItem(it)).reduce((m, it) => m + (it.quantity || 0), 0), 0)
   const fullVehicle = merchantMode ? mode === 'ftl' : isFtl || dedicated
   const growCarrier = mode === 'ftl' ? '2GO Logistics' : '2GO Express'
@@ -3936,9 +3956,10 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     },
     goods: isFtl ? {
       title: 'FTL · Vehicle Details', jump: 'sec-vehicle',
-      value: `${consoleFtl} · ${plural(vehicles.length, 'vehicle')} · ${(actualLoad / 1000).toFixed(2)} tons`,
+      value: `${consoleFtl} · ${plural(vehicles.length, 'vehicle')} · ${loadText(actualLoad)}`,
     } : {
-      title: `${fullVehicle ? 'FTL' : 'LTL'} · Packages`, jump: 'sec-packages',
+      /* Grow speaks the merchant's words (the Handling switch), the console the ops' */
+      title: merchantMode ? (fullVehicle ? 'Dedicate Truck · Packages' : 'Packages') : `${fullVehicle ? 'FTL' : 'LTL'} · Packages`, jump: 'sec-packages',
       value: goodsPieces ? `${plural(goodsPieces, 'package')}${skuUnits ? ` · ${plural(skuUnits, 'SKU unit')}` : ''}` : muted('No packages yet'),
       sub: <>{goodsPieces > 0 && <span className="block">{weightLine}</span>}
         {merchantMode && mode === 'ftl' && vehicleLine && <span className="block">Vehicles: {vehicleLine}</span>}</>,
@@ -3954,7 +3975,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     },
     carrier: {
       title: 'Carrier', jump: 'sec-carrier',
-      value: c.carrier || muted('no carrier selected yet'),
+      value: c.carrier || muted('Not chosen yet'),
     },
   }
   const toggleLine = (key: string, on: boolean) => {
@@ -3977,7 +3998,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   }
   /* the foot (the totals): Grow = what it costs, the console = how much it is; ETA under both */
   const footRows = (key: string): [ReactNode, ReactNode, boolean?][] => key === 'eta'
-    ? [[<span title="Estimated — the carrier confirms the delivery date">ETA<span className="text-brand-500">*</span></span>,
+    ? [[<span title="Estimated — the carrier confirms the delivery date">ETA <span className="font-normal text-ink-3">(est.)</span></span>,
         etaDays != null ? plural(etaDays, 'day') : '—']]
     : merchantMode
       ? quote ? [
@@ -4088,7 +4109,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
           </SFld>
         </div>
         <SFld label={lbl('tags')}>
-          <MultiSelectDropdown options={TAG_OPTIONS} values={c.tags ?? []} noun="tags" placeholder="Add tags" onChange={(v) => setC({ tags: v })} />
+          <MultiSelectDropdown size="sm" options={TAG_OPTIONS} values={c.tags ?? []} noun="tags" placeholder="Add tags" onChange={(v) => setC({ tags: v })} />
         </SFld>
       </SGrid>
     </FormCard>
@@ -4105,7 +4126,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   const SIMPLE_COLS = 'grid grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)_88px_minmax(0,1fr)_minmax(0,1.3fr)_minmax(0,1.3fr)_minmax(128px,auto)] items-start gap-x-3'
   const simplePackages = (
     <FormCard id="sec-packages" title="Package & SKU">
-      <div className="overflow-x-auto lg:pr-10">
+      <div className="overflow-x-auto">
         <div className="min-w-[900px]">
           <div className={`${SIMPLE_COLS} border-b border-warm-200 pb-2 text-[13px] text-ink-2`}>
             <span>Package ID</span><span>Package Type</span><span>Quantity<span className="text-danger-fg"> *</span></span>
@@ -4142,7 +4163,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
           })}
         </div>
       </div>
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 lg:pr-10">
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <AddMoreButton label="Add Package" onClick={() => { setFocusLine({ i: parcels.length, k: 0 }); setParcels((ps) => [...ps, newParcel()]) }} />
         <span className="text-[13px] text-ink-2">{pieces} piece{pieces === 1 ? '' : 's'} in {parcels.length} package{parcels.length === 1 ? '' : 's'}</span>
       </div>
@@ -4582,7 +4603,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
       {allFieldsDialog}
 
       {/* sticky footer — the form switch (owner, 2026-09-29: where the section strip was), then Go Back + Add Order */}
-      <div className="sticky bottom-0 z-30 mt-6 flex items-center gap-x-4 rounded-xl border border-warm-200 bg-surface px-6 py-3 shadow-ds-1">
+      <div data-form-footer className="sticky bottom-0 z-30 mt-6 flex items-center gap-x-4 rounded-xl border border-warm-200 bg-surface px-6 py-3 shadow-ds-1">
         {merchantMode ? (
           /* Grow step 1: the lowest rate for what is on screen (the service is picked at checkout), or the carried
              service's estimate */
@@ -4595,7 +4616,8 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
               : <p className="truncate text-ink"><span className="text-ink-2">From </span><b>{money(cheapest ?? 0, currency)}</b><span className="text-ink-2"> · choose the service next</span></p>}
           </div>
         ) : (
-          <Button variant="outline" disabled={editing} onClick={() => setTier(simple ? 'full' : 'simplified')}>
+          /* a view switch, not an action — quieter than Add Order */
+          <Button variant="ghost" disabled={editing} onClick={() => setTier(simple ? 'full' : 'simplified')}>
             {simple ? 'Switch to Regular form' : 'Switch to Simplified'}
           </Button>
         )}
@@ -4603,7 +4625,13 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
         <div className="ml-auto flex shrink-0 items-center gap-3">
           {editing
             ? <span className="text-[13px] text-ink-2">Save or cancel the form changes first</span>
-            : showErrors && !canSubmit && <span className="text-[13px] text-danger-fg">{missingCount} field{missingCount === 1 ? '' : 's'} to fill or fix</span>}
+            : showErrors && !canSubmit && (
+              /* a way back to the gaps once the page has scrolled away from them */
+              <button type="button" onClick={() => { const first = orderedSections.find((s) => !doneOf[s]); if (first) jumpTo(first) }}
+                className="text-[13px] font-bold text-danger-fg hover:underline">
+                {missingCount} field{missingCount === 1 ? '' : 's'} to fill or fix
+              </button>
+            )}
           {!editing && <Button variant="ghost" onClick={goBack}>Go Back</Button>}
           {/* enabled: a click with gaps shows them (errors appear only after this attempt) */}
           {merchantMode && <Button variant="outline" onClick={saveForLater} disabled={editing}>Save for later</Button>}
@@ -4698,7 +4726,9 @@ function AnchoredCard({ anchorKey, onClose, children }: { anchorKey: string; onC
       if (!el) { setPos({ top: 120, left: Math.max(16, (vw - CARD_W) / 2), maxHeight: vh - 160, modal }); return }
       const r = el.getBoundingClientRect()
       const gap = 14
-      const below = vh - r.bottom - gap - 16
+      /* the form's sticky footer covers the bottom of the screen — the card stays above it (a pop-up sits over the footer) */
+      const foot = modal ? 0 : (document.querySelector('[data-form-footer]') as HTMLElement | null)?.getBoundingClientRect().height ?? 0
+      const below = vh - r.bottom - gap - 16 - foot
       const above = r.top - gap - 16
       const left = Math.min(Math.max(16, r.left - 6), vw - CARD_W - 16)
       setPos(below >= 420 || below >= above

@@ -11,8 +11,10 @@
  * fleet. Every rate is ESTIMATED (growOrders/rates).
  *
  * `layout="grid"` (owner, 2026-10-05, the form builder's Services choice, the default): the live portal's compact
- * "Services" block — the cards two per row inside one quiet frame: a radio, the name + the carrier, the rate (no
- * transit days since 2026-10-06). Nothing is preselected and nothing collapses (the grid is short enough to stay open).
+ * "Services" block — the cards two per row (inside one quiet frame only when the chooser shows its own load-type
+ * segment; with `hideMode` they sit on the host's card): a radio, the name + the carrier, the rate (no transit days since
+ * 2026-10-06). Nothing is preselected and nothing collapses (the grid is short enough to stay open). Not priced yet
+ * (`ready` false) = the cards are faded, with no rate.
  */
 import { useState, type ReactNode } from 'react'
 import { Banknote, Boxes, Pencil, Truck } from 'lucide-react'
@@ -38,7 +40,7 @@ export function RateCard({ title, left, right, trailing, selected, onClick, iner
       className={`w-full rounded-xl bg-surface text-left transition-colors
         focus:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-500/20
         ${selected ? 'cursor-pointer border-2 border-brand-500 px-[19px] py-[15px]'
-          : inert ? 'cursor-default border border-line px-5 py-4'
+          : inert ? 'cursor-default border border-line px-5 py-4 opacity-60'
           : 'cursor-pointer border border-line px-5 py-4 hover:border-warm-400'}`}>
       <div className="flex items-start justify-between gap-4">
         <p className="min-w-0 text-[17px] font-bold leading-6 text-ink">{title}</p>
@@ -65,7 +67,7 @@ function ServiceChoice({ q, carrier, selected, inert, onClick, currency }: {
       className={`flex min-w-0 items-center gap-4 rounded-lg bg-surface text-left transition-colors
         focus:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-500/20
         ${selected ? 'cursor-pointer border-2 border-brand-500 px-[19px] py-[15px]'
-          : inert ? 'cursor-default border border-line px-5 py-4'
+          : inert ? 'cursor-default border border-line px-5 py-4 opacity-60'
           : 'cursor-pointer border border-line px-5 py-4 hover:border-warm-400'}`}>
       <span className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${selected ? 'border-brand-500' : 'border-warm-400'}`}>
         {selected && <span className="h-2.5 w-2.5 rounded-full bg-brand-500" />}
@@ -75,7 +77,7 @@ function ServiceChoice({ q, carrier, selected, inert, onClick, currency }: {
         <span className="block truncate text-[13px] text-ink-3">{carrier}</span>
       </span>
       <span className="shrink-0 text-right">
-        <span className="block text-[15px] font-bold leading-6 tabular-nums text-ink">{inert ? '—' : money(q.net, currency)}</span>
+        <span className="block text-[15px] font-bold leading-6 tabular-nums text-ink">{inert ? '' : money(q.net, currency)}</span>
       </span>
     </div>
   )
@@ -148,7 +150,8 @@ export function ServiceTypeChooser({
         ) : servicesHidden ? null : (
           <>
             {grid ? (
-              <div className={`${hideMode ? '' : 'mt-4 '}rounded-xl border border-line p-5`}>
+              /* inside the form's own card (hideMode) the cards sit on it directly — no second frame */
+              <div className={hideMode ? '' : 'mt-4 rounded-xl border border-line p-5'}>
                 <div className="grid gap-4 lg:grid-cols-2" role="radiogroup" aria-label="Service Type">
                   {quotes.map((q) => (
                     <ServiceChoice key={q.code} q={q} carrier={carrier} currency={currency} selected={ready && q.code === selected} inert={!ready}
@@ -162,7 +165,7 @@ export function ServiceTypeChooser({
                 <RateCard key={q.code} selected={ready && q.code === selected} inert={!ready} onClick={() => pick(q.code)}
                   title={q.name}
                   left={<><Truck size={16} className="shrink-0 text-brand-500" />{carrier || 'Carrier assigned at booking'}</>}
-                  right={ready ? money(q.net, currency) : '—'} />
+                  right={ready ? money(q.net, currency) : ''} />
               ))}
             </div>
             )}

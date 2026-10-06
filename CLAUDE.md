@@ -238,8 +238,11 @@ Product changes layered on the replica (deliberate departures from the live port
   Merchant = the header ⇄, Consignment Number, Total Loading Time, the console's Load type / Vehicle Type, lat/long,
   Pallet Space; no Carriers card, no Shipment legs, no form builder, no Simplified tier, no Transfer type, no hubs as
   addresses). Cards: Consignment details · Ship From → Ship To (pickup window under Ship From follows the pickup
-  module: off · manual optional · auto-ask required · auto-rule shown) · Package & SKU · **Handling** (the console's:
-  six category chips · toggles, then ONE line of fields **Tags · Load type** (owner, 2026-10-06: "in one line") — the load
+  module: off · manual optional · auto-ask required · auto-rule shown; titled "Pickup window · Optional" or "Pickup
+  window *", its three fields carry no star of their own — `SlotWindowFields required={false}`, every pickup dialog keeps
+  the default) · Package & SKU · **Handling** (the console's:
+  six category chips · toggles, then ONE line of fields **Tags · Load type** (owner, 2026-10-06: "in one line"; cells ≥ 220px,
+  so "Dedicate Truck" is never cut beside the Summary) — the load
   type is ONE toggle, the second branch's **Dedicate Truck** as a `SwitchBox` (`components/consignmentForm`: a switch drawn
   as a field, the inputs' width and height, no hint line; off = shared LTL / LCL, on = full vehicle; the console's Load
   type and the Simplified tier use the same SwitchBox, and the console's **Vehicle Type** is disabled — "Turn on Dedicate
@@ -296,12 +299,13 @@ Product changes layered on the replica (deliberate departures from the live port
   8 movement types, stored as `consignment.movementType`); each leg FOLLOWS the chosen address until set by hand (FM /
   LM: an address = on, a hub = off; LH: the two ends' hubs differ). A leg set by hand narrows that end's picker (FM on
   = an address, off = a hub) and clears an end of the wrong kind; address cards carry a Merchant / Customer address ·
-  Hub pill; a Transfer locks Line Haul only; soft hints for LH vs the hubs. A pickup request is booked only with First
+  Hub pill (Hub whenever the picked end is a hub; its card's tag then reads Saved — Grow never says Hub); a Transfer locks Line Haul only; soft hints for LH vs the hubs. A pickup request is booked only with First
   Mile. Grow never shows it → Package & SKU (Items = SKU + quantity,
   master or typed SKU — a typed code is kept on Enter / Tab / leaving the field; or Packages, Add Package at the
   bottom; Handling = two rows: Order Category chips, then Barcode on every box · Delivered in parts · Clearance ·
   Tags) → **Service & instructions** (one card: Service Type · Load type · Vehicle Type · Total Loading Time, then
-  Special Instructions + VAS per package or SKU, `VasLine.packageId`) → **Carriers last** (names only). Label Format
+  Special Instructions + VAS per package or SKU, `VasLine.packageId`) → **Carriers last** (names only, as pills like the
+  Handling chips — the chosen one ink border + warm-50 + a check). Label Format
   sits in Consignment details; RTO = one toggle "RTO address same as Ship From address".
   Consignment Type drives the ends (Reverse swaps them, Transfer = hub → hub, RTO / payment only where they
   apply, Exchange requires its order no., Service = goods optional). Consignment Number has no fallback.
@@ -315,7 +319,8 @@ Product changes layered on the replica (deliberate departures from the live port
   and "Packages with their SKUs" both = both shown) until the builder's next Save writes the rules and clears them. **Handling** is its own card (Order
   Category chips — each hideable — · Barcode · In parts · Clearance · Tags) between Package & SKU and **Service &
   instructions**. Service Type always has a value (hideable since 2026-10-05 — see Builder v3); Vehicle Type is optional. The footer carries the tier switch
-  (**Switch to Simplified**, `console-consignment-form-v2-tier`): the original Simplified tier restyled — 3-column
+  (**Switch to Simplified**, a ghost button, `console-consignment-form-v2-tier`; after an Add attempt "n fields to fill or fix"
+  is a button that jumps to the first incomplete card): the original Simplified tier restyled — 3-column
   Consignment (window on the Ship By Date) · address cards · one Package & SKU table · Carriers; not customisable.
   **Form builder** ("Edit consignment form"): the live form is the preview — rename · Required · More (waits
   behind "More information", revealed IN PLACE) · hide, an eye for the hidden ones; locks = registry mandatory +
@@ -324,7 +329,9 @@ Product changes layered on the replica (deliberate departures from the live port
   (local `FormCard` + `InfoTip`); row-adders are compact `+ Add SKU` links;
   address fields are customised inside the address popup. Rules live in `fe-consignment-form-v2-rules` over the shared config —
   never changes `/add`, Grow or the list. Errors only after an Add Order attempt. OWNER EXCEPTION to the
-  type-scale rule, this form only: a 24px row gap (its labels use the shared `field-label` since 2026-10-05).
+  type-scale rule, this form only: a 24px row gap (its labels use the shared `field-label` since 2026-10-05). Every grid,
+  textarea and bar runs to the card padding (no 40px right gutter; only the package field row keeps `pr-10` for its
+  chevron); every control is 32px (`MultiSelectDropdown size="sm"`); the more-details chevrons are neutral bordered buttons.
   **Grow may hide Consignment Type and Ship By Date** (owner, 2026-10-06; `GROW_UNLOCKED`): system-mandatory, so locked on
   the console (the type decides each end there), but the Grow form's builder can hide them — hidden, the order books
   Forward and ships by today (a resumed draft / Modify keeps its own); neither is offered as "Required".
@@ -361,7 +368,8 @@ Product changes layered on the replica (deliberate departures from the live port
   **Builder v3 (2026-10-05, owner: "it has to be easy to use", then "I don't want the side bar — find another way — but
   I love the idea")** — click-to-select: the preview's fields are click targets (dashed frame, brand frame when selected;
   state as tags on the frame: Grow · Hidden · More · Format · lock) and a click opens that field's SETTINGS CARD right next
-  to it (`AnchoredCard`: portaled, below the field or above it, follows the scroll; outside click / Esc / Done closes) —
+  to it (`AnchoredCard`: portaled, below the field or above it, follows the scroll, never under the sticky footer
+  `[data-form-footer]`; outside click / Esc / Done closes) —
   Name on the form · Show on the form · Required · Put under "More" · What can be typed (the Format editor, live, with Try
   it) · Remove field (own fields) · Use the console setting (Grow). NO side panel: the form-level choices sit on the cards
   they change — the Ship From → Ship To card's dashed **How addresses are shown** panel (RadioCards, 2026-10-06: **Layout**
@@ -412,7 +420,8 @@ Product changes layered on the replica (deliberate departures from the live port
   movable); a repeating block shows ONE **sample line** in
   the builder (a SKU line with its details, a VAS line) so its fields can be set without adding one — nothing is saved.
   Grow's **Grid** = the lane's services as compact radio cards two per row (name + carrier · rate — no days since
-  2026-10-06, nothing preselected, nothing collapses), `serviceCards.ServiceTypeChooser layout`.
+  2026-10-06, nothing preselected, nothing collapses; on the host's card, no second frame; not priced yet = faded, no
+  rate), `serviceCards.ServiceTypeChooser layout`.
   **Field order + Summary (2026-10-05, owner: "drag and drop and resequence columns in the same sections" · "allow to show
   summary or not … their summary section can be different")** — while the form is edited every field is a drag cell
   (`SortCell`, native HTML5 drag: a grip on hover, a brand bar where it lands; the field's settings card also has
@@ -426,11 +435,13 @@ Product changes layered on the replica (deliberate departures from the live port
 300px, while the form area is ≥ 1000px wide (a container query on the form wrapper, so a collapsed sidebar counts), else under
 the cards; it is NOT one of the movable cards. It looks like the second branch's **Shipment Summary** (owner, 2026-10-06):
   stacked blocks — a 12px bold grey label, **Edit** on the right (jumps to its card), the value, a 12px grey line — then a
-  foot of totals. Grow = **Shipment Summary**: Ship From (+ Pickup) · Ship To · LTL / FTL · Packages (packages · SKU units;
+  foot of totals. Grow = **Shipment Summary**: Ship From (+ Pickup) · Ship To · Packages ("Dedicate Truck · Packages" with a
+  full vehicle — the console says LTL / FTL; packages · SKU units;
   Dead · Vol · Chargeable; Vehicles) · Service (name · carrier, + VAS; "Chosen in the next step" until step 2 picks one) ·
-  foot Delivery · Value-added services · Total (net, before tax) — with no service yet ONE row "Estimated from ₱X" · ETA*. Console = **Consignment Summary**: Consignment (merchant · type, Order / Ref) · Ship From (+ pick-up
+  foot Delivery · Value-added services · Total (net, before tax) — with no service yet ONE row "Estimated from ₱X" · ETA (est.). Console = **Consignment Summary**: Consignment (merchant · type, Order / Ref) · Ship From (+ pick-up
   window) · Ship To (+ delivery window) · Shipment legs (+ via hubs) · Packages / FTL · Vehicle Details · Service (+ load type,
-  vehicle, VAS) · Carrier · foot Pieces / Vehicles · Chargeable weight / Load · ETA*. Blocks + foot rows = `SUMMARY_LINES`
+  vehicle, VAS) · Carrier · foot Pieces / Vehicles · Chargeable weight / Load · ETA (est.). An address reads name, lines,
+  city, state, postal code, country (as its card); a load under a tonne reads in kg (`loadText`, never "0.00 tons"). Blocks + foot rows = `SUMMARY_LINES`
   (keys; `foot` rows stay at the foot, blocks drag in zone `summary`); its on / off and
   hidden lines live per portal on their own (`formSetup.loadSummary/saveSummary`, `fe-consignment-form-v2-summary[-grow]`,
   default console OFF, Grow ON — Grow does NOT follow the console here); while editing the card shows a "Shown on this

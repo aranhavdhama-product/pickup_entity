@@ -337,13 +337,16 @@ export function RowCard({ title, onRemove, footer, children, removeTip }: {
 }
 
 /** Staging's radio card (RTO mode, Carriers): a bordered pill with a ring; the chosen one outlined brand. */
-export function RadioCard({ label, sub, checked, onClick, filled = true }: {
+export function RadioCard({ label, sub, checked, onClick, filled = true, outline = false }: {
   label: string; sub?: string; checked: boolean; onClick: () => void; filled?: boolean
+  /** additive (2026-10-06): unchosen = white with a line border (not a grey fill that reads as disabled) */
+  outline?: boolean
 }) {
   return (
     <button type="button" role="radio" aria-checked={checked} onClick={onClick}
       className={`flex items-center gap-2.5 rounded-lg border px-4 py-3 text-left text-[13px] transition-colors
         ${checked ? 'border-ink bg-warm-50 text-ink'
+          : outline ? 'border-line bg-surface text-ink-2 hover:border-warm-300'
           : `border-transparent ${filled ? 'bg-warm-50' : 'bg-surface'} text-ink-2 hover:border-warm-300`}`}>
       {checked
         ? <CircleDot size={15} className="shrink-0 text-brand-500" />
