@@ -35,7 +35,7 @@ import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleMinus, Info, Lock, MapPinned, Package, Pencil, Plus, RotateCcw,
-  Bookmark, GripVertical, ListChecks, ScanBarcode, SlidersHorizontal, Trash2, Truck, X, Crown, Flame, GlassWater, Layers, Users, Weight, Monitor, Store,
+  Bookmark, Copy, GripVertical, ListChecks, ScanBarcode, SlidersHorizontal, Trash2, Truck, X, Crown, Flame, GlassWater, Layers, Users, Weight, Monitor, Store,
 } from 'lucide-react'
 import { blankParty, CURRENCY } from '../../growOrders/seed'
 import { growOrderActions, orderById, pickupRequestById, useGrowOrders } from '../../growOrders/store'
@@ -50,7 +50,7 @@ import {
   Button, DateInput, Input, MenuSelect, Modal, MultiSelectDropdown, Toggle, SearchInput, Tooltip,
 } from '../../nueva/components'
 import {
-  AddMoreButton, PhoneInput, RadioCard, RowCard, SwitchField, TimeBox, UnitBox,
+  AddMoreButton, PhoneInput, RadioCard, SwitchField, TimeBox, UnitBox,
 } from '../../components/consignmentForm'
 import { money, OTHER_ADDRESS, partyOk, prWindow, storeOptionLabel } from '../GrowOrders/utils'
 import { hubName, inboundHubFor, INBOUND_HUBS } from '../../growOrders/hubs'
@@ -145,6 +145,9 @@ const newParcel = (): Parcel => ({
   items: [], itemInfo: '', quantity: 1, weight: 1, l: 10, w: 10, h: 10, weightMode: 'auto',
   trackingNumber: '', palletSpace: '', description: '',
 })
+const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
+/** packages listed before "Show all" (owner, 2026-10-05: "if I have 100 packages this form is too much scroll") */
+const PKG_PAGE = 8
 const newVas = (): VasLine => ({ level: 'SKU', skuCode: '', service: '', serviceTimeMin: 0, remark: '' })
 /* owner, 2026-09-29: a service is added to a PACKAGE or a SKU (a full-vehicle booking: the whole booking) */
 const vasOk = (v: VasLine) => !!v.level && !!v.service && (v.level !== 'SKU' || !!v.skuCode) && (v.level !== 'PACKAGE' || !!v.packageId)
@@ -916,7 +919,7 @@ function DateTimeCell({ label, at, onChange, fallbackTime }: { label: string; at
  * optional ones, each in the main grid or the "More information" fold by its placement (builder).
  * `variant="rto"` = the return address: Contact + Postal Code required, no coordinates / floor.
  */
-function PartyBlock({ party, set, nameLabel, requireContact, hid, variant = 'full', grouped = false, wide = false }: {
+function PartyBlock({ party, set, nameLabel, requireContact, hid, variant = 'full', grouped = false, wide = false, half = false }: {
   party: Party; set: (patch: Partial<Party>) => void; nameLabel: string
   requireContact?: boolean; hid: (k: string) => boolean; variant?: 'full' | 'rto'
   /** the popup: the same order under two quiet headings, Contact then Address */
@@ -924,6 +927,8 @@ function PartyBlock({ party, set, nameLabel, requireContact, hid, variant = 'ful
   /** on the form itself (the builder's "Fields on the form"): the headings as CONTACT DETAILS / ADDRESS DETAILS,
       four columns, "More address details" below */
   wide?: boolean
+  /** with `wide`: the address has half the card (Ship From and Ship To side by side) — two columns, not four */
+  half?: boolean
 }) {
   const rto = variant === 'rto'
   const b = useContext(BuilderCtx)
@@ -993,9 +998,9 @@ function PartyBlock({ party, set, nameLabel, requireContact, hid, variant = 'ful
     return (
       <div>
         {head('Contact details')}
-        <SGrid>{who.nodes}</SGrid>
+        {half ? <Grid2>{who.nodes}</Grid2> : <SGrid>{who.nodes}</SGrid>}
         <div className="mt-8">{head('Address details')}</div>
-        <SGrid>{where.nodes}</SGrid>
+        {half ? <Grid2>{where.nodes}</Grid2> : <SGrid>{where.nodes}</SGrid>}
         {toggle}
       </div>
     )
@@ -1545,6 +1550,11 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   const useItems = !simple && !isFtl && !fromOverage && !jump && (draftShape ? draftShape === 'items' : goodsSetting === 'sku')
   /* packages entered as two lists (SKUs, then boxes) or as boxes with their SKUs */
   const separateLayout = goodsSetting === 'separate'
+  /* owner, 2026-10-05: with several packages ONE is open for editing and the rest fold to one-line rows; past
+     PKG_PAGE rows the list stops at "Show all" — 100 packages no longer means 100 cards to scroll past */
+  const [openPkgId, setOpenPkgId] = useState<string | null>(null)
+  const [allPkgs, setAllPkgs] = useState(false)
+  const [allSkus, setAllSkus] = useState(false)
   /* "10 × fridge" = ONE package spec: quantity 10, the SKU's L × W × H, weight = the SKU's (Custom, no
      tare — what reweigh() gives), one SKU unit inside. Parcel.quantity = packages, ParcelItem.quantity = units each. */
   const itemParcels = useMemo<Parcel[]>(() => lines.filter((l) => !isBlankItem(l.item)).map((l) => ({
@@ -1692,6 +1702,12 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   const typeRule = TYPE_RULES[ctype]
   /* any address typed on the form → the two ends stack, each four columns wide */
   const anyInline = inlineOf('from') || inlineOf('to') || (typeRule.rto && c.rtoMode === RTO_MODES[1] && inlineOf('rto'))
+  /* owner, 2026-10-05: on Grow, with the Summary card OFF, the addresses typed on the form sit side by side — Ship From
+     on the left half, Ship To on the right, each in two columns (with the Summary on, they stack, four columns wide) */
+  const summaryOn = summaryCfg.enabled && summaryLinesOf(formPortal).some((l) => !summaryCfg.hidden.includes(l.key))
+  const halfAddresses = merchantMode && anyInline && !summaryOn
+  /* the stacked look: an address on the form is four columns wide, so its window keeps to the left half */
+  const stackedInline = anyInline && !halfAddresses
   const endOf = (p: Party, code?: string): RouteEnd => {
     const lc = code ?? p.locationCode ?? ''
     if (HUB_CODES.has(lc)) return { kind: 'facility', hub: lc }
@@ -1843,6 +1859,12 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     fmtOk('skuDescription', it.description), fmtOk('skuHsn', it.hsnCode), fmtOk('skuImage', it.imageUrl)].every(Boolean)
   /* Simplified asks a SKU's code / name only */
   const skuReq = isFtl ? [] : skuLines.map(({ it }) => (simple ? isBlankItem(it) || filled(it.name) : skuLineOk(it) && skuRuleOk(it)))
+  /** one package is complete — its own fields and (packages with their SKUs) its SKU lines. A folded package row says
+      "Incomplete" after an Add attempt, and the first incomplete one opens. */
+  const pkgOk = (p: Parcel) => p.quantity > 0 && p.weight > 0
+    && [...needOk('pkgTracking', filled(p.trackingNumber)), ...needOk('pkgPalletSpace', filled(p.palletSpace)), ...needOk('pkgDescription', filled(p.description)),
+      fmtOk('pkgTracking', p.trackingNumber), fmtOk('pkgPalletSpace', p.palletSpace), fmtOk('pkgDescription', p.description)].every(Boolean)
+    && (goodsSetting === 'separate' || (p.items ?? []).every((it) => skuLineOk(it) && skuRuleOk(it)))
   const vasReq = simple || isHidden('vas') ? [] : (c.vas ?? []).map(vasOk)
   /* Items mode needs at least one SKU picked (a blank line is ignored) */
   const goodsReq = useItems && !typeRule.goodsOptional ? [itemParcels.length > 0] : []
@@ -2143,6 +2165,9 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     if (!canSubmit) {
       /* the first attempt turns the errors on; the page jumps to the first incomplete section */
       setShowErrors(true)
+      /* a folded package hides its errors — open the first incomplete one */
+      const badPkg = !useItems && !isFtl ? parcels.find((p) => !pkgOk(p)) : undefined
+      if (badPkg?.packageId) { setOpenPkgId(badPkg.packageId); setAllPkgs(true) }
       const first = sections.find((s) => !doneOf[s])
       if (first) setTimeout(() => jumpTo(first), 60)
       return
@@ -2406,7 +2431,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
       <DateTimeCell label={`${w} End Time`} at={p.windowEnd ?? ''} fallbackTime="23:59" onChange={(v) => patchParty(role, idx)({ windowEnd: v })} />
     </>
     /* the address on the form is four columns wide — the window keeps to its left half (the full width in the narrower preview) */
-    return <Grid2 className={`mt-6 ${anyInline && !editing ? 'lg:w-1/2 lg:pr-3' : ''}`}>{cells}</Grid2>
+    return <Grid2 className={`mt-6 ${stackedInline && !editing ? 'lg:w-1/2 lg:pr-3' : ''}`}>{cells}</Grid2>
   }
   const addressSlot = (role: Role, idx: number, title: ReactNode, right?: ReactNode) => {
     const p = partyOf(role, idx)
@@ -2485,7 +2510,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
           )}
         </div>
         <div className="mt-6">
-          <PartyBlock wide party={p} set={patchParty(role, idx)} nameLabel={role === 'to' ? 'Customer Name' : 'Sender Name'}
+          <PartyBlock wide half={halfAddresses} party={p} set={patchParty(role, idx)} nameLabel={role === 'to' ? 'Customer Name' : 'Sender Name'}
             requireContact={role !== 'from'} hid={hid} variant={role === 'rto' ? 'rto' : 'full'} />
         </div>
         {typed && !editing && (
@@ -2641,7 +2666,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   const fromSide = <>
     {addressSlot('from', 0, 'Ship From')}
     {/* the address on the form is four columns wide — the window keeps to the left half */}
-    <div className={anyInline && merchantMode && !editing ? 'lg:w-1/2 lg:pr-3' : ''}>{merchantMode ? merchantPickupWindow : windowCells('from', 0)}</div>
+    <div className={stackedInline && merchantMode && !editing ? 'lg:w-1/2 lg:pr-3' : ''}>{merchantMode ? merchantPickupWindow : windowCells('from', 0)}</div>
     {typeRule.rto && (
       <div className="mt-6">
         <InlineSwitch label="RTO address same as Ship From address" title="If it can't be delivered, it comes back to the Ship From address"
@@ -2674,7 +2699,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
       caption={ctype === 'Transfer' ? 'Stock moving between two facilities — pick a hub at each end.'
         : anyInline ? 'Search a saved address, or type the address here.'
         : merchantMode ? 'Pick a saved address or add a new one.' : 'Pick a saved address or add a new one — Shipment legs decide whether each end is an address or a hub.'}>
-      {anyInline
+      {stackedInline
         /* the fields on the form: one address under the other, each four columns wide (the live portal's look) */
         ? <div>
             <div className="min-w-0">{fromSide}</div>
@@ -2987,53 +3012,146 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
       </>
     )
   }
+  /* ---- the package list (owner, 2026-10-05: "show package and SKU info in less space — 100 packages is too much
+     scroll; and what if every field is shown"): ONE package is open for editing; every other one is a single
+     row — its type · count × size · weight · SKUs, the total on the right, "Incomplete" after an Add attempt.
+     Click a row to open it (the open one folds). The open card carries its totals in its header (no footer row),
+     Duplicate (a copy right below — the quick way to many similar boxes) and Remove. Past PKG_PAGE rows the
+     list stops at "Show all". However many fields the builder shows, they live only in the open package. */
+  const firstPkgId = parcels[0]?.packageId ?? '0'
+  /* the builder's preview always has a package open (its fields are what gets clicked) */
+  const openId = parcels.length === 1 ? firstPkgId : openPkgId ?? (editing ? firstPkgId : null)
+  const pkgIdOf = (p: Parcel, i: number) => p.packageId ?? String(i)
+  const skusOf = (p: Parcel) => (p.items ?? []).filter((it) => !isBlankItem(it))
+  const addParcel = () => { const np = newParcel(); setFocusLine(null); setParcels((ps) => [...ps, np]); setOpenPkgId(np.packageId ?? null) }
+  /** a copy right below — new id, no tracking number (it is per box); its SKUs too when they live in the package */
+  const duplicateParcel = (i: number) => {
+    const src = parcels[i]
+    if (!src) return
+    const copy: Parcel = { ...src, packageId: newPackageId(), trackingNumber: '', items: separateLayout ? [] : (src.items ?? []).map((it) => ({ ...it })) }
+    setParcels((ps) => [...ps.slice(0, i + 1), copy, ...ps.slice(i + 1)])
+    setOpenPkgId(copy.packageId ?? null)
+  }
+  const pkgLine = (p: Parcel) => {
+    const items = skusOf(p)
+    const type = packageValue(p, packageTypes) === CUSTOM_PACKAGE ? 'Custom' : p.packageTypeName
+    return [type, `${p.quantity || 0} × ${p.l} × ${p.w} × ${p.h} cm`, p.weight ? `${round2(p.weight)} kg each` : 'no weight',
+      items.length ? `${plural(items.length, 'SKU')}: ${items.map((it) => it.skuCode || it.name).join(', ')}` : '',
+      filled(p.trackingNumber) ? `#${p.trackingNumber}` : ''].filter(Boolean).join(' · ')
+  }
   const packageCard = (p: Parcel, i: number, body: ReactNode) => {
+    const id = pkgIdOf(p, i)
+    const open = id === openId
+    const many = parcels.length > 1
+    const bad = showErrors && !pkgOk(p)
+    const kg = p.weight ? `${round2(p.weight * p.quantity)} kg` : '-'
+    const actions = (
+      <span className="flex shrink-0 items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+        {!editing && <Tip text="Duplicate — a copy right below"><button type="button" aria-label={`Duplicate package ${i + 1}`} onClick={() => duplicateParcel(i)}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-ink-3 hover:bg-warm-100 hover:text-ink">
+          <Copy size={14} />
+        </button></Tip>}
+        {many && <Tip text={separateLayout ? 'Remove package — its SKUs move to the first package' : 'Remove package'}><button type="button"
+          aria-label={`Remove package ${i + 1}`} onClick={() => removeParcel(i)}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-ink-3 hover:bg-warm-100 hover:text-brand-500">
+          <CircleMinus size={14} />
+        </button></Tip>}
+        {many && <button type="button" aria-label={open ? `Fold package ${i + 1}` : `Open package ${i + 1}`} aria-expanded={open}
+          onClick={() => setOpenPkgId(open ? null : id)}
+          className="inline-flex h-8 w-8 items-center justify-center rounded-md text-ink-2 hover:bg-warm-100 hover:text-ink">
+          {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+        </button>}
+      </span>
+    )
+    if (!open) return (
+      <div key={id} role="button" tabIndex={0} aria-label={`Package ${i + 1} — open`} onClick={() => setOpenPkgId(id)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpenPkgId(id) } }}
+        className={`mt-1.5 flex cursor-pointer items-center gap-4 rounded-lg border bg-surface py-1 pl-4 pr-2 transition-colors first:mt-0 hover:border-warm-400
+          focus:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-500/20 ${bad ? 'border-danger-fg/50' : 'border-warm-200'}`}>
+        <span className="w-[84px] shrink-0 text-[13px] font-bold text-ink">Package {i + 1}</span>
+        <span className="min-w-0 flex-1 truncate text-[13px] text-ink-2" title={pkgLine(p)}>{pkgLine(p)}</span>
+        {bad && <span className="shrink-0 rounded-full bg-danger-bg px-2 text-[11px] font-bold leading-5 text-danger-fg">Incomplete</span>}
+        <span className="w-20 shrink-0 text-right text-[13px] tabular-nums text-ink">{kg}</span>
+        {actions}
+      </div>
+    )
     const vol = p.l * p.w * p.h
+    const n = skusOf(p).length
     return (
-      <RowCard key={p.packageId ?? i} title={`Package ${i + 1}`} onRemove={parcels.length > 1 ? () => removeParcel(i) : undefined}
-        removeTip={separateLayout ? 'Remove package — its SKUs move to the first package' : 'Remove package'}
-        footer={<>
-          <span>Total Weight (kg) <b className="ml-2 font-normal">{p.weight ? round2(p.weight * p.quantity) : '-'}</b></span>
-          <span>Total Volume (cm³) <b className="ml-2 font-normal">{vol ? round2(vol * p.quantity) : '-'}</b></span>
-          <span>SKUs <b className="ml-2 font-normal">{(p.items ?? []).filter((it) => !isBlankItem(it)).length}</b></span>
-        </>}>
-        {body}
-      </RowCard>
+      <div key={id} className="mt-2 overflow-hidden rounded-lg border border-warm-200 first:mt-0">
+        <div className={`flex items-center gap-4 bg-warm-50 py-1.5 pl-4 pr-2 ${many ? 'cursor-pointer' : ''}`}
+          onClick={many ? () => setOpenPkgId(null) : undefined}>
+          <span className="shrink-0 text-[13px] font-bold text-ink">Package {i + 1}</span>
+          <span className="min-w-0 flex-1 truncate text-[12px] text-ink-3">
+            Total {kg} · {vol ? `${round2(vol * p.quantity).toLocaleString()} cm³` : '-'} · {plural(n, 'SKU')}
+          </span>
+          {actions}
+        </div>
+        <div className="px-4 py-5">{body}</div>
+      </div>
     )
   }
+  /** the package rows on screen: the first PKG_PAGE, plus the open one and any incomplete one, until "Show all" */
+  const pkgShown = (p: Parcel, i: number) => allPkgs || parcels.length <= PKG_PAGE + 1 || i < PKG_PAGE
+    || pkgIdOf(p, i) === openId || (showErrors && !pkgOk(p))
+  const hiddenPkgs = parcels.filter((p, i) => !pkgShown(p, i)).length
+  const packageList = (body: (p: Parcel, i: number) => ReactNode) => (
+    <div>
+      {parcels.map((p, i) => (pkgShown(p, i) ? packageCard(p, i, body(p, i)) : null))}
+      {(hiddenPkgs > 0 || (allPkgs && parcels.length > PKG_PAGE + 1)) && (
+        <button type="button" onClick={() => setAllPkgs((v) => !v)}
+          className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-warm-300 py-2 text-[13px] font-bold text-ink-2 hover:border-warm-400 hover:text-ink">
+          {hiddenPkgs > 0 ? <>Show all {parcels.length} packages <span className="font-normal text-ink-3">({hiddenPkgs} more)</span><ChevronDown size={14} /></>
+            : <>Show fewer<ChevronUp size={14} /></>}
+        </button>
+      )}
+    </div>
+  )
   const pieces = parcels.reduce((n, p) => n + (p.quantity || 0), 0)
   const addPackageBar = (
     <div className="mt-4 flex flex-wrap items-center justify-between gap-3 lg:pr-10">
-      <AddMoreButton label="Add Package" onClick={() => { setFocusLine(null); setParcels((ps) => [...ps, newParcel()]) }} />
+      <AddMoreButton label="Add Package" onClick={addParcel} />
       <span className="text-[13px] text-ink-2">
         {pieces} piece{pieces === 1 ? '' : 's'} · {round2(parcels.reduce((n, p) => n + (p.weight || 0) * (p.quantity || 0), 0))} kg in {parcels.length} package{parcels.length === 1 ? '' : 's'}
       </span>
     </div>
   )
+  /* the SKU list stops at PKG_PAGE + 2 lines until "Show all" — an incomplete line (after an Add attempt) and the
+     line just added always show */
+  const skuShown = (it: ParcelItem, i: number, k: number, n: number) => allSkus || skuLines.length <= PKG_PAGE + 3 || n < PKG_PAGE + 2
+    || (focusLine?.i === i && focusLine.k === k) || (showErrors && !(skuLineOk(it) && skuRuleOk(it)))
+  const hiddenSkus = skuLines.filter(({ it, i, k }, n) => !skuShown(it, i, k, n)).length
   /* SKUs, then packages: the SKU list (each line picks its package), then the boxes */
   const separateBlock = (
     <div>
       <SubTitle>SKUs</SubTitle>
-      {skuLines.length > 0 && skuTable(true, skuLines.map(({ it, i, k }, n) => skuRow(it, i, k, n, true)))}
-      <div className="mt-2 lg:pr-10"><AddRowLink label="Add SKU" onClick={() => addItem(parcels.length - 1)} /></div>
+      {skuLines.length > 0 && skuTable(true, skuLines.map(({ it, i, k }, n) => (skuShown(it, i, k, n) ? skuRow(it, i, k, n, true) : null)))}
+      <div className="mt-2 flex flex-wrap items-center gap-x-6 gap-y-2 lg:pr-10">
+        <AddRowLink label="Add SKU" onClick={() => addItem(parcels.length - 1)} />
+        {(hiddenSkus > 0 || (allSkus && skuLines.length > PKG_PAGE + 2)) && (
+          <button type="button" onClick={() => setAllSkus((v) => !v)}
+            className="inline-flex items-center gap-1 text-[13px] font-bold text-ink-2 hover:text-ink">
+            {hiddenSkus > 0 ? <>Show all {skuLines.length} SKUs <span className="font-normal text-ink-3">({hiddenSkus} more)</span><ChevronDown size={14} /></>
+              : <>Show fewer SKUs<ChevronUp size={14} /></>}
+          </button>
+        )}
+      </div>
       <div className="mt-8"><SubTitle>Packages</SubTitle></div>
-      {parcels.map((p, i) => packageCard(p, i, <>
+      {packageList((p, i) => <>
         {packageFields(p, i)}
         <p className="mt-4 text-[12px] text-ink-3">
-          {(p.items ?? []).filter((it) => !isBlankItem(it)).length
-            ? `Holds ${(p.items ?? []).filter((it) => !isBlankItem(it)).map((it) => it.skuCode || it.name).join(', ')}`
-            : 'No SKUs in it yet — pick this package on a SKU above'}
+          {skusOf(p).length ? `Holds ${skusOf(p).map((it) => it.skuCode || it.name).join(', ')}` : 'No SKUs in it yet — pick this package on a SKU above'}
         </p>
-      </>))}
+      </>)}
       {addPackageBar}
     </div>
   )
   /* packages with their SKUs: each box, its fields, its SKUs, and Add SKU under them */
   const combinedBlock = (
     <div>
-      {parcels.map((p, i) => packageCard(p, i, packageFields(p, i,
+      {packageList((p, i) => packageFields(p, i,
         (p.items ?? []).length > 0 ? <div className="mt-6 lg:pr-10">{skuTable(false, (p.items ?? []).map((it, k) => skuRow(it, i, k, k, false)))}</div> : null,
-        <AddRowLink label="Add SKU" onClick={() => addItem(i)} />)))}
+        <AddRowLink label="Add SKU" onClick={() => addItem(i)} />))}
       {addPackageBar}
     </div>
   )
@@ -3319,7 +3437,6 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   const placeOf = (p: Party) => [p.city, p.state].filter((x) => filled(x)).join(', ') || (filled(p.name) ? p.name : '')
   const goodsPieces = goods.reduce((n, p) => n + (p.quantity || 0), 0)
   const goodsKg = round2(goods.reduce((n, p) => n + (p.weight || 0) * (p.quantity || 0), 0))
-  const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
   const routeText = placeOf(sender) && placeOf(receiver)
     ? `${placeOf(sender)} → ${placeOf(receiver)}${drops.length ? ` + ${plural(drops.length, 'more drop')}` : ''}` : ''
   const pickupText = merchantMode

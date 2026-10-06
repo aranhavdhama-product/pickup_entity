@@ -330,8 +330,16 @@ Product changes layered on the replica (deliberate departures from the live port
   `address` from the first version applies to all three; Grow's differences in `…-layout-grow`): **Fields on form** = that
   address typed in the card under a search of the saved ones (name · number · address · company), CONTACT DETAILS /
   ADDRESS DETAILS in four columns, More address details, "Save this address" (kept when the consignment is submitted or
-  saved for later); any address on the form → the two ends stack (Ship From above Ship To); a hub end stays a picker +
-  card. Grow's **Grid** = the lane's services as compact radio cards two per row (name + carrier · rate + Est. N days,
+  saved for later); any address on the form → the two ends stack (Ship From above Ship To) — EXCEPT on Grow with the
+  Summary card off (or all its lines hidden): then Ship From and Ship To sit side by side, each address in two columns
+  (`halfAddresses`, `PartyBlock half`; owner, 2026-10-05); a hub end stays a picker + card.
+  **Package list (owner, 2026-10-05: "100 packages = too much scroll; what if every field is shown")**: with more than
+  one package ONE is open for editing (`openPkgId`; the builder preview always has the first open) and every other one
+  is a single row — Package n · type · count × L × W × H · kg each · SKUs · #tracking, the total kg, Duplicate (a copy
+  right below, new id, no tracking number) · Remove · open. The open card's header carries its totals (no footer row).
+  Past `PKG_PAGE` (8) rows the list stops at **Show all N packages**; the SKU list of "SKUs, then packages" stops at
+  10 lines the same way. An incomplete package (after an Add attempt) shows an "Incomplete" chip, always stays
+  visible, and the first one opens itself. However many fields the builder shows, they live only in the open package. Grow's **Grid** = the lane's services as compact radio cards two per row (name + carrier · rate + Est. N days,
   nothing preselected, nothing collapses), `serviceCards.ServiceTypeChooser layout`.
   **Field order + Summary (2026-10-05, owner: "drag and drop and resequence columns in the same sections" · "allow to show
   summary or not … their summary section can be different")** — while the form is edited every field is a drag cell
