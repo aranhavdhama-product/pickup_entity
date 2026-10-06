@@ -358,8 +358,8 @@ Product changes layered on the replica (deliberate departures from the live port
   Past `PKG_PAGE` (8) rows the list stops at **Show all N packages**; the SKU list of "SKUs, then packages" stops at
   10 lines the same way. An incomplete package (after an Add attempt) shows an "Incomplete" chip, always stays
   visible, and the first one opens itself. However many fields the builder shows, they live only in the open package.
-  **Barcode on every box** (owner, 2026-10-06: "in the section top, not on every package") is ONE switch in the Package &
-  SKU card's header, every goods mode (Handling asks it only on a vehicle form; `consignment.scannable`): on = every package
+  **Barcode on every box** (owner, 2026-10-06: ONE switch, not one per package — and "back in the Handling section") sits in
+  the Handling card's switches row on every form (`consignment.scannable`, `setBarcodeAll`): on = every package
   line is ONE box (`Parcel.barcodeEach`, Quantity locked to 1, `setBarcodeAll`) — a line of N boxes becomes N lines (≤ 200
   boxes in all; above that every quantity → 1 + "add the rest with Duplicate"), a new package follows it; off = counted
   again. **Package row** (owner, 2026-10-06): one wrapping flex row, each field its own width (`PKG_CELL`, given to its

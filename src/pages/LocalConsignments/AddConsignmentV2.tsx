@@ -2272,13 +2272,12 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
      narrows the vehicle types). ---- */
   /* Handling shows only when something in it is visible (see the card) */
   const handlingChipsVisible = GOODS_CATEGORIES.some(({ name }) => !hid(catKey(name)))
-  /* owner, 2026-10-06: "Barcode on every box" is asked ONCE, at the top of Package & SKU — Handling asks it only on a
-     vehicle (FTL) form, which has no Package & SKU card. On, every package line is one box (`barcodeEach`). */
-  const scannableInGoods = !isFtl
+  /* owner, 2026-10-06: "Barcode on every box" is ONE switch, back in the Handling card (it was briefly in the Package & SKU
+     header) — on, every package line is one box with its own barcode (`barcodeEach`, quantity 1) */
   const barcodeEach = !isFtl && !useItems && !!c.scannable
-  const handlingTogglesVisible = (!hid('scannable') && !scannableInGoods) || !hid('splittable') || !hid('clearanceRequired') || !hid('tags')
+  const handlingTogglesVisible = !hid('scannable') || !hid('splittable') || !hid('clearanceRequired') || !hid('tags')
   /* the switches row — on Grow Tags moves to the line below, beside the load type */
-  const switchesRow = merchantMode ? (!hid('splittable') || !hid('clearanceRequired')) : handlingTogglesVisible
+  const switchesRow = merchantMode ? (!hid('scannable') || !hid('splittable') || !hid('clearanceRequired')) : handlingTogglesVisible
   const handlingCustom = arrange(sortApi, 'handling-fields', customEntries('sec-handling'), inMore, secOpen('sec-handling'))
   /* while editing the card always shows — its "+ Add field" lives in it */
   const handlingVisible = handlingChipsVisible || handlingTogglesVisible || handlingCustom.nodes.length > 0 || handlingCustom.waiting > 0 || editing
@@ -2932,10 +2931,11 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
       {/* row 2 — how the boxes travel, and their tags; every control on one baseline */}
       {switchesRow && <div className={`${handlingChipsVisible ? 'mt-6' : ''} ${HANDLING_ROW}`}>
         {arrange(sortApi, 'handling-switches', [
-          !hid('scannable') && !scannableInGoods && [null, (
+          !hid('scannable') && [null, (
             <Configurable key="scannable" fieldKey="scannable">
-              <InlineSwitch label={custom('scannable', 'Scannable', 'Barcode on every box')} title={SWITCH_HINTS.scannable}
-                checked={!!c.scannable} onChange={(v) => setC({ scannable: v })} />
+              <InlineSwitch label={custom('scannable', 'Scannable', 'Barcode on every box')}
+                title={barcodeEach || (!isFtl && !useItems) ? `${SWITCH_HINTS.scannable} On = every package line is one box; its quantity stays 1.` : SWITCH_HINTS.scannable}
+                checked={!!c.scannable} onChange={setBarcodeAll} />
             </Configurable>
           )],
           !hid('splittable') && [null, (
@@ -3406,16 +3406,8 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
       {addPackageBar}
     </div>
   )
-  /* the one "Barcode on every box" question, in the card's header (owner, 2026-10-06) */
-  const barcodeSwitch = !hid('scannable') && scannableInGoods ? (
-    <Configurable fieldKey="scannable">
-      <InlineSwitch label={custom('scannable', 'Scannable', 'Barcode on every box')}
-        title={useItems ? SWITCH_HINTS.scannable : `${SWITCH_HINTS.scannable} On = every package line is one box; its quantity stays 1.`}
-        checked={!!c.scannable} onChange={setBarcodeAll} />
-    </Configurable>
-  ) : undefined
   const packagesSection = (
-    <FormCard id="sec-packages" title="Package & SKU" action={barcodeSwitch}
+    <FormCard id="sec-packages" title="Package & SKU"
       caption={typeRule.goodsOptional ? 'Parts or goods to carry for the visit — optional for a Service.'
         : useItems ? 'Pick the SKUs and how many — sizes and weights come from the SKU master, or type a new SKU.'
         : separateLayout ? 'List the SKUs, then the packages — each package picks the SKUs packed in it.'
