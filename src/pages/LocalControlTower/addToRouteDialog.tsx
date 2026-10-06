@@ -52,13 +52,15 @@ export function AddToRouteDialog({ prIds, initialWay, onClose, onDone }: {
   const prHub = first ? first.destinationCode ?? first.storeCode : ''
   const hubsInSelection = [...new Set(open.map((p) => p.destinationCode ?? p.storeCode))]
 
+  /* "Move to another route": the trip the whole selection already rides is no destination */
+  const ridingTrip = open.length > 0 && open.every((p) => p.tripId === open[0].tripId) ? open[0].tripId : null
   const candidates = useMemo<LocalTrip[]>(() => plan.trips
-    .filter((t) => (t.status === 'Un-assigned' || t.status === 'Yet to start') && t.hubCode === prHub)
+    .filter((t) => (t.status === 'Un-assigned' || t.status === 'Yet to start') && t.hubCode === prHub && t.id !== ridingTrip)
     /* same day first, then nearest date */
     .sort((a, b) => {
       const da = a.date === first?.date ? 0 : 1; const dbb = b.date === first?.date ? 0 : 1
       return da !== dbb ? da - dbb : a.date.localeCompare(b.date)
-    }), [plan.trips, prHub, first?.date])
+    }), [plan.trips, prHub, first?.date, ridingTrip])
 
   /* the best fit: same day, then nearest date, then the lightest route */
   const best = useMemo(() => [...candidates].sort((a, b) => {

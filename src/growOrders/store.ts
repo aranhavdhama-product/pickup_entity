@@ -694,8 +694,13 @@ export const growOrderActions = {
     const ok = db.orders.filter((o) => want.has(o.id) && tabOf(o) === 'Ready for Pickup').map((o) => o.id)
     if (!ok.length) return []
     const s = new Set(ok)
+    /* a parcel request with no drop hub yet (a blind booking) takes the hub its
+       consignments go to, once they all go to the same one — a request drops at ONE hub */
+    const hubs = new Set([...pr.orderIds, ...ok].map((id) => db.orders.find((o) => o.id === id)?.inboundHubCode ?? ''))
+    const destinationCode = pr.destinationCode == null && pr.shipmentType !== 'FTL' && hubs.size === 1 && !hubs.has('')
+      ? [...hubs][0] : pr.destinationCode
     db.pickupRequests = db.pickupRequests.map((p) => (p.id === prId
-      ? { ...p, orderIds: [...p.orderIds, ...ok],
+      ? { ...p, orderIds: [...p.orderIds, ...ok], destinationCode,
         statusHistory: [...p.statusHistory, { status: p.status, at: new Date().toISOString(), note: `${ok.length} order${ok.length === 1 ? '' : 's'} added` }] }
       : p))
     db.orders = db.orders.map((o) => (s.has(o.id)
@@ -1014,7 +1019,9 @@ export const growOrderActions = {
       }
       const next: GrowPickupRequest = { ...p, tripId: null, driverName: null }
       const note = p.tripId ? `Removed from trip ${p.tripId}` : 'Removed from trip'
-      return !p.carrierCode && (p.status === 'Planned' || p.status === 'Ready For Last Mile Dispatch' || p.status === 'Assigned')
+      /* only a 3PL keeps its state off a trip — an "Own fleet" allocation carries a carrier
+         code too, and must not stay Planned / Assigned with no trip */
+      return p.carrierMode !== 'CARRIER' && (p.status === 'Planned' || p.status === 'Ready For Last Mile Dispatch' || p.status === 'Assigned')
         ? stamp(next, 'Requested', note)
         : noted(next, note)
     })

@@ -345,8 +345,11 @@ export const planningActions = {
     const firstPickup = stops.find((s) => s.kind === 'pickup')
     /* Same/Next Day Routing passes its dispatch date explicitly */
     const date = crew.date || (firstPickup && pickupRequestById(firstPickup.orderId)?.date) || today()
+    /* a pickup with no drop hub yet (blind / FTL) runs out of its pickup point's hub —
+       the hub the Add to route dialog names (prActions.routingHubOf) */
+    const firstPr = first?.kind === 'pickup' ? pickupRequestById(first.orderId) : undefined
     const hub = first
-      ? (first.kind === 'pickup' ? pickupRequestById(first.orderId)?.destinationCode : orderById(first.orderId)?.inboundHubCode)
+      ? (first.kind === 'pickup' ? firstPr?.destinationCode ?? firstPr?.storeCode : orderById(first.orderId)?.inboundHubCode)
       : null
     const trip: LocalTrip = {
       id: newTripId(),

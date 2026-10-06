@@ -481,9 +481,11 @@ export function BookConsignmentsDialog({ orders, prefer, onClose, onDone }: {
 
 export function AddConsignmentsDialog({ pr, onClose, onDone }: { pr: GrowPickupRequest; onClose: () => void; onDone: () => void }) {
   const db = useGrowOrders()
-  /* same point and — a request drops at ONE hub — the same inbound hub (or a TBC one) */
+  /* same point and — a request drops at ONE hub — the same inbound hub (or a TBC one); a full-vehicle
+     (FTL) request takes vehicle orders only, a parcel request parcels only — never the two mixed */
+  const ftl = pr.shipmentType === 'FTL'
   const candidates = db.orders.filter((o) => isPickupEligible(o) && o.storeCode === pr.storeCode
-    && o.shipmentType !== 'FTL' && (pr.destinationCode == null || o.inboundHubCode === pr.destinationCode))
+    && (o.shipmentType === 'FTL') === ftl && (ftl || pr.destinationCode == null || o.inboundHubCode === pr.destinationCode))
   const [sel, setSel] = useState<Set<string>>(new Set())
   const toggle = (id: string) => setSel((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n })
   const submit = () => {

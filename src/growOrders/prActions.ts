@@ -134,7 +134,7 @@ export function prActionState(action: PrAction, p: PrFacts, ctx: PrActionCtx): P
       const g = blocked(beforeDispatch(p, 'split'), merchant ? merchantGate(p, ctx.cfg.merchantCancelUntil, 'split') : null)
       if (g) return g
       if (!SPLITTABLE_PR_STATUSES.includes(p.status)) return no(`${p.status} requests cannot be split`)
-      return canSplitPr(p) ? ok : no('Only one consignment — nothing to split')
+      return canSplitPr(p) ? ok : no(p.orderIds.length ? 'Only one consignment — nothing to split' : 'No consignments yet — nothing to split')
     }
 
     case 'assignCarrier': {
@@ -142,6 +142,8 @@ export function prActionState(action: PrAction, p: PrFacts, ctx: PrActionCtx): P
       if (g) return g
       if (p.tripId) return no(`On trip ${p.tripId} — remove it from the route first`)
       if (p.carrierMode === 'CARRIER' && p.status === 'Assigned') return no(`Already with ${p.carrierName ?? 'a carrier'} — switch to fleet first`)
+      /* handing it to a carrier plans it, like routing — not before the shipper confirms the slot */
+      if (p.slotConfirmed === false) return no('Awaiting slot confirmation from the shipper')
       if (p.status === 'Requested' || p.status === 'Planned' || p.status === 'Ready For Last Mile Dispatch') return ok
       return no(`${p.status} — assign a carrier while Requested`)
     }

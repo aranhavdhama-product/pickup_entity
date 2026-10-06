@@ -35,7 +35,7 @@ import { useGrowOrders, growOrderActions } from '../../growOrders/store'
 import type { PrAction } from '../../growOrders/prActions'
 import { PrActionDialogs } from '../LocalPickup/prSelectionActions'
 import { prSelectionItems, type PrDialog, type PrSelectionItem } from '../LocalPickup/prSelectionItems'
-import { STATUS_FILTER_OPTIONS, matchesStatus } from '../LocalPickup/prModel'
+import { STATUS_FILTER_OPTIONS, matchesStatus, prCsv } from '../LocalPickup/prModel'
 import { CreatePickupButton, CreatePickupDialogs, type CreatePickupKind } from '../LocalPickup/createPickup'
 import { cancelReasonLabel } from '../../growOrders/pickupReasons'
 import { usePickupModuleConfig } from '../../config/pickupModule'
@@ -829,6 +829,13 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
     <button type="button" className="pfp-iconbtn" title="Download CSV"
       onClick={() => {
         const cons = filtered.filter((r): r is LocalConsignmentRow => !isPickupRow(r))
+        /* First Mile lists pickup requests only — export those rather than an empty shipment file */
+        const picks = filtered.filter(isPickupRow)
+        if (!cons.length && picks.length) {
+          downloadCsv('pending-for-planning-pickups.csv', prCsv(picks.map((r) => r.request), db))
+          toast.success(`${picks.length} pickup request row${picks.length === 1 ? '' : 's'} exported.`)
+          return
+        }
         downloadCsv('pending-for-planning.csv', csvOf(cons))
         toast.success(`${cons.length} shipment rows exported.`)
       }}>
@@ -1485,8 +1492,9 @@ function SelectionPanel({ count, metrics, routable, profile, pickupMetrics, prIt
   /* owner, 2026-10-05 ("multiselect popup actions do not show up correctly"): what the selection CAN do first,
      the rest folded under "Not available (n)" with each reason on a line — never a list of greyed items */
   const [showOff, setShowOff] = useState(false)
+  /* not "can be <label>d" — that read "can be plan for routingd" */
   const reasonOf = (a: (typeof actions)[number]) =>
-    a.blocked ?? `Nothing in this selection can be ${a.label.toLowerCase()}d. ${a.scope ?? ''}`.trim()
+    a.blocked ?? `None of the selected rows qualifies. ${a.scope ?? ''}`.trim()
   const rows: { key: string; label: string; icon: React.JSX.Element; danger?: boolean; off: boolean; reason?: string
     count?: number; run?: () => void }[] = pickupsOnly
     ? prItems.map((it) => ({ key: it.id, label: it.label, icon: PR_GLYPH[it.id] ?? <ListChecks size={16} />,

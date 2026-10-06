@@ -254,7 +254,14 @@ function Detail({ pr, back }: { pr: GrowPickupRequest; back: () => void }) {
             )}
             {on && gate('removeConsignment').enabled && pr.orderIds.includes(o.id) && !picked.has(o.id) && (
               <Button size="sm" variant="ghost" icon={<Trash2 size={13} />}
-                onClick={() => { growOrderActions.detachOrderFromPickup(pr.id, o.id); toast.success(`${o.orderNumber} removed — it waits for a pickup again.`) }}>
+                onClick={() => {
+                  growOrderActions.detachOrderFromPickup(pr.id, o.id)
+                  /* an order-backed request left with nothing to collect ends, as on Grow (a reserved one keeps its slot) */
+                  if (!pr.blind && pr.orderIds.length === 1) {
+                    growOrderActions.cancelPickupRequest(pr.id, `Last order removed (${o.orderNumber})`, 'Ops')
+                    toast.success(`${o.orderNumber} removed — ${pr.number} had nothing left to collect and is cancelled.`)
+                  } else toast.success(`${o.orderNumber} removed — it waits for a pickup again.`)
+                }}>
                 Remove
               </Button>
             )}
