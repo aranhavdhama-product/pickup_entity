@@ -3850,8 +3850,14 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
                 <div className="mt-0.5 break-words text-[13px] leading-5 text-ink">{bk.value}</div>
                 {bk.sub && <div className="mt-0.5 break-words text-[12px] leading-[18px] text-ink-3">{bk.sub}</div>}
               </div>
+              {/* owner, 2026-10-06: an Edit BUTTON (not a text link) — jumps to its card */}
               {editing ? lineSwitch(l.key) : bk.jump && (
-                <button type="button" onClick={() => jumpTo(bk.jump!)} className="self-start text-[12px] font-bold text-brand-500 hover:text-brand-600">Edit</button>
+                <Tip text={`Edit ${bk.title}`}>
+                  <button type="button" onClick={() => jumpTo(bk.jump!)} aria-label={`Edit ${bk.title}`}
+                    className="inline-flex h-7 shrink-0 items-center gap-1 self-start rounded-md border border-warm-300 bg-surface px-2 text-[12px] font-bold text-ink-2 transition-colors hover:border-warm-400 hover:bg-warm-50 hover:text-ink">
+                    <Pencil size={12} />Edit
+                  </button>
+                </Tip>
               )}
             </div>
           )]
