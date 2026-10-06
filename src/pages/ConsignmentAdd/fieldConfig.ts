@@ -192,7 +192,7 @@ export interface FormBehavior {
 
 export const DEFAULT_FORM_BEHAVIOR: FormBehavior = { defaultMode: 'full', identifier: 'both', hidden: [] }
 
-const BEHAVIOR_KEY = 'fe-consignment-form-behavior'
+export const BEHAVIOR_KEY = 'fe-consignment-form-behavior'
 
 export function loadFormBehavior(): FormBehavior {
   try {
@@ -233,7 +233,8 @@ export async function fetchFormBehavior(): Promise<FormBehavior> {
   }
 }
 
-const STORAGE_KEY = 'fe-consignment-field-config'
+export const FIELD_CONFIG_KEY = 'fe-consignment-field-config'
+const STORAGE_KEY = FIELD_CONFIG_KEY
 
 export function loadFieldConfig(): FieldConfig {
   try {

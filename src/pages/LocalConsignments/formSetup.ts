@@ -12,6 +12,7 @@
  *
  * A rule may carry a `format` (what may be typed: a preset or a custom regular expression, + length).
  * Layout (how addresses and services are shown) and "How goods are entered" are per portal the same way.
+ * Every key here is listed in ./formShare SHARE_KEYS — a NEW setup key must join it, or share links miss it.
  */
 
 export type FormPortal = 'console' | 'grow'
@@ -148,7 +149,7 @@ export const DEFAULT_GOODS_SETTING: GoodsSetting = 'separate'
 /* v2 of the key (2026-10-05): the first key also caught the old default ('sku') whenever the builder was saved, so it
    cannot tell a choice from a default — read once as a fallback, keeping only a non-default choice */
 export const GOODS_SETTING_KEY = 'fe-consignment-form-v2-goods-v2'
-const GOODS_SETTING_KEY_V1 = 'fe-consignment-form-v2-goods'
+export const GOODS_SETTING_KEY_V1 = 'fe-consignment-form-v2-goods'
 export const GOODS_SETTING_GROW_KEY = 'fe-consignment-form-v2-goods-grow'
 const asGoods = (v: string | null): GoodsSetting | null => (v === 'sku' || v === 'separate' || v === 'combined' ? v : null)
 const consoleGoods = (): GoodsSetting => {
@@ -172,6 +173,8 @@ export function saveGoodsSetting(p: FormPortal, v: GoodsSetting) {
     else localStorage.setItem(GOODS_SETTING_GROW_KEY, v)
   } catch { /* private mode */ }
 }
+/** the console form's Simplified | full choice (per viewer — not shared; a share link opens the full form) */
+export const FORM_TIER_KEY = 'console-consignment-form-v2-tier'
 
 /* ------------------------------------------------------------- form layout ---- */
 
