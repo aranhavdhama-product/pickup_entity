@@ -35,7 +35,7 @@ import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, CircleMinus, Info, Lock, MapPinned, Package, Pencil, Plus, RotateCcw,
-  ArrowDown, ArrowUp, Asterisk, Bookmark, Copy, Eye, EyeOff, Share2, GripVertical, ListChecks, ListCollapse, Regex, ScanBarcode, SlidersHorizontal, Trash2, Truck, X, Crown, Flame, GlassWater, Layers, Users, Weight, Monitor, Store,
+  ArrowDown, ArrowUp, Asterisk, Bookmark, Copy, Eye, EyeOff, GripVertical, ListChecks, ListCollapse, Regex, ScanBarcode, SlidersHorizontal, Trash2, Truck, X, Crown, Flame, GlassWater, Layers, Users, Weight, Monitor, Store,
 } from 'lucide-react'
 import { blankParty, CURRENCY } from '../../growOrders/seed'
 import { growOrderActions, orderById, pickupRequestById, useGrowOrders } from '../../growOrders/store'
@@ -70,7 +70,6 @@ import {
   type CustomFieldCard, type CustomFieldDef, type CustomFieldKind, type FieldFormat, type FieldRuleV2, type FormatPreset, type FormLayout,
   type FormRulesV2, type GoodsSetting, type FormOrder, type FormSummary, type AddressArrangement, type AddressEntry, FORM_TIER_KEY,
 } from './formSetup'
-import ShareFormDialog from './ShareFormDialog'
 import { usePickupModuleConfig } from '../../config/pickupModule'
 import { hubVehicleTypes } from '../../config/vehicleConfig'
 import { autoPickupWindowFor, pickupPolicy, policyCheck, userWindowError } from '../../growOrders/pickupSlots'
@@ -1331,26 +1330,15 @@ export default function AddConsignmentV2Page({ portal = 'console' }: {
 } = {}) {
   const [params] = useSearchParams()
   const edit = portal === 'console' ? params.get('edit') : null
-  /* Share form (2026-10-06) — console only, and held HERE so the dialog survives the remount when the builder leaves
-     `?edit=grow` on Save; merchants never see it */
-  const [shareFor, setShareFor] = useState<null | 'console' | 'grow'>(null)
-  const onShare = portal === 'console' ? (p: 'console' | 'grow') => setShareFor(p) : undefined
-  return (
-    <>
-      {edit === 'grow'
-        ? <AddConsignmentV2 key="grow-setup" portal="merchant" setup onShare={onShare} />
-        : <AddConsignmentV2 key={portal} portal={portal} setup={edit === 'console'} onShare={onShare} />}
-      {onShare && <ShareFormDialog open={!!shareFor} first={shareFor ?? 'console'} onClose={() => setShareFor(null)} />}
-    </>
-  )
+  return edit === 'grow'
+    ? <AddConsignmentV2 key="grow-setup" portal="merchant" setup />
+    : <AddConsignmentV2 key={portal} portal={portal} setup={edit === 'console'} />
 }
 
-function AddConsignmentV2({ portal = 'console', setup = false, onShare }: {
+function AddConsignmentV2({ portal = 'console', setup = false }: {
   portal?: 'console' | 'merchant'
   /** opened straight into the form builder (`?edit=`); with portal 'merchant' = the Grow portal form's preview */
   setup?: boolean
-  /** console only: open the Share form dialog (the route element owns it) */
-  onShare?: (p: 'console' | 'grow') => void
 }) {
   const merchantMode = portal === 'merchant'
   /* the Grow portal form, edited from the console: the merchant form as its own live preview */
@@ -1589,8 +1577,8 @@ function AddConsignmentV2({ portal = 'console', setup = false, onShare }: {
     setSavedRules(loadRules('console')); setSavedGrow(loadRules('grow')); setSavedCustom(loadCustomFields()); setSavedGoods(loadGoodsSetting(formPortal))
     setSavedLayout(loadLayout(formPortal)); setSavedOrder(loadOrder(formPortal)); setSavedSummary(loadSummary(formPortal))
     setSelKey(null); setEditing(false)
-    toast.success(growSetup ? 'Grow portal form saved — merchants see it on Create Order' : 'Console form saved',
-      onShare ? { action: { label: 'Share', onClick: () => onShare(formPortal) } } : undefined)
+    /* formSync sends the saved setup to the server, so every device and user gets it (owner, 2026-10-06) */
+    toast.success(growSetup ? 'Grow portal form saved — merchants see it on Create Order, on every device' : 'Console form saved — every device shows it')
     if (then) then(); else leaveSetup()
   }
   /* the builder's Console | Grow portal switch — unsaved changes are saved or dropped first */
@@ -4160,14 +4148,6 @@ function AddConsignmentV2({ portal = 'console', setup = false, onShare }: {
           <span className="rounded-full bg-brand-50 px-2.5 py-0.5 text-[12px] font-bold text-brand-600">{changedForGrow} changed for Grow</span>
         )}
         <div className="ml-auto flex flex-wrap items-center gap-x-4 gap-y-2">
-          {onShare && (
-            <Tip text={dirty ? 'Save your changes first — the link shares the saved form' : 'A link that gives others this form'}>
-              {/* a disabled button gets no hover — the wrapper takes it, so the "save first" tip still shows */}
-              <span className="inline-flex [&>button:disabled]:pointer-events-none">
-                <Button variant="outline" size="sm" icon={<Share2 size={14} />} disabled={dirty} onClick={() => onShare(formPortal)}>Share form</Button>
-              </span>
-            </Tip>
-          )}
           <Button variant="outline" size="sm" icon={<ListChecks size={14} />} onClick={() => showFieldGroup(null)}>All fields</Button>
           <Tip text="Hidden fields stay in this preview, faded, so you can bring them back">
             <InlineSwitch label="Show hidden fields" checked={showHidden} onChange={setShowHidden} />
@@ -4196,7 +4176,6 @@ function AddConsignmentV2({ portal = 'console', setup = false, onShare }: {
       {/* owner, 2026-09-29: no old-form link, no change count, no simplified-form note — just the builder entry */}
       {!simple && (
         <div className="flex items-center gap-2">
-          {onShare && <Button variant="ghost" icon={<Share2 size={14} />} onClick={() => onShare('console')}>Share form</Button>}
           <Button variant="outline" icon={<SlidersHorizontal size={14} />} onClick={startEditing}>Edit consignment form</Button>
         </div>
       )}

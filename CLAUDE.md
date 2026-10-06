@@ -330,16 +330,16 @@ Product changes layered on the replica (deliberate departures from the live port
   asks is kept on Modify) and shown as **Additional details** in the console view and in the Grow view's Consignment
   details (Grow shows only fields its form shows). Entry points: the form's "Edit consignment form", and
   Settings → Consignment Order → Form Fields → **Customise the forms**.
-  **Share form (2026-10-06, owner: "changes are not reflected for other user")** — the setup lives in each browser's
-  localStorage and there is no server, so a saved form travels as a LINK: `LocalConsignments/formShare.ts` (pure) packs
-  EVERY setup key (`SHARE_KEYS` — rule: a new form-setup key must join it) into `#form-setup=z.<deflate+base64url>`
-  (`j.` = plain JSON); the hash never reaches a server. `main.tsx` applies it BEFORE render (all or nothing; keys from a
-  newer link skipped; null = the default; not the Simplified tier — a visitor on Simplified moves to the full form),
-  clears the hash, shows one toast (**Undo** when it replaced the visitor's own setup — the shared toast's additive
-  `action`, 8 s) and reloads on a same-page hash paste. Sharer side, console only: header **Share form** · editing bar
-  **Share form** (off while unsaved) · **Share** on the saved toast → `ShareFormDialog` with the Console
-  (`/local/consignments/new`) and Grow (`/grow/orders/add`) links; merchants never see it. A link is a copy of that
-  moment — a later Save needs a new link; a central store (an `/api` route + Upstash Redis or Vercel Blob) is not built.
+  **Form setup on the server (2026-10-06, owner: "remove the Share button — find another way so settings persist between
+  devices")** — the setup is still read from localStorage by every page, but `LocalConsignments/formSync.ts` keeps EVERY
+  setup key (`SETUP_KEYS` — rule: a new form-setup key must join it) in step with ONE server copy: `api/form-setup.ts`
+  (Vercel function; GET → `{ v, s, updatedAt }` or 204, PUT `{ v, s }`, last save wins, body checked hard) on a PRIVATE
+  Vercel Blob (`form-setup/current.json`, store `fareye-ui-settings`, env `BLOB_READ_WRITE_TOKEN`; `vercel.json` keeps
+  `/api/*` out of the SPA rewrite). `main.tsx` pulls it BEFORE render (form pages — `FORM_SETUP_PATHS` — wait ≤ 2.5 s,
+  every other page renders at once); then any change to a setup key in this browser is PUT within ~2 s (a failure toasts
+  once, retries after 30 s), and coming back to the tab re-reads it (toast + Reload when the form changed elsewhere).
+  Not synced: the Simplified tier (each person's own). No server (localhost dev, offline) = this browser's own setup.
+  The Share form link / dialog are gone.
   **Builder v3 (2026-10-05, owner: "it has to be easy to use", then "I don't want the side bar — find another way — but
   I love the idea")** — click-to-select: the preview's fields are click targets (dashed frame, brand frame when selected;
   state as tags on the frame: Grow · Hidden · More · Format · lock) and a click opens that field's SETTINGS CARD right next

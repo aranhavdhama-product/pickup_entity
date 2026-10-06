@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@types/google-libphonenumber": "^7.4.31",
+    "@vercel/blob": "^2.8.1",
     "google-libphonenumber": "^3.2.46",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.17.0",

@@ -12,7 +12,7 @@
  *
  * A rule may carry a `format` (what may be typed: a preset or a custom regular expression, + length).
  * Layout (how addresses and services are shown) and "How goods are entered" are per portal the same way.
- * Every key here is listed in ./formShare SHARE_KEYS — a NEW setup key must join it, or share links miss it.
+ * Every key here is listed in ./formSync SETUP_KEYS — a NEW setup key must join it, or it is not kept on the server.
  */
 
 export type FormPortal = 'console' | 'grow'
