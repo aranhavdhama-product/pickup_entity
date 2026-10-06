@@ -526,7 +526,7 @@ export function ZoneSetupForm({ fixedBranch, defaultLevel, skippable, onDone }: 
           meta={{ icon: <SlidersHorizontal size={15} className="text-brand-500" />, caption: 'Pick the branch, geographic level and optional carriers / service types this configuration applies to.' }}>
           <div className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
             <div className="min-w-0">
-              <label className="mb-1.5 flex h-5 items-center gap-1 text-[13.5px] text-ink">Branch<span className="text-brand-500">*</span></label>
+              <label className="mb-1.5 flex h-5 items-center gap-1 field-label">Branch<span className="text-brand-500">*</span></label>
               {fixedBranch ? (
                 <div className="flex h-8 items-center rounded-md border border-warm-300 bg-warm-50 px-3 text-[13px] text-ink-2">
                   {fixedBranch.name}
@@ -537,16 +537,16 @@ export function ZoneSetupForm({ fixedBranch, defaultLevel, skippable, onDone }: 
               )}
             </div>
             <div className="min-w-0">
-              <label className="mb-1.5 flex h-5 items-center gap-1 text-[13.5px] text-ink">Zone Level<span className="text-brand-500">*</span></label>
+              <label className="mb-1.5 flex h-5 items-center gap-1 field-label">Zone Level<span className="text-brand-500">*</span></label>
               <MenuSelect value={level} placeholder="Select zone level" options={ZONE_LEVELS.map((l) => l.key)}
                 labels={levelLabel} onChange={(v) => { setLevel(v); setPage(1); setNames({}) }} />
             </div>
             <div className="min-w-0">
-              <label className="mb-1.5 flex h-5 items-center text-[13.5px] text-ink">Carrier</label>
+              <label className="mb-1.5 flex h-5 items-center field-label">Carrier</label>
               <MultiSelect value={carrierSel} options={carriers} onChange={setCarrierSel} placeholder="Select carriers" />
             </div>
             <div className="min-w-0">
-              <label className="mb-1.5 flex h-5 items-center text-[13.5px] text-ink">Service Type</label>
+              <label className="mb-1.5 flex h-5 items-center field-label">Service Type</label>
               <MultiSelect value={serviceSel} options={serviceTypes} onChange={setServiceSel} placeholder="Select service types" />
             </div>
           </div>

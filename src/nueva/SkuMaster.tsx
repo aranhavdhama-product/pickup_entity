@@ -378,7 +378,7 @@ export default function SkuMasterPage() {
 function Fld({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
   return (
     <div className="min-w-0">
-      <label className="mb-1.5 flex h-5 items-center gap-1 whitespace-nowrap text-[13.5px] text-ink">
+      <label className="mb-1.5 flex h-5 items-center gap-1 whitespace-nowrap field-label">
         {label}{required && <span className="text-brand-500">*</span>}
       </label>
       {children}

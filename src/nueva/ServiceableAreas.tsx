@@ -379,13 +379,13 @@ function CoverageEditor({ branch, row, skippable, onDone }: {
           meta={{ icon: <Building2 size={15} className="text-brand-500" />, caption: 'Which branch this coverage belongs to, and the country it operates in.' }}>
           <div className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
             <div className="min-w-0">
-              <label className="mb-1.5 flex h-5 items-center text-[13.5px] text-ink">Branch</label>
+              <label className="mb-1.5 flex h-5 items-center field-label">Branch</label>
               <div className="flex h-8 items-center rounded-md border border-warm-300 bg-warm-50 px-3 text-[13px] text-ink-2">
                 {String(branch.name ?? '')}
               </div>
             </div>
             <div className="min-w-0">
-              <label className="mb-1.5 flex h-5 items-center gap-1 text-[13.5px] text-ink">Country{!row && <span className="text-brand-500">*</span>}</label>
+              <label className="mb-1.5 flex h-5 items-center gap-1 field-label">Country{!row && <span className="text-brand-500">*</span>}</label>
               {row ? (
                 <div className="flex h-8 items-center rounded-md border border-warm-300 bg-warm-50 px-3 text-[13px] text-ink-2">
                   {countries.find((c) => c.value === String(draft.country))?.label ?? String(draft.country ?? '')}

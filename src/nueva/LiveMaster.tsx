@@ -516,7 +516,7 @@ export default function LiveMaster({ cfg, embedded, onModeChange }: {
             {sec.fields.filter((f) => f.visible?.(draft) ?? true).map((f) => (
               f.type === 'custom' ? (
                 <div key={f.key} className="col-span-full min-w-0">
-                  {f.label && <label className="mb-1.5 flex h-5 items-center text-[13.5px] text-ink">{f.label}</label>}
+                  {f.label && <label className="mb-1.5 flex h-5 items-center field-label">{f.label}</label>}
                   {f.renderCustom?.(draft, (patch) => setDraft({ ...draft, ...patch }), false)}
                 </div>
               ) : f.type === 'toggle' ? (
@@ -526,7 +526,7 @@ export default function LiveMaster({ cfg, embedded, onModeChange }: {
                 </div>
               ) : (
                 <div key={f.key} className="min-w-0">
-                  <label className="mb-1.5 flex h-5 items-center gap-1 whitespace-nowrap text-[13.5px] text-ink">
+                  <label className="mb-1.5 flex h-5 items-center gap-1 whitespace-nowrap field-label">
                     {f.label}{f.required && <span className="text-brand-500">*</span>}
                   </label>
                   {f.type === 'multi' ? (

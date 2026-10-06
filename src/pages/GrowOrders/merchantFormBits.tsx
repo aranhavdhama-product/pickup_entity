@@ -47,7 +47,7 @@ export function MField({ label, required, error, hint, className = '', children 
 }) {
   return (
     <div className={`min-w-0 ${className}`}>
-      <label className="mb-1.5 flex h-4 items-center gap-0.5 truncate text-[12px] font-bold text-ink-2" title={label}>
+      <label className="mb-1.5 flex h-5 items-center gap-0.5 truncate field-label" title={label}>
         {label}{required && <span className="text-danger-fg">*</span>}
       </label>
       {children}

@@ -61,7 +61,7 @@ export function Fld({ label, required, info, error, helper, className = '', chil
 }) {
   return (
     <div className={`min-w-0 ${className}`}>
-      <label className="mb-1.5 flex h-5 items-center gap-1 whitespace-nowrap text-[13px] font-bold text-ink" title={label}>
+      <label className="mb-1.5 flex h-5 items-center gap-1 whitespace-nowrap field-label" title={label}>
         <span className="truncate">{label}</span>
         {required && <span className="shrink-0 text-brand-500">*</span>}
         {info && <Info size={12} className="shrink-0 text-brand-500" />}
@@ -99,7 +99,7 @@ export function InlineToggle({ label, checked, onChange, disabled }: {
 }) {
   return (
     <div className={`min-w-0 ${disabled ? 'pointer-events-none opacity-50' : ''}`}>
-      <span className="mb-1.5 flex h-5 items-center whitespace-nowrap text-[13px] font-bold text-ink" title={label}>
+      <span className="mb-1.5 flex h-5 items-center whitespace-nowrap field-label" title={label}>
         <span className="truncate">{label}</span>
       </span>
       <div className="flex h-8 items-center">
@@ -241,7 +241,7 @@ export function SFld({ label, required, info, error, helper, className = '', chi
   const tip = msg ?? (typeof helper === 'string' ? helper : undefined)
   return (
     <div className={`min-w-0 ${className}`}>
-      <label className="mb-2 flex min-h-5 items-start gap-1 text-[12px] leading-5 text-ink-3" title={label}>
+      <label className="mb-2 flex min-h-5 items-start gap-1 field-label" title={label}>
         <span className="min-w-0">{label || '\u00a0'}{required && <span className="text-danger-fg">&nbsp;*</span>}</span>
         {info && <Info size={13} className="shrink-0 text-brand-500" />}
       </label>

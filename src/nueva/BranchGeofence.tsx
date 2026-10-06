@@ -671,7 +671,7 @@ function FenceEditor({ branch, fence, siblings, initialRing, initialName, onDone
 
   const field = (label: string, node: React.ReactNode, required = false) => (
     <div className="min-w-0">
-      <label className="mb-1.5 flex h-5 items-center gap-1 text-[13.5px] text-ink">
+      <label className="mb-1.5 flex h-5 items-center gap-1 field-label">
         {label}{required && <span className="text-brand-500">*</span>}
       </label>
       {node}

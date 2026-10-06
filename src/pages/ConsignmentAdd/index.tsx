@@ -1121,7 +1121,7 @@ function Fld({ label, required, info, error, helper, onTouch, children }: {
 }) {
   return (
     <div className="min-w-0" onBlurCapture={onTouch}>
-      <label className="mb-1.5 flex h-5 items-center gap-1 whitespace-nowrap text-[13px] font-bold text-ink" title={label}>
+      <label className="mb-1.5 flex h-5 items-center gap-1 whitespace-nowrap field-label" title={label}>
         <span className="truncate">{label}</span>
         {required && <span className="shrink-0 text-brand-500">*</span>}
         {info && <Info size={12} className="shrink-0 text-brand-500" />}
@@ -1159,7 +1159,7 @@ function InlineToggle({ label, checked, onChange }: {
 }) {
   return (
     <div className="min-w-0">
-      <span className="mb-1.5 flex h-5 items-center whitespace-nowrap text-[13px] font-bold text-ink" title={label}>
+      <span className="mb-1.5 flex h-5 items-center whitespace-nowrap field-label" title={label}>
         <span className="truncate">{label}</span>
       </span>
       <div className="flex h-8 items-center">

@@ -43,7 +43,7 @@ function Fld({ label, required, children, className }: {
 }) {
   return (
     <div className={`min-w-0 ${className ?? ''}`}>
-      <label className="mb-1.5 flex h-5 items-center gap-1 whitespace-nowrap text-[13px] font-bold text-ink" title={label}>
+      <label className="mb-1.5 flex h-5 items-center gap-1 whitespace-nowrap field-label" title={label}>
         <span className="truncate">{label}</span>
         {required && <span className="shrink-0 text-brand-500">*</span>}
       </label>

@@ -917,7 +917,7 @@ function DockVehicleCounts({ row, set, readOnly }: {
       <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
         {DOCK_VEHICLE_TYPES.map((label) => (
           <div key={label} className="min-w-0">
-            <label className="mb-1.5 flex h-5 items-center text-[13px] text-ink">{label}</label>
+            <label className="mb-1.5 flex h-5 items-center field-label">{label}</label>
             <Input type="number" value={countOf(label) ? String(countOf(label)) : ''} placeholder="0"
               onChange={(v) => setCount(label, v)} />
           </div>

@@ -363,7 +363,7 @@ export function DateTimePicker({
   return (
     <div ref={wrapRef} className={`relative min-w-0 ${className}`}>
       {label && (
-        <label className="mb-1.5 flex items-center gap-1 whitespace-nowrap text-[12px] font-bold uppercase tracking-wide text-ink-2" title={label}>
+        <label className="mb-1.5 flex items-center gap-1 whitespace-nowrap field-label" title={label}>
           <span className="truncate">{label}</span>{required && <span className="shrink-0 text-brand-500">*</span>}
         </label>
       )}

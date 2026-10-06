@@ -99,7 +99,7 @@ export default function InboundDamage() {
 
               {/* quantity dropdown */}
               <div>
-                <label className="mb-1.5 block text-[13px] font-semibold text-ink">Select quantity to inbound <span className="text-brand-500">*</span></label>
+                <label className="mb-1.5 block field-label">Select quantity to inbound <span className="text-brand-500">*</span></label>
                 <Select size="lg" value={qty} options={range(EXPECTED)} onChange={setQuantity} />
               </div>
 
@@ -151,14 +151,14 @@ export default function InboundDamage() {
 
               {/* note (optional) */}
               <div>
-                <label className="mb-1.5 block text-[13px] font-semibold text-ink">Add Note (Optional)</label>
+                <label className="mb-1.5 block field-label">Add Note (Optional)</label>
                 <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Add Note"
                   className="h-11 w-full rounded-lg border border-warm-300 bg-surface px-3 text-[14px] text-ink placeholder:text-warm-400 outline-none focus:border-brand-500" />
               </div>
 
               {/* image (optional) */}
               <div>
-                <label className="mb-1.5 block text-[13px] font-semibold text-ink">Add Image (Optional)</label>
+                <label className="mb-1.5 block field-label">Add Image (Optional)</label>
                 {image ? (
                   <div className="inline-flex items-center gap-2 rounded-lg border border-warm-300 bg-surface px-3 py-2 text-[13px] text-ink">
                     📷 {image}

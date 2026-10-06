@@ -67,6 +67,28 @@
   --shadow-ds-overlay: 0 6px 16px rgba(0,0,0,0.08), 0 3px 6px -4px rgba(0,0,0,0.12), 0 9px 28px 8px rgba(0,0,0,0.05);
 }
 
+/* Lato 500 (Medium). Google's Lato has no 500, so a 500 label was silently drawn at 400; the official Lato 2.0
+   Medium fills that weight (public/fonts, SIL Open Font License). Owner, 2026-10-05. */
+@font-face {
+  font-family: 'Lato';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('/fonts/lato-medium.woff2') format('woff2');
+}
+
+/* The ONE field-header style across the demo (owner, 2026-10-05: "Lato 500 · 14px / 20px · rgb(76, 87, 97) —
+   more readable"): every label above an input uses it. ink-2 IS rgb(76, 87, 97). */
+@utility field-label {
+  font-family: var(--font-lato);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  color: var(--color-ink-2);
+  letter-spacing: normal;
+  text-transform: none;
+}
+
 /* FarEye Nueva surfaces use Lato */
 .fe-nueva { font-family: var(--font-lato); }
 .fe-nueva *:focus { outline: none; }

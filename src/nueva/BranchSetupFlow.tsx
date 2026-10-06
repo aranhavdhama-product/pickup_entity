@@ -94,13 +94,13 @@ function StepServiceableArea({ hub, onDone }: {
     <section className="rounded-xl border border-line bg-surface p-6 shadow-ds-1">
       <div className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
         <div className="min-w-0">
-          <label className="mb-1.5 flex h-5 items-center text-[13.5px] text-ink">Branch</label>
+          <label className="mb-1.5 flex h-5 items-center field-label">Branch</label>
           <div className="flex h-8 items-center rounded-md border border-warm-300 bg-warm-50 px-3 text-[13px] text-ink-2">
             {hub.name}
           </div>
         </div>
         <div className="min-w-0">
-          <label className="mb-1.5 flex h-5 items-center gap-1 text-[13.5px] text-ink">Country<span className="text-brand-500">*</span></label>
+          <label className="mb-1.5 flex h-5 items-center gap-1 field-label">Country<span className="text-brand-500">*</span></label>
           <MenuSelect value={String(draft.country ?? '')} placeholder="Select country" searchable
             options={countries.map((c) => c.value)}
             labels={(v) => countries.find((c) => c.value === v)?.label ?? v}

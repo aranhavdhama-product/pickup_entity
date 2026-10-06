@@ -1001,12 +1001,11 @@ export function WizardSteps({ steps, active, done = [], onSelect }: {
 }
 
 /* ---------------- Form field ---------------- */
-export function Field({ label, required, info, children, full, plain }: { label: string; required?: boolean; info?: boolean; children: ReactNode; full?: boolean; plain?: boolean }) {
+/** `plain` is kept for callers; since 2026-10-05 every field header is the one `field-label` style (Lato 500 · 14 / 20 · ink-2) */
+export function Field({ label, required, info, children, full }: { label: string; required?: boolean; info?: boolean; children: ReactNode; full?: boolean; plain?: boolean }) {
   return (
     <div className={full ? 'col-span-2' : ''}>
-      <label className={plain
-        ? 'flex items-center gap-1 text-[14px] text-ink mb-1.5'
-        : 'flex items-center gap-1 text-[12px] font-bold uppercase tracking-wide text-ink-2 mb-1.5'}>
+      <label className="mb-1.5 flex items-center gap-1 field-label">
         {label}{required && <span className="text-brand-500">*</span>}{info && <Info size={12} className="text-warm-400" />}
       </label>
       {children}
@@ -1574,7 +1573,7 @@ export function MoreFilters({ defs, values, onChange }: {
           <div className="space-y-2.5 max-h-72 overflow-y-auto">
             {defs.map((d) => (
               <div key={d.key}>
-                <label className="block text-[12px] text-ink-2 mb-1">{d.label}</label>
+                <label className="mb-1 block field-label">{d.label}</label>
                 <SearchSelect value={values[d.key] ?? ''} label={d.label} options={d.options}
                   onChange={(v) => onChange(d.key, v)} />
               </div>

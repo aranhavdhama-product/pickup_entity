@@ -503,7 +503,7 @@ function SFld({ label, required, info, error, errorNow, helper, className = '', 
       {editing
         ? <BuilderLabel label={label} fieldKey={fieldKey} required={required} />
         : (
-          <label className="mb-1.5 flex min-h-5 items-start gap-1 text-[13px] leading-5 text-ink" title={label}>
+          <label className="mb-1.5 flex min-h-5 items-start gap-1 field-label" title={label}>
             <span className="min-w-0">{label || '\u00a0'}{required && <span className="text-danger-fg">&nbsp;*</span>}</span>
             {info && <Info size={13} className="mt-0.5 shrink-0 text-brand-500" />}
           </label>
@@ -682,14 +682,14 @@ function BuilderLabel({ label, fieldKey, required }: { label?: string; fieldKey?
   const star = required && <span className="text-danger-fg">&nbsp;*</span>
   if (!fieldKey || !b.known(fieldKey)) {
     return (
-      <div className="mb-1.5 flex min-h-5 items-center gap-1 text-[13px] leading-5 text-ink">
+      <div className="mb-1.5 flex min-h-5 items-center gap-1 field-label">
         <span className="min-w-0 truncate" title={label}>{label}{star}</span>
         <span className="ml-auto inline-flex shrink-0"><Tip text="Part of the form — always shown"><Lock size={11} className="text-warm-300" /></Tip></span>
       </div>
     )
   }
   return (
-    <div className="mb-1.5 flex min-h-5 items-center text-[13px] leading-5 text-ink">
+    <div className="mb-1.5 flex min-h-5 items-center field-label">
       <span className="min-w-0 truncate" title={label}>{label || b.label(fieldKey)}</span>{star}
       <FieldChips k={fieldKey} overlay />
     </div>
