@@ -751,6 +751,56 @@ export type SelectionAction = {
   reason?: string
 }
 
+/**
+ * The floating menu a row selection opens (owner, 2026-10-05: "multiselect popup actions do not show up
+ * correctly"). What the selection CAN do comes first; what it cannot is folded under "Not available (n)" — still
+ * there, each with its reason on a line under it — so a mixed selection is not a wall of grey items.
+ */
+export function SelectionMenu({ count, actions, onClear, className = 'absolute right-3 top-11 z-20' }: {
+  count: number; actions: SelectionAction[]; onClear: () => void; className?: string
+}) {
+  const [showOff, setShowOff] = useState(false)
+  const on = actions.filter((a) => !a.disabled)
+  const off = actions.filter((a) => a.disabled)
+  return (
+    <div className={`${className} w-[264px] bg-surface border border-line rounded-xl shadow-ds-overlay overflow-hidden`}>
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-line">
+        <span className="text-[13px] font-bold text-ink">{count} Selected</span>
+        <button onClick={onClear} aria-label="Clear selection" className="text-ink-3 hover:text-ink"><X size={14} /></button>
+      </div>
+      <div className="flex max-h-[70vh] flex-col overflow-y-auto py-1.5">
+        {on.length === 0 && (
+          <p className="px-4 py-2 text-[12px] text-ink-3">No action fits all {count} rows. Select rows in the same status.</p>
+        )}
+        {on.map((a) => (
+          <button key={a.label} onClick={a.onClick}
+            className="flex items-center gap-2.5 px-4 py-2 text-left text-[13px] text-ink hover:bg-warm-50">
+            <span className="text-ink-3 self-start pt-px">{a.icon}</span>
+            <span className="min-w-0">{a.label}</span>
+          </button>
+        ))}
+        {off.length > 0 && (
+          <>
+            <button onClick={() => setShowOff((v) => !v)} aria-expanded={showOff}
+              className={`flex items-center gap-1.5 px-4 pt-2.5 pb-1.5 text-left text-[12px] font-bold text-ink-3 hover:text-ink ${on.length ? 'mt-1 border-t border-line' : ''}`}>
+              {showOff ? <ChevronDown size={13} /> : <ChevronRight size={13} />}Not available ({off.length})
+            </button>
+            {showOff && off.map((a) => (
+              <div key={a.label} title={a.reason} className="flex items-start gap-2.5 px-4 py-1.5 text-[13px] text-warm-400">
+                <span className="pt-px">{a.icon}</span>
+                <span className="min-w-0">
+                  <span className="block">{a.label}</span>
+                  {a.reason && <span className="block text-[12px] leading-4 text-ink-3">{a.reason}</span>}
+                </span>
+              </div>
+            ))}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export function DataTable({
   columns, rows, selectable, rowKey = 'id', onEdit, onRowClick, extraActions, selectionActions,
 }: {
@@ -771,26 +821,8 @@ export function DataTable({
     <div className="relative bg-surface border border-line rounded-md">
       {/* floating selection panel — same anatomy as the Consignment Order page */}
       {selectable && selected.size > 0 && selectionActions && (
-        <div className="absolute right-3 top-11 z-20 w-[248px] bg-surface border border-line rounded-xl shadow-ds-overlay overflow-hidden">
-          <div className="flex items-center justify-between px-4 py-2.5 border-b border-line">
-            <span className="text-[13px] font-bold text-ink">{selected.size} Selected</span>
-            <button onClick={clear} className="text-ink-3 hover:text-ink"><X size={14} /></button>
-          </div>
-          <div className="flex max-h-[70vh] flex-col overflow-y-auto py-1.5">
-            {selectionActions(rows.filter((r) => selected.has(r[rowKey])), clear).map((a) => (
-              <button
-                key={a.label} onClick={a.disabled ? undefined : a.onClick} disabled={a.disabled}
-                title={a.disabled ? a.reason : undefined}
-                className={`flex items-center gap-2.5 px-4 py-2 text-left text-[13px]
-                  ${a.disabled ? 'text-warm-400 cursor-not-allowed' : 'text-ink hover:bg-warm-50'}`}>
-                <span className="text-ink-3 self-start pt-px">{a.icon}</span>
-                <span className="min-w-0">
-                  {a.label}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
+        <SelectionMenu count={selected.size} onClear={clear}
+          actions={selectionActions(rows.filter((r) => selected.has(r[rowKey])), clear)} />
       )}
       {selectable && selected.size > 0 && !selectionActions && (
         <div className="flex items-center gap-3 px-4 py-2 bg-warm-50 border-b border-line text-[13px] text-ink">

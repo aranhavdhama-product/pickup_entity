@@ -11,7 +11,8 @@ import {
 import { toast } from '../../nueva/toast'
 import { growOrderActions, pickupRequestById, useGrowOrders } from '../../growOrders/store'
 import { usePickupModuleConfig } from '../../config/pickupModule'
-import { Plus, X } from 'lucide-react'
+import { Boxes, Plus, Truck, X } from 'lucide-react'
+import { Segment } from '../GrowOrders/merchantFormBits'
 import type { GrowOrder, GrowPickupRequest, Party, StoreLocation } from '../../growOrders/types'
 import { isPickupEligible } from '../../growOrders/tabs'
 import { CANCEL_REASONS, PICKABLE_FAILURE_REASONS } from '../../growOrders/pickupReasons'
@@ -144,8 +145,9 @@ const hubOfStore = (s: StoreLocation | undefined): string | null =>
   (s ? (INBOUND_HUBS.some((h) => h.code === s.code) ? s.code : inboundHubFor(s.party)) : null)
 
 /**
- * A RESERVED booking by ops (case C4): a collection slot before any
- * consignment exists.
+ * A RESERVED ("blind") booking by ops (case C4): a collection slot before any
+ * consignment exists. Owner, 2026-10-05: titled "Blind pickup request", one short subtitle, LTL | FTL as a
+ * two-choice segment, no explanation paragraph; opened from the "Create pickup ▾" menu (createPickup.tsx).
  *  - LTL: how many consignments and roughly what they weigh — nothing else;
  *    the drop hub follows from the consignments once they are attached.
  *  - FTL (owner, 2026-09-25): Merchant → Ship From → Ship To (optional, below
@@ -253,32 +255,29 @@ export function CreatePickupDialog({ onClose, onDone }: { onClose: () => void; o
   const withAddresses = shipTos.length > 0
   const cols = withAddresses ? 'grid-cols-[1.6fr_120px_1.2fr_32px]' : 'grid-cols-[1.6fr_130px_32px]'
 
+  /* owner, 2026-10-05 ("so much text — simplify"): two short number fields, no explanation paragraph */
   const estimates = (
-    <div className="grid grid-cols-4 items-end gap-3">
-      <Field label="Estimated number of shipments" required={!ftl}><Input type="number" value={pieces} onChange={setPieces} placeholder={ftl ? 'Optional' : 'e.g. 12'} /></Field>
-      <Field label="Estimated weight (kg)"><Input type="number" value={weight} onChange={setWeight} placeholder={ftl ? 'Optional' : 'e.g. 40'} /></Field>
+    <div className="grid grid-cols-2 items-end gap-3">
+      <Field label="How many consignments" required={!ftl}><Input type="number" value={pieces} onChange={setPieces} placeholder="e.g. 12" /></Field>
+      <Field label="Weight (kg)"><Input type="number" value={weight} onChange={setWeight} placeholder="Optional" /></Field>
     </div>
   )
 
   return (
-    <Modal open wide title="Create Pickup Request" onClose={onClose}
+    <Modal open wide title="Blind pickup request" subtitle="Book a pickup before the consignments exist." onClose={onClose}
       footer={<Footer onClose={onClose} onConfirm={submit}
-        label={ftl && lines.length > 1 ? `Create ${lines.length} Pickup Requests` : 'Create Pickup Request'} />}>
-      <div className="flex flex-col gap-4 pb-3">
-        <Hint>Reserved pickup — book a collection before the shipments exist. Attach them later from Eligible consignments, or Add to existing pickup on the Consignment Order page.</Hint>
-        <div className="grid grid-cols-2 items-end gap-3">
-          <Field label="Type" required>
-            <MenuSelect value={kind} options={['LTL', 'FTL']}
-              labels={(t) => (t === 'FTL' ? 'FTL · Full vehicle' : 'LTL · Parcel handover')}
-              onChange={(v) => setKind(v === 'FTL' ? 'FTL' : 'LTL')} />
-          </Field>
-        </div>
+        label={ftl && lines.length > 1 ? `Create ${lines.length} blind pickups` : 'Create blind pickup'} />}>
+      <div className="flex flex-col gap-5 pb-3">
+        <Segment<'LTL' | 'FTL'> value={kind} onChange={setKind} options={[
+          { value: 'LTL', label: 'Parcels (LTL)', icon: <Boxes size={17} /> },
+          { value: 'FTL', label: 'Full vehicle (FTL)', icon: <Truck size={17} /> },
+        ]} />
         <div className="grid grid-cols-2 items-end gap-3">
           <Field label="Merchant" required>
-            <MenuSelect value={merchant} placeholder="Select merchant" options={merchants.map((m) => m.name)}
+            <MenuSelect value={merchant} placeholder="Select merchant" options={merchants.map((m) => m.name)} searchable
               onChange={(v) => { setMerchant(v); const s = merchants.find((m) => m.name === v)?.stores ?? []; setStoreCode(s.length === 1 ? s[0].code : ''); setShipTos([]) }} />
           </Field>
-          <Field label="Ship From" required>
+          <Field label="Pickup address" required>
             <MenuSelect value={storeCode} placeholder={merchant ? 'Select pickup address' : 'Pick a merchant first'}
               options={stores.map((s) => s.code)} labels={(c) => { const s = storeOf(c, stores); return s ? storeLabel(s) : c }}
               onChange={setStoreCode} />
@@ -295,7 +294,7 @@ export function CreatePickupDialog({ onClose, onDone }: { onClose: () => void; o
             {/* Ship To — optional, directly below Ship From; a merchant location prefills it */}
             {withAddresses ? (
               <div>
-                <p className="mb-1.5 text-[12px] font-bold uppercase tracking-wide text-ink-2">Ship To</p>
+                <p className="mb-1.5 text-[13px] font-bold text-ink">Drop address</p>
                 <div className="flex flex-col gap-3">
                   {shipTos.map((a, i) => (
                     <div key={a.id}>
@@ -324,8 +323,8 @@ export function CreatePickupDialog({ onClose, onDone }: { onClose: () => void; o
                 </div>
               </div>
             ) : (
-              <div>
-                <Button size="sm" variant="text" icon={<Plus size={13} />} onClick={() => setShipTos([newShipTo()])}>Add ship-to address</Button>
+              <div className="-mt-2">
+                <Button size="sm" variant="text" icon={<Plus size={13} />} onClick={() => setShipTos([newShipTo()])}>Add drop address (optional)</Button>
               </div>
             )}
 
@@ -341,11 +340,9 @@ export function CreatePickupDialog({ onClose, onDone }: { onClose: () => void; o
 
             {/* the vehicles: a table, one line per vehicle type */}
             <div>
-              <p className="mb-1.5 text-[12px] font-bold uppercase tracking-wide text-ink-2">
+              <p className="mb-1.5 text-[13px] font-bold text-ink" title={hub ? `${hubName(hub)} fleet` : undefined}>
                 Vehicles<span className="text-brand-500">*</span>
-                <span className="ml-2 font-normal normal-case tracking-normal text-ink-3">
-                  {plural(totalVehicles, 'vehicle')}{hub ? ` · ${hubName(hub)} fleet` : ' · pick a Ship From for its hub fleet'}
-                </span>
+                <span className="ml-2 text-[12px] font-normal text-ink-3">{plural(totalVehicles, 'vehicle')}</span>
               </p>
               <div className="rounded-md border border-line">
                 <div className={`grid ${cols} gap-3 border-b border-line bg-warm-50 px-3 py-2 text-[12px] font-bold text-ink-3`}>
@@ -378,8 +375,8 @@ export function CreatePickupDialog({ onClose, onDone }: { onClose: () => void; o
           </>
         )}
 
-        <Field label="Instructions for the driver"><Input value={instructions} onChange={setInstructions} placeholder="Optional" /></Field>
-        {tried && missing.length > 0 && <Hint tone="danger">{plural(missing.length, 'field')} incomplete: {missing.join(', ')}</Hint>}
+        <Field label="Note for the driver"><Input value={instructions} onChange={setInstructions} placeholder="Optional — gate code, dock, contact" /></Field>
+        {tried && missing.length > 0 && <Hint tone="danger">Fill in: {missing.join(', ')}</Hint>}
       </div>
     </Modal>
   )

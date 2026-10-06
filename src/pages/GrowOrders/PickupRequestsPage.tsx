@@ -73,7 +73,7 @@ const ICON_OF: Record<LocalPrTab, typeof Layers> = {
 }
 /** Pre-tab Grow slugs (they were filter presets) → the tab that holds them. */
 const OLD_SLUG: Record<string, string> = {
-  requested: 'active', scheduled: 'active', 'out-for-pickup': 'active', completed: 'closed', exceptions: 'attention',
+  requested: 'active', scheduled: 'active', 'out-for-pickup': 'active', completed: 'closed', exceptions: 'exception',
 }
 /** The merchant's Attention Required flags (the console's minus Discrepancy, which is the carrier's). */
 const MERCHANT_EXCEPTIONS = ['Overdue', 'Duplicate', 'Partially picked', 'Re-attempt', 'Re-attempt scheduled']
@@ -166,7 +166,7 @@ export default function PickupRequestsPage() {
   const addressDef = useMemo<FilterDef>(() => ({ key: 'Pickup Address', label: 'Pickup Address', options: points }), [points])
   const advDefs = useMemo<FilterDef[]>(() => [
     addressDef,
-    { key: 'Attention Required', label: 'Attention Required', options: [...MERCHANT_EXCEPTIONS] },
+    { key: 'Attention Required', label: 'Exception', options: [...MERCHANT_EXCEPTIONS] },
     { key: 'Type', label: 'Type', options: ['LTL', 'FTL'] },
     { key: 'Carrier', label: 'Carrier', options: uniq(db.pickupRequests.map(carrierOf)) },
     { key: 'Reserved', label: 'Reserved', options: ['Reserved', 'Not reserved'] },
@@ -325,7 +325,7 @@ export default function PickupRequestsPage() {
           <Panel>
             <EmptyState
               title={filtersOn ? 'Nothing matches these filters' : eligibleView ? TO_BOOK_EMPTY
-                : tab === ATTENTION_REQUIRED ? 'Nothing needs attention' : `No pickup requests under ${tab}`}
+                : tab === ATTENTION_REQUIRED ? 'No exceptions' : `No pickup requests under ${tab}`}
               hint={filtersOn ? 'Clear the filters to see the whole list again.'
                 : eligibleView || tab === ATTENTION_REQUIRED ? undefined : 'Open Eligible consignments and Schedule Pickup, or Add a pickup request.'} />
           </Panel>

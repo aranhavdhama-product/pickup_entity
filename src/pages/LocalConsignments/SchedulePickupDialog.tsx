@@ -21,7 +21,7 @@
  */
 import { useMemo, useState } from 'react'
 import { ChevronDown, ChevronRight, Info, Truck } from 'lucide-react'
-import { Button, MenuSelect, Modal } from '../../nueva/components'
+import { Button, Field, Input, MenuSelect, Modal } from '../../nueva/components'
 import { useGrowOrders } from '../../growOrders/store'
 import type { GrowOrder, GrowPickupRequest, StoreLocation } from '../../growOrders/types'
 import { canAddOrdersTo, isOverduePr, isPickupEligible, rangesOverlap } from '../../growOrders/tabs'
@@ -184,35 +184,31 @@ export function SchedulePickupDialog({ orderIds, onClose, onDone, prefer = 'choo
   const total = eligible.length
 
   return (
-    <Modal open title={title} subtitle="Book a pickup for the selected shipments." onClose={onClose} wide
+    <Modal open title={title} onClose={onClose} wide
       footer={<>
         <Button variant="outline" onClick={onClose}>Cancel</Button>
         <Button disabled={!canConfirm} icon={<Truck size={14} />} onClick={confirm}>
           {cards.length === 0 ? 'Schedule' : `Schedule ${plural(pickupCount, 'pickup')}`}
         </Button>
       </>}>
+      {/* owner, 2026-10-05 ("so much text — simplify"): one short line per fact, the details in tooltips */}
       <div className="flex flex-col gap-4 pb-3">
         {skipped.length > 0 && (
-          <p className="flex items-start gap-1.5 text-[12.5px] text-ink-3">
-            <Info size={13} className="mt-[3px] shrink-0 text-warm-400" />
-            <span><span className="font-bold text-ink-2">Skipped {skipped.length}:</span>{' '}
-              {skipped.map((s) => `${s.label} — ${s.reason}`).join(' · ')}</span>
+          <p className="flex items-center gap-1.5 text-[12px] text-ink-3" title={skipped.map((s) => `${s.label} — ${s.reason}`).join('\n')}>
+            <Info size={13} className="shrink-0 text-warm-400" />
+            {plural(skipped.length, 'consignment')} left out — already booked or not ready.
           </p>
         )}
 
         {cards.length === 0 ? (
           <p className="rounded-md border border-dashed border-line px-3 py-4 text-[13px] text-ink-3">
-            None of the selected shipments needs a pickup. Schedule Pickup books the first-mile collection for shipments in state
-            <span className="font-bold text-ink-2"> Created</span> that are not yet in a pickup request. To schedule shipments that are
-            already booked or collected, use <span className="font-bold text-ink-2">Schedule Routing</span>.
+            None of these consignments needs a pickup.
           </p>
         ) : (
           <>
             <p className="-mb-2 text-[12px] text-ink-3">
-              <span className="font-bold text-ink-2">{plural(pickupCount, 'pickup')}</span>
-              {allSplit
-                ? ' · one per shipment'
-                : <> · {plural(total, 'shipment')} · one per pickup address and inbound hub{cards.some((c) => c.g.vehicle) ? ', FTL on its own' : ''}</>}
+              {plural(total, 'consignment')} → <span className="font-bold text-ink-2">{plural(pickupCount, 'pickup')}</span>
+              {allSplit ? ' (one each)' : ''}
             </p>
             <div className="flex flex-col gap-2">
               {cards.map(({ g, candidates, target, choice, weight }) => {
@@ -238,7 +234,7 @@ export function SchedulePickupDialog({ orderIds, onClose, onDone, prefer = 'choo
                           <BookingChoiceControl choice={choice} onChange={setChoice} candidates={candidates}
                             shipments={g.orders.length} ftl={!!g.vehicle}
                             labelOf={(p) => `${p.number} · ${windowLabel(p)} · ${plural(p.orderIds.length, 'order')}`}
-                            note={target ? <>The pickup policy adds these to {target.number} (same {pickupPolicy(merchantOf(g.orders[0], db.stores)).multiPrPolicy === 'ONE_OPEN_PER_LOCATION' ? 'address' : 'slot'}).</> : undefined} />
+                            note={target ? <>Joins {target.number} (pickup rules).</> : undefined} />
                         )}
                         {prefer === 'existing' && (candidates.length ? (
                           <div className="w-[300px]">
@@ -247,7 +243,7 @@ export function SchedulePickupDialog({ orderIds, onClose, onDone, prefer = 'choo
                               onChange={(id) => setChoice({ mode: 'existing', prId: id })} />
                           </div>
                         ) : (
-                          <p className="max-w-[300px] text-right text-[12px] text-ink-3">No open pickup request at this address can take more — it will be booked as a new request.</p>
+                          <p className="max-w-[300px] text-right text-[12px] text-ink-3">No open request here — books a new one.</p>
                         ))}
                       </div>
                     </div>
@@ -277,17 +273,11 @@ export function SchedulePickupDialog({ orderIds, onClose, onDone, prefer = 'choo
               {/* the standing cutoff / earliest-window rule line was removed by the
                   owner; the cutoff ERROR above and the earliest-window prefill stay */}
               {!needsWindow && (
-                <p className="mt-1.5 text-[12px] text-ink-3">Every card joins an existing request, which keeps its own window.</p>
+                <p className="mt-1.5 text-[12px] text-ink-3">Existing requests keep their own time.</p>
               )}
             </div>
 
-            <label className="block">
-              <span className="mb-1.5 block text-[12px] font-bold uppercase tracking-wide text-ink-2">Instructions for the driver</span>
-              <textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} rows={3}
-                placeholder="Gate code, dock number, contact on arrival…"
-                className="w-full rounded-md border border-warm-300 bg-surface px-3 py-2 text-[13px] text-ink placeholder:text-warm-400
-                           focus:border-brand-500 focus:outline-none focus:ring-[3px] focus:ring-brand-500/20 transition-shadow" />
-            </label>
+            <Field label="Note for the driver"><Input value={instructions} onChange={setInstructions} placeholder="Optional — gate code, dock, contact" /></Field>
           </>
         )}
       </div>

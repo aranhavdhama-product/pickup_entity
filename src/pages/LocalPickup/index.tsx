@@ -5,19 +5,18 @@
  * search · icons), a selectable DataTable whose selection surfaces the bulk
  * actions, row click = the request's own page.
  *
- * `Eligible consignments` (the LAST tab; owner, 2026-09-25 — formerly "Eligible
- * for Pickup") is not a request list: it shows ready CONSIGNMENTS with no request
- * yet, with Add to new / existing pickup and a one-line caption saying so. The
- * Consignment Order page offers the same two bookings.
+ * Tabs (owner, 2026-10-05): Exception · Active · Closed · All — no "Eligible consignments" tab any more.
+ * Waiting consignments are booked from **Create pickup ▾ → Pickup request** (createPickup.tsx; the same
+ * menu sits on Pending For Planning) or Consignment Order → Schedule Pickup.
  */
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
-  Ban, CalendarClock, CircleAlert, CircleCheck, ClipboardCheck, Download, Merge, PackageCheck, PackagePlus, PackageSearch, Plus,
+  Ban, CalendarClock, CircleAlert, CircleCheck, ClipboardCheck, Download, Merge, PackageCheck, PackagePlus,
   Printer, RotateCcw, Route as RouteIcon, Settings, Split, Truck, Layers, XCircle, Zap
 } from 'lucide-react'
 import {
-  Button, DataTable, EmptyState, PageHeader,
+  DataTable, EmptyState, PageHeader,
   PageSize, Pagination, Panel, StatusPill, type SelectionAction,
 } from '../../nueva/components'
 import {
@@ -25,18 +24,15 @@ import {
 } from '../../local/chrome'
 import { toast } from '../../nueva/toast'
 import { pickupRequestById, useGrowOrders } from '../../growOrders/store'
-import type { GrowOrder, GrowPickupRequest } from '../../growOrders/types'
+import type { GrowPickupRequest } from '../../growOrders/types'
 import {
-  ATTENTION_REQUIRED, CONSIGNMENTS_TO_BOOK, LOCAL_PR_TAB_SLUG, inLocalPrTab, isPickupEligible, localPrTabCounts,
+  ATTENTION_REQUIRED, CONSIGNMENTS_TO_BOOK, LOCAL_PR_TAB_SLUG, inLocalPrTab, localPrTabCounts,
   localPrTabFromSlug, type LocalPrTab,
 } from '../../growOrders/tabs'
-import { blindPickupsAllowed, pickupPagesVisible, usePickupModuleConfig } from '../../config/pickupModule'
+import { pickupPagesVisible, usePickupModuleConfig } from '../../config/pickupModule'
 import { autoPickupSummary } from '../../growOrders/pickupSlots'
-import { csvOf, downloadCsv, executionOverlay, toConsignmentRow, type LocalConsignmentRow } from '../LocalPFP/adapter'
-import { usePlanning } from '../LocalPFP/planningStore'
-import { useConsignmentColumns } from '../LocalConsignments/columns'
-import { CreatePickupDialog } from './dialogs'
-import { SchedulePickupDialog } from '../LocalConsignments/SchedulePickupDialog'
+import { downloadCsv } from '../LocalPFP/adapter'
+import { CreatePickupButton, CreatePickupDialogs, type CreatePickupKind } from './createPickup'
 import type { PrAction } from '../../growOrders/prActions'
 import { PrActionDialogs } from './prSelectionActions'
 import { prSelectionItems, type PrDialog } from './prSelectionItems'
@@ -44,13 +40,14 @@ import ViewPickup from '../LocalPFP/ViewPickup'
 import PickupRequestDetail from './PickupRequestDetail'
 import {
   duplicateIds, matchesStatus, merchantOfPr, pickupPointName, prCsv, PR_DEFAULT_COLUMN_KEYS,
-  statusLabel, statusTags, STATUS_FILTER_OPTIONS, TO_BOOK_CAPTION, TO_BOOK_EMPTY,
+  statusLabel, statusTags, STATUS_FILTER_OPTIONS,
 } from './prModel'
 import { usePrGridColumns } from './prColumns'
 
-/** Display order of the tabs (owner, 2026-09-25: the queue that needs a hand first, All
-    fourth, Eligible consignments last); slugs and counts come from tabs.ts. */
-const TAB_ORDER: LocalPrTab[] = [ATTENTION_REQUIRED, 'Active', 'Closed', 'All', CONSIGNMENTS_TO_BOOK]
+/** Display order of the tabs (owner, 2026-09-25: the queue that needs a hand first, All fourth); slugs and counts
+    come from tabs.ts. 2026-10-05 (owner): no Eligible consignments tab here — consignments are booked from Consignment
+    Order (Schedule Pickup) and Pending For Planning; an old `?tab=eligible` link lands on Exception. */
+const TAB_ORDER: LocalPrTab[] = [ATTENTION_REQUIRED, 'Active', 'Closed', 'All']
 const ICON_OF: Record<LocalPrTab, typeof Layers> = {
   All: Layers, Active: Truck, Closed: CircleCheck, [ATTENTION_REQUIRED]: CircleAlert, [CONSIGNMENTS_TO_BOOK]: PackagePlus,
 }
@@ -59,8 +56,7 @@ const uniq = (xs: (string | null | undefined)[]) => [...new Set(xs.filter((x): x
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
 
 type Dialog =
-  | { kind: 'create' }
-  | { kind: 'book'; orders: GrowOrder[]; prefer: 'new' | 'existing' }
+  | { kind: 'create'; what: CreatePickupKind }
   | PrDialog
   | null
 
@@ -111,13 +107,12 @@ function PickupRequestsList() {
   const nav = useNavigate()
   const db = useGrowOrders()
   const cfg = usePickupModuleConfig()
-  const plan = usePlanning()
   const [params, setParams] = useSearchParams()
   /* `/local/pickup/view/:prId` = the list with the request's drawer over it —
      the same drawer Pending For Planning's Pickups tab opens */
   const { prId: drawerPrId, id: requestId } = useParams()
-  const tab: LocalPrTab = localPrTabFromSlug(params.get('tab'))
-  const eligibleTab = tab === CONSIGNMENTS_TO_BOOK
+  const wantedTab: LocalPrTab = localPrTabFromSlug(params.get('tab'))
+  const tab: LocalPrTab = TAB_ORDER.includes(wantedTab) ? wantedTab : ATTENTION_REQUIRED
 
   const [q, setQ] = useState('')
   const [status, setStatus] = useState('')
@@ -132,42 +127,24 @@ function PickupRequestsList() {
   /* read the clock on every render — Overdue and the tab buckets move with it */
   const now = new Date()
   const byId = useMemo(() => new Map(db.orders.map((o) => [o.id, o])), [db.orders])
-  const eligibleOrders = useMemo(() => db.orders.filter(isPickupEligible), [db.orders])
-  /* the Consignment Order row shape — the same adapter and columns as /local/consignments */
-  const eligibleRows = useMemo<LocalConsignmentRow[]>(() => eligibleOrders.map((o) => toConsignmentRow(o, db, {
-    secondaryState: plan.secondaryState[o.id],
-    schedule: plan.scheduleOverrides[o.id],
-    exception: plan.exceptions[o.id],
-    ...executionOverlay(o, plan.trips),
-  })).sort((a, b) => (a.order.createdAt < b.order.createdAt ? 1 : -1)), [eligibleOrders, db, plan])
-  const eligibleGrid = useConsignmentColumns('local-eligible-columns-v1')
-  const storeNameOf = useMemo(() => {
-    const names = new Map(db.stores.map((x) => [x.code, x.name]))
-    return (code: string | undefined) => (code && names.get(code)) || code || ''
-  }, [db.stores])
-  const counts = localPrTabCounts(db.pickupRequests, eligibleOrders.length, now)
+  const counts = localPrTabCounts(db.pickupRequests, 0, now)
   const dup = useMemo(() => duplicateIds(db.pickupRequests), [db.pickupRequests])
-  /* what needs attention on a request — the same derivation the Attention Required tab uses */
+  /* what needs attention on a request — the same derivation the Exception tab uses */
   const exceptionsOf = (p: GrowPickupRequest) => statusTags(p, dup, now, pickupRequestById)
   const allPrs = useMemo(() => [...db.pickupRequests].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)), [db.pickupRequests])
 
   /* ---------------------------------------------------------- filter defs -- */
-  const merchants = useMemo(() => uniq([...db.pickupRequests.map((p) => merchantOfPr(p, db.stores)), ...eligibleRows.map((r) => r.merchant)]),
-    [db.pickupRequests, db.stores, eligibleRows])
-  const moreDefs = useMemo(() => eligibleTab
-    ? [
-      { key: 'Pickup address', label: 'Pickup address', options: uniq(eligibleRows.map((r) => storeNameOf(r.shipFromCode))) },
-      { key: 'Type', label: 'Type', options: ['LTL', 'FTL'] },
-    ]
-    : [
+  const merchants = useMemo(() => uniq(db.pickupRequests.map((p) => merchantOfPr(p, db.stores))),
+    [db.pickupRequests, db.stores])
+  const moreDefs = useMemo(() => [
       { key: 'Pickup address', label: 'Pickup address', options: uniq(allPrs.map((p) => pickupPointName(p, db.stores))) },
       { key: 'Carrier', label: 'Carrier', options: uniq(allPrs.map((p) => p.carrierName)) },
       { key: 'Driver', label: 'Driver', options: uniq(allPrs.map((p) => p.driverName)) },
-      { key: 'Attention', label: 'Attention Required', options: ['None', 'Overdue', 'Discrepancy', 'Duplicate', 'Partially picked', 'Re-attempt available', 'Re-attempt scheduled'] },
+      { key: 'Attention', label: 'Exception', options: ['None', 'Overdue', 'Discrepancy', 'Duplicate', 'Partially picked', 'Re-attempt available', 'Re-attempt scheduled'] },
       { key: 'Type', label: 'Type', options: ['LTL', 'FTL'] },
       { key: 'Source', label: 'Source', options: uniq(allPrs.map((p) => p.source)) },
       { key: 'Reserved', label: 'Reserved', options: ['Reserved', 'Not reserved'] },
-    ], [eligibleTab, eligibleRows, allPrs, db.stores, storeNameOf])
+    ], [allPrs, db.stores])
 
   const filtersOn = !!(q || status || merchant || from || to || Object.values(more).some((v) => v.length))
   const clearAll = () => { setQ(''); setStatus(''); setMerchant(''); setFrom(''); setTo(''); setMore({}); setPage(1) }
@@ -178,7 +155,6 @@ function PickupRequestsList() {
   const has = (k: string, v: string) => !more[k]?.length || more[k].includes(v)
 
   const prRows = (() => {
-    if (eligibleTab) return []
     const needle = q.trim().toLowerCase()
     return allPrs.filter((p) => {
       if (!inLocalPrTab(p, tab, now, pickupRequestById)) return false
@@ -205,29 +181,13 @@ function PickupRequestsList() {
     })
   })()
 
-  const eRows = (() => {
-    if (!eligibleTab) return []
-    const needle = q.trim().toLowerCase()
-    return eligibleRows.filter((r) => {
-      if (merchant && r.merchant !== merchant) return false
-      const day = r.order.createdAt.slice(0, 10)
-      if (from && day < from) return false
-      if (to && day > to) return false
-      if (!has('Pickup address', storeNameOf(r.shipFromCode))) return false
-      if (!has('Type', r.order.shipmentType === 'FTL' ? 'FTL' : 'LTL')) return false
-      if (needle && !`${r.consignmentNumber} ${r.referenceNumber} ${r.shipToName} ${r.merchant} ${r.origin} ${r.destination}`.toLowerCase().includes(needle)) return false
-      return true
-    })
-  })()
-
-  const total = eligibleTab ? eRows.length : prRows.length
+  const total = prRows.length
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
   const safePage = Math.min(page, totalPages)
   const slice = <T,>(xs: T[]) => xs.slice((safePage - 1) * pageSize, safePage * pageSize)
 
   const exportAll = () => {
-    if (eligibleTab) downloadCsv('consignments-to-book.csv', csvOf(eRows))
-    else downloadCsv('pickup-requests.csv', prCsv(prRows, db))
+    downloadCsv('pickup-requests.csv', prCsv(prRows, db))
     toast.success(`${plural(total, 'row')} exported.`)
   }
 
@@ -255,12 +215,6 @@ function PickupRequestsList() {
       label: it.label, icon: PR_ACTION_ICON[it.id], disabled: it.disabled, reason: it.reason, onClick: it.onClick,
     }))
 
-  const eligibleActions = (sel: LocalConsignmentRow[], clear: () => void): SelectionAction[] => [
-    { label: 'Add to new pickup request', icon: <Plus size={14} />, onClick: () => { setDialog({ kind: 'book', orders: sel.map((r) => r.order), prefer: 'new' }); clear() } },
-    { label: 'Add to existing pickup request', icon: <PackageSearch size={14} />, onClick: () => { setDialog({ kind: 'book', orders: sel.map((r) => r.order), prefer: 'existing' }); clear() } },
-    { label: 'Download CSV', icon: <Download size={14} />, onClick: () => { downloadCsv('consignments-to-book-selected.csv', csvOf(sel)); clear() } },
-  ]
-
   const close = () => setDialog(null)
 
   return (
@@ -277,44 +231,34 @@ function PickupRequestsList() {
             ? <span className="inline-flex h-8 items-center gap-1.5 rounded-md border border-info-bg bg-info-bg px-2.5 text-[12px] text-ink" title="Pickup requests are raised automatically when a consignment is created — Settings → Pickup Request.">
                 <Zap size={13} className="text-brand-500" />{autoPickupSummary(cfg)}
               </span>
-            /* owner, 2026-09-25: "Create Pickup" is the Reserved (blind) booking — hidden when settings forbid it */
-            : blindPickupsAllowed(cfg) && <Button icon={<Plus size={15} />} onClick={() => setDialog({ kind: 'create' })}>Create Pickup</Button>}
+            /* owner, 2026-10-05: Create pickup ▾ = Pickup request (waiting consignments) · Blind pickup request */
+            : <CreatePickupButton onPick={(what) => setDialog({ kind: 'create', what })} />}
         </>} />
       <FilterLine
         right={<>
-          <SearchBox value={q} onChange={(v) => { setQ(v); setPage(1) }} placeholder={eligibleTab ? 'Search consignments' : 'Search pickups'} />
-          {eligibleTab ? eligibleGrid.chooser : prGrid.chooser}
+          <SearchBox value={q} onChange={(v) => { setQ(v); setPage(1) }} placeholder="Search pickups" />
+          {prGrid.chooser}
           <IconBtn title="Download filtered rows (CSV)" onClick={exportAll}><Download size={16} /></IconBtn>
         </>}>
         <DateRange start={from} end={to} onStart={(v) => { setFrom(v); setPage(1) }} onEnd={(v) => { setTo(v); setPage(1) }} />
-        {!eligibleTab && (
-          <FilterSelect value={status} placeholder="Status" options={STATUS_FILTER_OPTIONS} width={170} onChange={(v) => { setStatus(v); setPage(1) }} />
-        )}
+        <FilterSelect value={status} placeholder="Status" options={STATUS_FILTER_OPTIONS} width={170} onChange={(v) => { setStatus(v); setPage(1) }} />
         <FilterSelect value={merchant} placeholder="Merchant" options={merchants} width={170} onChange={(v) => { setMerchant(v); setPage(1) }} />
         <FunnelFilters defs={moreDefs} values={more} onChange={(k, vals) => { setMore((m) => ({ ...m, [k]: vals })); setPage(1) }} />
         <ClearFilters active={filtersOn} onClick={clearAll} />
       </FilterLine>
 
       <div className="mt-4">
-        {/* owner, 2026-09-25: the tab explains itself */}
-        {eligibleTab && <p className="mb-2 text-[13px] text-ink-3">{TO_BOOK_CAPTION}</p>}
         {total === 0 ? (
           <Panel>
             <EmptyState
-              title={filtersOn ? 'Nothing matches these filters' : eligibleTab ? TO_BOOK_EMPTY : tab === ATTENTION_REQUIRED ? 'Nothing needs attention' : `No pickup requests under ${tab}`}
-              hint={filtersOn ? 'Clear the filters to see the whole list again.' : eligibleTab ? undefined : 'Create a pickup, or book consignments from Eligible consignments.'} />
+              title={filtersOn ? 'Nothing matches these filters' : tab === ATTENTION_REQUIRED ? 'No exceptions' : `No pickup requests under ${tab}`}
+              hint={filtersOn ? 'Clear the filters to see the whole list again.' : tab === ATTENTION_REQUIRED ? undefined : 'Use Create pickup to book one.'} />
           </Panel>
         ) : (
           <>
-            {eligibleTab ? (
-              <DataTable key="eligible" columns={eligibleGrid.columns} rows={slice(eRows)} rowKey="orderId" selectable
-                selectionActions={(s, clear) => eligibleActions(s as LocalConsignmentRow[], clear)}
-                onRowClick={(r) => nav(`/local/consignments/${(r as LocalConsignmentRow).orderId}`)} />
-            ) : (
-              <DataTable key={`prs-${tab}`} columns={prGrid.columns} rows={slice(prRows)} rowKey="id" selectable
-                selectionActions={(s, clear) => prActions(s as GrowPickupRequest[], clear)}
-                onRowClick={(r) => nav(`/local/pickup/${(r as GrowPickupRequest).id}?${params.toString()}`)} />
-            )}
+            <DataTable key={`prs-${tab}`} columns={prGrid.columns} rows={slice(prRows)} rowKey="id" selectable
+              selectionActions={(s, clear) => prActions(s as GrowPickupRequest[], clear)}
+              onRowClick={(r) => nav(`/local/pickup/${(r as GrowPickupRequest).id}?${params.toString()}`)} />
             <div className="flex items-center justify-between gap-3">
               <div className="flex-1">
                 <Pagination page={safePage} total={totalPages} onChange={setPage}
@@ -330,32 +274,9 @@ function PickupRequestsList() {
       {/* owner, 2026-09-25: the request opens as a slide-over over the list, URL `/local/pickup/:id` */}
       {requestId && <PickupRequestDetail id={requestId} onClose={() => nav(`/local/pickup?${params.toString()}`)} />}
 
-      {/* owner, 2026-09-25: the Eligible tab books through the SAME dialog as Consignment Order → Schedule */}
-      {dialog?.kind === 'book' && (
-        <SchedulePickupDialog orderIds={dialog.orders.map((o) => o.id)} prefer={dialog.prefer}
-          title={dialog.prefer === 'existing' ? 'Add to existing pickup request' : 'Add to new pickup request'}
-          onClose={close}
-          onDone={(results, failed) => {
-            close()
-            if (results.length) {
-              const n = results.reduce((k, r) => k + r.count, 0)
-              toast.success(`${n} consignment${n === 1 ? '' : 's'} booked — ${results.map((r) =>
-                `${r.number}${r.kind === 'merged' ? ' (merged)' : r.kind === 'added' ? ' (added)' : ''}`).join(', ')}`)
-            }
-            if (failed.length) toast.error(`${failed.join(', ')} can no longer take consignments — nothing added there.`)
-          }} />
-      )}
-      {dialog?.kind === 'create' && blindPickupsAllowed(cfg) && (
-        <CreatePickupDialog onClose={close}
-          onDone={(prs) => {
-            close()
-            toast.success(prs.length === 1
-              ? `Pickup Request ${prs[0].number} created`
-              : `Pickup Requests ${prs.map((p) => p.number).join(', ')} created`)
-            if (prs.length === 1) nav(`/local/pickup/${prs[0].id}`)
-          }} />
-      )}
-      <PrActionDialogs dialog={dialog && dialog.kind !== 'create' && dialog.kind !== 'book' ? dialog : null} db={db} onClose={close} />
+      <CreatePickupDialogs kind={dialog?.kind === 'create' ? dialog.what : null} onClose={close}
+        onCreated={(prs) => { if (prs.length === 1) nav(`/local/pickup/${prs[0].id}`) }} />
+      <PrActionDialogs dialog={dialog && dialog.kind !== 'create' ? dialog : null} db={db} onClose={close} />
     </LocalPage>
   )
 }

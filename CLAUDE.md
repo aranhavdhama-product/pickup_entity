@@ -157,11 +157,11 @@ Product changes layered on the replica (deliberate departures from the live port
   Pickup · Resume · Print Label · Cancel Shipment / Discard Draft). `OrderViewPage` is a thin
   host (the list behind the overlay).
 - **Pickup Requests page** (`/grow/orders/pickups`) — the console `/local/pickup` tabs (owner,
-  2026-09-25): `LocalTabs` **Attention Required · Active · Closed · All · Eligible consignments**
+  2026-09-25): `LocalTabs` **Exception · Active · Closed · All · Eligible consignments**
   (same order, `?tab=` slugs from `tabs.ts`, membership `inLocalPrTab(…, pickupRequestById)`,
-  counts `localPrTabCounts` off the unfiltered lists, default Attention Required; Eligible only in
-  manual mode; pre-tab slugs requested/scheduled/out-for-pickup → active, completed → closed,
-  exceptions → attention) with **Add** (Create Pickup Request dialog) on the strip's right. Filter
+  counts `localPrTabCounts` off the unfiltered lists, default Exception; Eligible only in
+  manual mode — Grow keeps it, the console Pickup page does not (2026-10-05); pre-tab slugs
+  requested/scheduled/out-for-pickup → active, completed → closed, exceptions → exception) with **Add** (Create Pickup Request dialog) on the strip's right. Filter
   line: pickup-window range · Status `FilterMultiSelect` · funnel (Pickup Address, Attention
   Required, Type, Carrier, Reserved) · Clear Filters; right: search · ⚙ · download. Eligible
   consignments tab = the shipments columns (`grow-eligible-columns-v2`), one-line caption, Schedule
@@ -426,12 +426,18 @@ effects (a cancelled/rescheduled PR leaving its trip) flow through `onPickupRequ
   `manualOverride`, `source`) and `handover` (mode driver|hub|both, `driverScanned`,
   `hubScanned`, `scanLog`, `arrivedAtHubAt`, `closedAt`, `pod`). Statuses are unchanged;
   `tabs.ts` derives Handed Over / In transit to hub / Discrepancy / Overdue / Re-attempt.
-  `LOCAL_PR_TABS` = All · Active · Closed · **Attention Required** (was "Exception"; slug
-  `attention`, old `exception` still lands) · **Eligible consignments** (LAST; was "Eligible for
-  Pickup", slug `eligible`; one-line caption above its grid; Add to new / existing pickup). The same
-  consignments can also be booked from `/local/consignments` (Schedule Pickup + Add to existing
-  pickup) and Grow `/grow/orders` (Schedule Pickup) — always pass
-  `pickupRequestById` as the lookup to `localPrTabOf` / `inLocalPrTab`.
+  `LOCAL_PR_TABS` = All · Active · Closed · **Exception** (owner, 2026-10-05 — "Exception" again after
+  "Attention Required"; slug `exception`, old `attention` still lands; the constant is still named
+  `ATTENTION_REQUIRED`) · **Eligible consignments** (slug `eligible`; Grow only since 2026-10-05). The
+  console `/local/pickup` shows Exception · Active · Closed · All (an old `?tab=eligible` lands on
+  Exception). **Create pickup ▾** (owner, 2026-10-05; `LocalPickup/createPickup.tsx`, on `/local/pickup`
+  AND on `/local/pending-for-planning` in manual mode) = **Pickup request** (pickup address → its waiting
+  consignments, all ticked → date + time; `bookGroup` per address → hub group, the merge policy applies)
+  · **Blind pickup request** (`CreatePickupDialog`: LTL | FTL segment, merchant + pickup address, window,
+  how many / weight, or service + vehicles; only while `blindPickupsAllowed`). Popups use one short
+  subtitle at most — no explanation paragraphs. The same consignments can also be booked from
+  `/local/consignments` (Schedule Pickup + Add to existing pickup) and Grow `/grow/orders` (Schedule
+  Pickup) — always pass `pickupRequestById` as the lookup to `localPrTabOf` / `inLocalPrTab`.
 - **A pickup request opens as a SLIDE-OVER over its list** (owner, 2026-09-25), never a page:
   `/local/pickup/:id` and `/grow/orders/pickups/:id` mount the LIST, which hosts
   `LocalPickup/PickupRequestDetail` / `GrowOrders/PickupRequestPage` in nueva `SlideOver` +
@@ -440,7 +446,10 @@ effects (a cancelled/rescheduled PR leaving its trip) flow through `onPickupRequ
 - **Every pickup action is gated by `src/growOrders/prActions.ts`** (owner, 2026-09-25):
   `prActionState(action, pr, { cfg, role: 'ops' | 'merchant' })` / `prBulkState` (a selection =
   enabled only if EVERY row is, + one hub to route / one point to merge / single-row dialogs);
-  disabled items stay visible with the `reason` (`SelectionAction.reason`, `MenuItem.disabled/reason`).
+  disabled items stay reachable with the `reason` (`SelectionAction.reason`, `MenuItem.disabled/reason`).
+  Selection menus (nueva `SelectionMenu` in every `DataTable`, and the PFP panel; owner, 2026-10-05) list
+  what the selection CAN do first and fold the rest under **Not available (n)**, each with its reason
+  on a line under it; the PFP panel list is no longer capped at seven items.
   `prModel.can.*` delegates to it. Never gate a pickup action inline in a page. Research:
   `docs/superpowers/research/2026-09-25-pickup-actions-by-status.md`. A request made by a split carries
   `splitFromPrId` and is never a Duplicate of its sibling. ONE pickup-point key: `prActions.pickupPointKey`
@@ -502,8 +511,8 @@ effects (a cancelled/rescheduled PR leaving its trip) flow through `onPickupRequ
   "Unsaved changes" caption — no "Restore defaults". Other keys (`dateRule`, `slot`, `pickupDays`, …) keep their
   stored values and stay editable on the console's Base Modules → Pickup Request twin. In auto mode every manual booking control is
   replaced by an "Auto pickup · rule" pill: Schedule Pickup (console + Grow), Book Pickup
-  (Grow view), Create Pickup (console Pickup page), Add + Eligible consignments (Grow Pickup Requests).
-  **Manual card = "Manual pickups"**; its one option `manualPickup.blindAllowed` (default true) — `blindPickupsAllowed(cfg)` hides console Create Pickup + Grow Add and makes `createBlindPickup` return null (no write); existing blind requests stay readable.
+  (Grow view), Create pickup (console Pickup page + Pending For Planning), Add + Eligible consignments (Grow Pickup Requests).
+  **Manual card = "Manual pickups"**; its one option `manualPickup.blindAllowed` (default true) — `blindPickupsAllowed(cfg)` hides the console's Blind pickup request choice (Create pickup then opens Pickup request directly) + Grow Add and makes `createBlindPickup` return null (no write); existing blind requests stay readable.
   **Pickup attempts = Reason Policy (owner, 2026-09-25):** `/local/settings/pickup` shows ONE "When a pickup fails" card
   (both modes) whose **Reason Policy** button → `/local/settings/masters/service_order/reason-master?tab=reason-policy`
   (`SubMasterPage` reads `?tab=<slug>`); no attempts input — the cap lives on the rule, staging-style: When =

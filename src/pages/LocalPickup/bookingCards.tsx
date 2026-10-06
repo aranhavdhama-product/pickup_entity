@@ -32,7 +32,8 @@ export function BookingChoiceControl({ choice, onChange, candidates, shipments, 
   /** Extra line under a New choice (e.g. the policy will merge it). */
   note?: ReactNode
 }) {
-  const options = [['new', 'New pickup request'], ['existing', 'Add to existing'], ['split', 'Split into separate requests']] as const
+  /* owner, 2026-10-05 ("simplify"): short labels — what Split means is its tooltip */
+  const options = [['new', 'New request'], ['existing', 'Add to existing'], ['split', 'Split']] as const
   return (
     <div className="flex shrink-0 flex-col items-end gap-2">
       <div className="inline-flex rounded-md border border-warm-300 p-0.5" role="radiogroup" aria-label="How to book these shipments">
@@ -61,9 +62,7 @@ export function BookingChoiceControl({ choice, onChange, candidates, shipments, 
       )}
       {choice.mode === 'split' && (
         <p className="max-w-80 text-right text-[12px] text-ink-3">
-          {shipments > 1
-            ? `${plural(shipments, 'pickup request')}, one per shipment — never merged.`
-            : 'One shipment — split books it as its own new request.'}
+          {shipments > 1 ? `${plural(shipments, 'pickup request')}, one each.` : 'Same as a new request.'}
         </p>
       )}
       {choice.mode === 'new' && note && <p className="max-w-80 text-right text-[12px] text-ink-3">{note}</p>}

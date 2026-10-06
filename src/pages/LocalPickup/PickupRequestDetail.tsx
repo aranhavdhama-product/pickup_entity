@@ -343,7 +343,7 @@ function Detail({ pr, back }: { pr: GrowPickupRequest; back: () => void }) {
           action={on && gate('addConsignments').enabled
             ? <Button size="sm" variant="outline" icon={<Plus size={13} />} onClick={() => setDialog('add')}>Add shipments</Button>
             : undefined}
-          empty={pr.blind ? 'Reserved — no shipments attached yet. Attach them with Add shipments, or from Eligible consignments.' : 'None'}>
+          empty={pr.blind ? 'Reserved — no shipments attached yet. Attach them with Add shipments.' : 'None'}>
           {outcomeTable(booked)}
         </OutcomeSection>
 

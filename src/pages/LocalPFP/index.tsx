@@ -36,6 +36,7 @@ import type { PrAction } from '../../growOrders/prActions'
 import { PrActionDialogs } from '../LocalPickup/prSelectionActions'
 import { prSelectionItems, type PrDialog, type PrSelectionItem } from '../LocalPickup/prSelectionItems'
 import { STATUS_FILTER_OPTIONS, matchesStatus } from '../LocalPickup/prModel'
+import { CreatePickupButton, CreatePickupDialogs, type CreatePickupKind } from '../LocalPickup/createPickup'
 import { cancelReasonLabel } from '../../growOrders/pickupReasons'
 import { usePickupModuleConfig } from '../../config/pickupModule'
 import {
@@ -327,6 +328,9 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [modal, setModal] = useState<ModalKind>(null)
   const [prDialog, setPrDialog] = useState<PrDialog | null>(null)
+  /* owner, 2026-10-05: in MANUAL mode the page books pickups itself — Create pickup ▾ (Pickup request · Blind) */
+  const [creating, setCreating] = useState<CreatePickupKind | null>(null)
+  const canCreatePickup = pickupsOn && pickupCfg.mode !== 'auto' && !fixture
 
   /* The saved column configuration still governs which of staging's 20 columns
      this listing shows — `/local/columns` is the page that edits it, and its
@@ -1060,7 +1064,8 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
           {!fixture && tabs.length > 0 && (
             <LocalTabs
               tabs={tabs.map((t) => ({ id: t.key, label: t.label, count: tabCounts[t.key], icon: TAB_ICON[t.key] }))}
-              active={tab} onChange={(id) => switchTab(id as TabKey)} />
+              active={tab} onChange={(id) => switchTab(id as TabKey)}
+              right={canCreatePickup ? <CreatePickupButton onPick={setCreating} /> : undefined} />
           )}
 
           {/* ----------------------------------------------- row 2: the strip */}
@@ -1255,6 +1260,9 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
       )}
 
       <PrActionDialogs dialog={prDialog} db={db} onClose={() => setPrDialog(null)} />
+      {/* a new request lands on First Mile (and All) — from Last Mile, go where it is */}
+      <CreatePickupDialogs kind={creating} onClose={() => setCreating(null)}
+        onCreated={(prs) => { if (prs.length && tab === 'last-mile') switchTab('first-mile') }} />
 
       {/* the detail is an OVERLAY over this list, exactly as staging renders it */}
       {overlayId && <ViewConsignment basePath={basePath} />}
@@ -1474,6 +1482,21 @@ function SelectionPanel({ count, metrics, routable, profile, pickupMetrics, prIt
   })
   /* a pickups-only selection: the shared 16-item pickup-request menu instead */
   const pickupsOnly = c === 0 && p > 0
+  /* owner, 2026-10-05 ("multiselect popup actions do not show up correctly"): what the selection CAN do first,
+     the rest folded under "Not available (n)" with each reason on a line — never a list of greyed items */
+  const [showOff, setShowOff] = useState(false)
+  const reasonOf = (a: (typeof actions)[number]) =>
+    a.blocked ?? `Nothing in this selection can be ${a.label.toLowerCase()}d. ${a.scope ?? ''}`.trim()
+  const rows: { key: string; label: string; icon: React.JSX.Element; danger?: boolean; off: boolean; reason?: string
+    count?: number; run?: () => void }[] = pickupsOnly
+    ? prItems.map((it) => ({ key: it.id, label: it.label, icon: PR_GLYPH[it.id] ?? <ListChecks size={16} />,
+      danger: it.id === 'cancel', off: it.disabled, reason: it.reason, run: it.onClick }))
+    : actions.map((a) => ({ key: a.key, label: a.label, icon: a.icon, danger: a.danger, off: a.eligible === 0,
+      reason: a.eligible === 0 ? reasonOf(a) : a.scope,
+      count: (a.eligible > 0 && a.eligible < profile.total) || a.key === 'plan' || a.key === 'bestRoute' ? a.eligible : undefined,
+      run: () => onAction(a.key) }))
+  const onRows = rows.filter((r) => !r.off)
+  const offRows = rows.filter((r) => r.off)
 
   return (
     <div className="pfp-panel" onClick={(e) => e.stopPropagation()}>
@@ -1521,28 +1544,33 @@ function SelectionPanel({ count, metrics, routable, profile, pickupMetrics, prIt
         </p>
       )}
       <div className="pfp-panel-actions">
-        {pickupsOnly && prItems.map((it) => (
-          <button key={it.id} type="button" className="pfp-panel-action"
-            data-danger={it.id === 'cancel' || undefined} disabled={it.disabled}
-            title={it.reason} onClick={it.onClick}>
-            {PR_GLYPH[it.id] ?? <ListChecks size={16} />}
-            <span>
-              {it.label}
-            </span>
+        {onRows.length === 0 && (
+          <p className="pfp-panel-breakdown" data-muted="true">No action fits all {count} rows. Select rows in the same status.</p>
+        )}
+        {onRows.map((r) => (
+          <button key={r.key} type="button" className="pfp-panel-action" data-danger={r.danger || undefined}
+            title={r.reason} onClick={r.run}>
+            {r.icon}<span>{r.label}</span>
+            {r.count !== undefined && <span className="pfp-panel-count">{r.count}</span>}
           </button>
         ))}
-        {!pickupsOnly && actions.map((a) => {
-          const partial = a.eligible > 0 && a.eligible < profile.total
-          return (
-            <button key={a.key} type="button" className="pfp-panel-action"
-              data-danger={a.danger} disabled={a.eligible === 0}
-              title={a.eligible === 0 ? (a.blocked ?? `Nothing in this selection can be ${a.label.toLowerCase()}d. ${a.scope ?? ''}`.trim()) : a.scope}
-              onClick={() => onAction(a.key)}>
-              {a.icon}{a.label}
-              {(partial || a.key === 'plan' || a.key === 'bestRoute') && <span className="pfp-panel-count">{a.eligible}</span>}
+        {offRows.length > 0 && (
+          <>
+            <button type="button" className="pfp-panel-more" aria-expanded={showOff} data-first={onRows.length === 0 || undefined}
+              onClick={() => setShowOff((v) => !v)}>
+              {showOff ? <CaretDown size={16} /> : <ChevronRight size={16} />}Not available ({offRows.length})
             </button>
-          )
-        })}
+            {showOff && offRows.map((r) => (
+              <div key={r.key} className="pfp-panel-action" data-off="true" title={r.reason}>
+                {r.icon}
+                <span>
+                  {r.label}
+                  {r.reason && <span className="pfp-panel-reason">{r.reason}</span>}
+                </span>
+              </div>
+            ))}
+          </>
+        )}
       </div>
     </div>
   )

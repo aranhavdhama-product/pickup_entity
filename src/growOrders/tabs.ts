@@ -312,20 +312,20 @@ export const canAddOrdersTo = (
  * consignments can also be booked from the Consignment Order pages.
  */
 export const CONSIGNMENTS_TO_BOOK = 'Eligible consignments'
-/** Requests someone must act on (owner, 2026-09-25 — was "Exception"; the wording Control Tower uses for trips). */
-export const ATTENTION_REQUIRED = 'Attention Required'
+/** Requests someone must act on (owner, 2026-10-05: "Exception" again — it was "Attention Required" from 2026-09-25). */
+export const ATTENTION_REQUIRED = 'Exception'
 export const LOCAL_PR_TABS = ['All', 'Active', 'Closed', ATTENTION_REQUIRED, CONSIGNMENTS_TO_BOOK] as const
 export type LocalPrTab = (typeof LOCAL_PR_TABS)[number]
 export type LocalPrBucket = Exclude<LocalPrTab, 'All' | typeof CONSIGNMENTS_TO_BOOK>
 
 export const LOCAL_PR_TAB_SLUG: Record<LocalPrTab, string> = {
-  All: 'all', Active: 'active', Closed: 'closed', [ATTENTION_REQUIRED]: 'attention', [CONSIGNMENTS_TO_BOOK]: 'eligible',
+  All: 'all', Active: 'active', Closed: 'closed', [ATTENTION_REQUIRED]: 'exception', [CONSIGNMENTS_TO_BOOK]: 'eligible',
 }
-/** Old slugs that still land: `exception` → Attention Required. */
-const LOCAL_PR_SLUG_ALIAS: Record<string, string> = { exception: 'attention' }
+/** Old slugs that still land: `attention` (2026-09-25 to 2026-10-05) → Exception. */
+const LOCAL_PR_SLUG_ALIAS: Record<string, string> = { attention: 'exception' }
 export const localPrTabFromSlug = (slug: string | null): LocalPrTab => {
   const s = slug ? LOCAL_PR_SLUG_ALIAS[slug] ?? slug : slug
-  /* no / unknown slug lands on the first tab of the Pickup page: Attention Required */
+  /* no / unknown slug lands on the first tab of the Pickup page: Exception */
   return LOCAL_PR_TABS.find((t) => LOCAL_PR_TAB_SLUG[t] === s) ?? ATTENTION_REQUIRED
 }
 
