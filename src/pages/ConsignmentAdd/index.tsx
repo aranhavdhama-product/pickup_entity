@@ -18,14 +18,15 @@
  * - The field grid collapses 4 → 2 → 1 columns on narrower viewports.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate, useOutletContext } from 'react-router-dom'
 import {
   AlertCircle, Barcode, Biohazard, CalendarCheck, CheckCircle2, CircleDot, ClipboardList,
-  Factory, FileCheck, Info, Layers, ScanLine, Split, Star, Truck, Undo2, User, Users,
+  Factory, FileCheck, Info, Layers, MapPinned, Pencil, ScanLine, Split, Star, Truck, Undo2, User, Users,
   Warehouse, Weight, Wine, Wrench,
 } from 'lucide-react'
-import { Button, DateInput, Input, MenuSelect, MultiSelect, Toggle } from '../../nueva/components'
+import { Button, DateInput, Input, MenuSelect, MultiSelect, SearchInput, Toggle } from '../../nueva/components'
 import { DateTimeRangeInput } from '../../nueva/DateRangeFilter'
 import { toast } from '../../nueva/toast'
 import { HeaderActions } from '../../components/layout/Header'
@@ -137,6 +138,190 @@ const TO_CAPTION: Record<string, string> = {
   'Origin Facility': 'The originating facility the consignment is returned to.',
 }
 
+/* country name per dial code — lets the picker's search match "Australia" as well as "+61";
+   same five codes AddressFields already offered, just with a name attached for search. */
+const DIAL_COUNTRY: Record<string, string> = {
+  '+1': 'United States', '+44': 'United Kingdom', '+61': 'Australia', '+91': 'India', '+31': 'Netherlands',
+}
+
+/* --------------------------------------------------------- address widgets ---- */
+
+type AcPos = { top?: number; bottom?: number; left: number; width: number; maxHeight: number }
+
+/** Shared "type to search, arrow/enter to pick" behavior for the address-search
+ *  boxes below — ported verbatim from Grow's AddOrderPage.tsx (same pattern,
+ *  same geometry math), since it's pure UI behavior with no data-model coupling. */
+function useAutocomplete<T>(hits: T[], onPick: (x: T) => void) {
+  const [open, setOpenState] = useState(false)
+  const [hi, setHi] = useState(0)
+  const [pos, setPos] = useState<AcPos | null>(null)
+  const ref = useRef<HTMLDivElement>(null)
+  const popRef = useRef<HTMLDivElement>(null)
+  const setOpen = (v: boolean) => {
+    if (v) {
+      const r = ref.current?.getBoundingClientRect()
+      if (!r) return
+      const below = window.innerHeight - r.bottom
+      const up = below < 220 && r.top > below
+      setPos(up
+        ? { bottom: window.innerHeight - r.top + 4, left: r.left, width: Math.max(r.width, 320), maxHeight: Math.min(320, r.top - 12) }
+        : { top: r.bottom + 4, left: r.left, width: Math.max(r.width, 320), maxHeight: Math.min(320, below - 12) })
+    }
+    setOpenState(v)
+  }
+  useEffect(() => {
+    if (!open) return
+    const click = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (!ref.current?.contains(t) && !popRef.current?.contains(t)) setOpenState(false)
+    }
+    const scroll = (e: Event) => { if (!popRef.current?.contains(e.target as Node)) setOpenState(false) }
+    window.addEventListener('mousedown', click)
+    window.addEventListener('scroll', scroll, true)
+    window.addEventListener('resize', scroll)
+    return () => {
+      window.removeEventListener('mousedown', click)
+      window.removeEventListener('scroll', scroll, true)
+      window.removeEventListener('resize', scroll)
+    }
+  }, [open])
+  const active = hits.length ? Math.min(hi, hits.length - 1) : 0
+  const pick = (x: T) => { onPick(x); setOpenState(false) }
+  const onKeyDown = (e: React.KeyboardEvent<HTMLElement>) => {
+    if (e.key === 'Escape') { setOpenState(false); return }
+    if (!open) { if (e.key === 'ArrowDown') setOpen(true); return }
+    if (e.key === 'ArrowDown') { e.preventDefault(); setHi(Math.min(hits.length - 1, active + 1)) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setHi(Math.max(0, active - 1)) }
+    else if (e.key === 'Enter' && hits[active]) { e.preventDefault(); pick(hits[active]) }
+  }
+  return { open, setOpen, hi: active, setHi, ref, popRef, pos, onKeyDown, pick }
+}
+
+/** The portaled list shell — MenuSelect's popover anatomy. */
+function AcPop({ pos, popRef, children }: { pos: AcPos | null; popRef: React.RefObject<HTMLDivElement | null>; children: React.ReactNode }) {
+  if (!pos) return null
+  return createPortal(
+    <div ref={popRef} role="listbox"
+      style={{ top: pos.top, bottom: pos.bottom, left: pos.left, width: pos.width, maxHeight: pos.maxHeight }}
+      className="fe-nueva fixed z-[95] overflow-auto rounded-md border border-line bg-surface py-1 shadow-ds-overlay">
+      {children}
+    </div>,
+    document.body,
+  )
+}
+function AcRow({ on, onPick, onHover, children }: { on: boolean; onPick: () => void; onHover: () => void; children: React.ReactNode }) {
+  return (
+    <button type="button" role="option" aria-selected={on} onClick={onPick} onMouseEnter={onHover}
+      className={`flex w-full items-center gap-3 px-3 text-left transition-colors ${on ? 'bg-brand-50' : 'hover:bg-warm-50'}`}>
+      {children}
+    </button>
+  )
+}
+
+/** A saved location's code, searched by name — picking one auto-fills the card
+ *  (fillFromHub / pickShipTo, passed in as `onPick`). Replaces the plain "Location
+ *  Code" MenuSelect for the compact card's own header search, same options source. */
+function LocationSearch({ options, codeLabel, onPick }: {
+  options: string[]; codeLabel: (v: string) => string; onPick: (code: string) => void
+}) {
+  const [q, setQ] = useState('')
+  const hits = useMemo(() => options
+    .filter((o) => !q || codeLabel(o).toLowerCase().includes(q.toLowerCase()))
+    .slice(0, 8), [options, q, codeLabel])
+  const { open, setOpen, hi, setHi, ref, popRef, pos, onKeyDown, pick } = useAutocomplete<string>(hits, (o) => { onPick(o); setQ('') })
+  return (
+    <div ref={ref} className="relative" onFocus={() => { if (!open) setOpen(true) }} onKeyDown={onKeyDown} role="presentation">
+      <SearchInput value={q} onChange={(v) => { setQ(v); setHi(0); setOpen(true) }} placeholder="Search saved locations..." />
+      {open && (
+        <AcPop pos={pos} popRef={popRef}>
+          {hits.map((o, i) => (
+            <AcRow key={o} on={i === hi} onHover={() => setHi(i)} onPick={() => pick(o)}>
+              <span className="min-w-0 flex-1 truncate py-1.5 text-[13px] text-ink">{codeLabel(o)}</span>
+            </AcRow>
+          ))}
+          {hits.length === 0 && <p className="px-3 py-2 text-[12.5px] text-ink-3">No location matches “{q}”</p>}
+        </AcPop>
+      )}
+    </div>
+  )
+}
+
+/** Country Code + Contact Number under one header, glued into one pill — each keeps its
+ *  own real Input/MenuSelect styling, only the touching corners/border collapse. Ported
+ *  from Grow's AddOrderPage.tsx (same component, same "input group" trick). */
+function PhoneField({ label, required, code, number, onCode, onNumber, error, onTouch }: {
+  label: string; required?: boolean; code: string; number: string
+  onCode: (v: string) => void; onNumber: (v: string) => void; error?: boolean; onTouch?: () => void
+}) {
+  return (
+    <Fld label={label} required={required} error={error} onTouch={onTouch}>
+      <div className="flex min-w-0">
+        <div className="w-[72px] shrink-0 [&>div>button]:relative [&>div>button]:rounded-r-none [&>div>button]:focus:z-10">
+          <MenuSelect value={code || '+1'} options={['+1', '+44', '+61', '+91', '+31']} searchable menuWidth={220}
+            labels={(v) => `${DIAL_COUNTRY[v] ?? ''} ${v}`.trim()} renderValue={(v) => v} onChange={onCode} />
+        </div>
+        <div className="-ml-px min-w-0 flex-1 [&>input]:relative [&>input]:rounded-l-none [&>input]:focus:z-10">
+          <Input type="number" value={number} placeholder="eg, 1234567890" onChange={onNumber} />
+        </div>
+      </div>
+    </Fld>
+  )
+}
+
+/** What an address still misses, in words — mirrors fromReq/toReq/rtoReq's own
+ *  field sets exactly, so this never flags something submit doesn't also check. */
+function missingOf(a: AddressForm, role: 'from' | 'to' | 'rto'): string[] {
+  const out: string[] = []
+  const add = (ok: boolean, label: string) => { if (!ok) out.push(label) }
+  add(!!a.name.trim(), 'Name')
+  if (role === 'to') add(!!a.contactNumber.trim(), 'Contact Number')
+  add(!!a.line1.trim(), 'Address Line 1')
+  add(!!a.country.trim(), 'Country')
+  add(!!a.city.trim(), 'City')
+  add(!!a.state.trim(), 'State')
+  return out
+}
+
+/** Compact read-only summary of a Ship From / RTO / Ship To address, with an edit
+ *  pencil — the "folded" alternative to always showing the full AddressFields form.
+ *  Ported from Grow's AddOrderPage.tsx AddressCard (same component, Party → AddressForm). */
+function AddressCard({ value, role, showErrors, onEdit }: {
+  value: AddressForm; role: 'from' | 'to' | 'rto'; showErrors: boolean; onEdit: () => void
+}) {
+  const missing = missingOf(value, role)
+  const empty = !value.name.trim() && !value.line1.trim()
+  const place = [value.city, value.state, value.postalCode, value.country].filter((x) => x.trim()).join(', ')
+  const contact = [value.contactNumber ? `${value.countryCode ?? ''} ${value.contactNumber}`.trim() : '', value.email].filter(Boolean).join(' · ')
+  const bad = showErrors && missing.length > 0
+  return (
+    <div className={`rounded-lg border bg-surface p-4 ${bad ? 'border-danger-fg' : 'border-warm-200'}`}>
+      {empty
+        ? <p className="text-[13px] text-ink-3">No address yet — search above or fill in the fields.</p>
+        : (
+          <div className="flex items-start gap-3">
+            <MapPinned size={16} className="mt-0.5 shrink-0 text-ink-3" />
+            <div className="min-w-0 flex-1">
+              <p className="flex flex-wrap items-center gap-2 text-[14px] font-bold text-ink">
+                {value.name || <span className="font-normal text-ink-3">No name</span>}
+                {value.companyName && <span className="text-[13px] font-normal text-ink-2">· {value.companyName}</span>}
+              </p>
+              {contact && <p className="mt-1 text-[13px] text-ink-2">{contact}</p>}
+              <p className="mt-1 text-[13px] text-ink">{[value.line1, value.line2, value.line3, value.landmark].filter((x) => x.trim()).join(', ')}</p>
+              {place && <p className="text-[13px] text-ink-2">{place}</p>}
+            </div>
+            <button type="button" onClick={onEdit} title="Edit this address" aria-label="Edit this address"
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-warm-200 text-ink-2 hover:bg-warm-50 hover:text-ink">
+              <Pencil size={14} />
+            </button>
+          </div>
+        )}
+      {missing.length > 0 && (bad
+        ? <p className="mt-3 text-[12px] text-danger-fg">Missing: {missing.join(', ')}</p>
+        : !empty && <p className="mt-3"><span className="rounded-full bg-warm-50 px-2 py-0.5 text-[11px] text-ink-2">Incomplete — {missing.length} to add</span></p>)}
+    </div>
+  )
+}
+
 /* --------------------------------------------------------------------- page ---- */
 
 export default function ConsignmentAdd() {
@@ -176,6 +361,10 @@ export default function ConsignmentAdd() {
   const [rtoAddress, setRtoAddress] = useState<AddressForm>(emptyAddress)
   const [rtoMode, setRtoMode] = useState('Same As Ship From')
   const [deliveryMode, setDeliveryMode] = useState('Home Delivery')
+  /** Ship From / Ship To each start folded to a compact search + AddressCard;
+   *  the pencil (or "add new") reveals the full AddressFields form in place. */
+  const [editFrom, setEditFrom] = useState(false)
+  const [editTo, setEditTo] = useState(false)
   const [category, setCategory] = useState<Record<string, boolean>>({})
   // deliberately NO default — the vendor must consciously pick a carrier
   const [carrier, setCarrier] = useState<string>('')
@@ -610,6 +799,123 @@ export default function ConsignmentAdd() {
     }
   }
 
+  /* RTO is no longer its own card — folded into Ship From as a single compact
+   * switch, framed as "same as" (checked = same, the common case). Dropped the
+   * page-width Segmented control (two long option labels) that used to carry it. */
+  const rtoToggle = (
+    <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-[12.5px] font-bold text-ink-2">
+      <Undo2 size={13} className="shrink-0 text-ink-3" />
+      RTO address same as Ship From
+      <Toggle checked={rtoMode === 'Same As Ship From'}
+        onChange={(v) => setRtoMode(v ? 'Same As Ship From' : 'Use Different Address')} />
+    </label>
+  )
+  const rtoExpanded = rtoMode !== 'Use Different Address' ? null : (
+    <div className="mt-5 border-t border-line pt-4">
+      <AddressFields
+        value={rtoAddress} onChange={setRto}
+        fieldError={fieldError} markTouched={markTouched} prefix="rto"
+        requiredContact={false} compact={formMode === 'simplified'}
+        codeOptions={hubCodes} codeLabel={hubLabel}
+        onPickCode={fillFromHub(setRtoAddress)} countries={countries} visible={show}
+      />
+    </div>
+  )
+
+  /* Ship From — folded by default to a compact search + AddressCard (editFrom
+   * false); the pencil reveals the full AddressFields form in place, same shell
+   * SectionCard uses so it still reads as one of this form's section cards. */
+  const FromIcon = ENTITY_ICON[L.shipFrom.entity] ?? Warehouse
+  const fromDone = fromReq.every(Boolean) && rtoReq.every(Boolean)
+  const shipFromSection = editFrom ? (
+    <SectionCard
+      id="sec-ship-from"
+      className={formMode === 'simplified' ? 'lg:order-1' : ''}
+      eyebrow="Ship From"
+      title={L.shipFrom.entity}
+      entity={L.shipFrom.entity}
+      done={fromDone}
+      caption={FROM_CAPTION[L.shipFrom.entity]}>
+      <div className="mb-4"><LocationSearch options={hubCodes} codeLabel={hubLabel} onPick={fillFromHub(setShipFrom)} /></div>
+      <AddressFields
+        value={shipFrom} onChange={setFrom} labels={L.shipFrom}
+        fieldError={fieldError} markTouched={markTouched} prefix="from"
+        requiredContact={false} extras compact={formMode === 'simplified'}
+        codeOptions={hubCodes} codeLabel={hubLabel}
+        onPickCode={fillFromHub(setShipFrom)} countries={countries} visible={show}
+      />
+      <div className="mt-4">{rtoToggle}</div>
+      {rtoExpanded}
+    </SectionCard>
+  ) : (
+    <section id="sec-ship-from"
+      className={`scroll-mt-20 rounded-xl border border-line bg-surface shadow-ds-1 overflow-hidden transition-all hover:border-warm-300 ${formMode === 'simplified' ? 'lg:order-1' : ''}`}>
+      <div className="grid grid-cols-1 gap-x-6 gap-y-4 px-6 py-5 sm:grid-cols-2">
+        <div className="sm:col-start-1 sm:row-start-1">
+          <p className="mb-0.5 text-[10.5px] font-black uppercase tracking-[0.08em] text-ink-3">Ship From</p>
+          <h2 className="flex items-center gap-2 text-[14.5px] font-bold text-ink">
+            <FromIcon size={15} className="text-brand-500" />
+            {L.shipFrom.entity}
+            {fromDone && <CheckCircle2 size={15} className="text-success-fg" />}
+          </h2>
+          <p className="mt-0.5 text-[12.5px] text-ink-3">{FROM_CAPTION[L.shipFrom.entity]}</p>
+        </div>
+        <div className="sm:col-start-1 sm:row-start-2">
+          <LocationSearch options={hubCodes} codeLabel={hubLabel} onPick={fillFromHub(setShipFrom)} />
+        </div>
+        <div className="sm:col-start-1 sm:row-start-3">{rtoToggle}</div>
+        <div className="sm:col-start-2 sm:row-start-1 sm:row-span-3">
+          <AddressCard value={shipFrom} role="from" showErrors={showErrors} onEdit={() => setEditFrom(true)} />
+        </div>
+      </div>
+      {showErrors && !fromReq.every(Boolean) && <p className="px-6 pb-3 text-[12.5px] text-brand-500">Ship From is incomplete — edit it</p>}
+      {rtoExpanded && <div className="px-6 pb-5">{rtoExpanded}</div>}
+    </section>
+  )
+
+  /* Ship To — same fold/edit pattern; the Home Delivery / PUDO-Locker Segmented
+   * stays exactly where and how it was, in both the compact and editing states,
+   * since it changes which saved locations the search above offers. */
+  const ToIcon = ENTITY_ICON[L.shipTo.entity] ?? User
+  const toDone = toReq.every(Boolean)
+  const shipToSection = editTo ? (
+    <SectionCard
+      id="sec-ship-to"
+      className={formMode === 'simplified' ? 'lg:order-2' : ''}
+      eyebrow="Ship To"
+      title={L.shipTo.entity}
+      entity={L.shipTo.entity}
+      done={toDone}
+      caption={TO_CAPTION[L.shipTo.entity]}>
+      <Segmented options={['Home Delivery', 'PUDO/Locker']} value={deliveryMode} onChange={setDeliveryMode} />
+      <div className="my-4"><LocationSearch options={toCodes} codeLabel={toLabel} onPick={pickShipTo} /></div>
+      <AddressFields
+        value={shipTo} onChange={setTo} labels={L.shipTo}
+        fieldError={fieldError} markTouched={markTouched} prefix="to"
+        requiredContact extras compact={formMode === 'simplified'}
+        codeOptions={toCodes} codeLabel={toLabel}
+        onPickCode={pickShipTo} countries={countries} visible={show}
+      />
+    </SectionCard>
+  ) : (
+    <section id="sec-ship-to"
+      className={`scroll-mt-20 rounded-xl border border-line bg-surface shadow-ds-1 overflow-hidden transition-all hover:border-warm-300 ${formMode === 'simplified' ? 'lg:order-2' : ''}`}>
+      <div className="px-6 py-5">
+        <p className="mb-0.5 text-[10.5px] font-black uppercase tracking-[0.08em] text-ink-3">Ship To</p>
+        <h2 className="flex items-center gap-2 text-[14.5px] font-bold text-ink">
+          <ToIcon size={15} className="text-brand-500" />
+          {L.shipTo.entity}
+          {toDone && <CheckCircle2 size={15} className="text-success-fg" />}
+        </h2>
+        <p className="mt-0.5 text-[12.5px] text-ink-3">{TO_CAPTION[L.shipTo.entity]}</p>
+        <div className="mt-4"><Segmented options={['Home Delivery', 'PUDO/Locker']} value={deliveryMode} onChange={setDeliveryMode} /></div>
+        <div className="my-4"><LocationSearch options={toCodes} codeLabel={toLabel} onPick={pickShipTo} /></div>
+        <AddressCard value={shipTo} role="to" showErrors={showErrors} onEdit={() => setEditTo(true)} />
+      </div>
+      {showErrors && !toDone && <p className="px-6 pb-3 text-[12.5px] text-brand-500">Ship To is incomplete — edit it</p>}
+    </section>
+  )
+
   return (
     <div className="fe-nueva">
       {/* back chevron lives in the app header beside the title; the mode toggle
@@ -877,74 +1183,11 @@ export default function ConsignmentAdd() {
           </>}
 
           {(
-          /* ship from / RTO / ship to — simplified pairs From & To side by side
-              like a courier quick-ship form; full form keeps the stacked order */
+          /* ship from (RTO folded in) / ship to — simplified pairs From & To
+              side by side like a courier quick-ship form; full form stacks them */
           <div className={formMode === 'simplified' ? 'grid min-w-0 items-start gap-5 lg:grid-cols-2' : 'contents'}>
-          <SectionCard
-            id="sec-ship-from"
-            className={formMode === 'simplified' ? 'lg:order-1' : ''}
-            eyebrow="Ship From"
-            title={L.shipFrom.entity}
-            entity={L.shipFrom.entity}
-            done={fromReq.every(Boolean)}
-            caption={FROM_CAPTION[L.shipFrom.entity]}>
-            <AddressFields
-              value={shipFrom} onChange={setFrom} labels={L.shipFrom}
-              fieldError={fieldError} markTouched={markTouched} prefix="from"
-              requiredContact={false} extras compact={formMode === 'simplified'}
-              codeOptions={hubCodes} codeLabel={hubLabel}
-              onPickCode={fillFromHub(setShipFrom)} countries={countries} visible={show}
-            />
-          </SectionCard>
-
-          {/* --------------------------------------------------------------- RTO */}
-          <SectionCard
-            id="sec-rto"
-            className={formMode === 'simplified' ? 'lg:order-3 lg:col-span-2' : ''}
-            title="Return To Origin (RTO)"
-            icon={<Undo2 size={15} className="text-brand-500" />}
-            done={rtoReq.every(Boolean)}
-            caption="Provide the return-to-origin address and contact details for this consignment.">
-            <Segmented
-              options={['Same As Ship From', 'Use Different Address']}
-              value={rtoMode} onChange={setRtoMode}
-            />
-            {rtoMode === 'Use Different Address' && (
-              <div className="mt-5">
-                <AddressFields
-                  value={rtoAddress} onChange={setRto}
-                  fieldError={fieldError} markTouched={markTouched} prefix="rto"
-                  requiredContact={false} compact={formMode === 'simplified'}
-                  codeOptions={hubCodes} codeLabel={hubLabel}
-                  onPickCode={fillFromHub(setRtoAddress)} countries={countries} visible={show}
-                />
-              </div>
-            )}
-          </SectionCard>
-
-          {/* ----------------------------------------------------------- ship to */}
-          <SectionCard
-            id="sec-ship-to"
-            className={formMode === 'simplified' ? 'lg:order-2' : ''}
-            eyebrow="Ship To"
-            title={L.shipTo.entity}
-            entity={L.shipTo.entity}
-            done={toReq.every(Boolean)}
-            caption={TO_CAPTION[L.shipTo.entity]}>
-            <Segmented
-              options={['Home Delivery', 'PUDO/Locker']}
-              value={deliveryMode} onChange={setDeliveryMode}
-            />
-            <div className="mt-5">
-              <AddressFields
-                value={shipTo} onChange={setTo} labels={L.shipTo}
-                fieldError={fieldError} markTouched={markTouched} prefix="to"
-                requiredContact extras compact={formMode === 'simplified'}
-                codeOptions={toCodes} codeLabel={toLabel}
-                onPickCode={pickShipTo} countries={countries} visible={show}
-              />
-            </div>
-          </SectionCard>
+          {shipFromSection}
+          {shipToSection}
           </div>
           )}
 
@@ -1273,28 +1516,11 @@ function AddressFields({ value, onChange, labels, fieldError, markTouched, prefi
           onTouch={() => markTouched(k('name'))}>
           <Input value={value.name} placeholder="eg, John Doe" onChange={(v) => onChange('name', v)} />
         </Fld>
-        <div className="flex min-w-0 gap-3">
-          <div className="w-[84px] shrink-0">
-            <Fld label="Country Code">
-              <MenuSelect
-                value={value.countryCode} placeholder=" "
-                options={['+1', '+44', '+61', '+91', '+31']}
-                onChange={(v) => onChange('countryCode', v)}
-              />
-            </Fld>
-          </div>
-          <div className="min-w-0 flex-1">
-            <Fld
-              label={lbl('Contact Number', 'Contact Number')} required={requiredContact}
-              error={!!requiredContact && fieldError(k('contactNumber'), !value.contactNumber.trim())}
-              onTouch={() => markTouched(k('contactNumber'))}>
-              <Input
-                type="number" value={value.contactNumber} placeholder="eg, 1234567890"
-                onChange={(v) => onChange('contactNumber', v)}
-              />
-            </Fld>
-          </div>
-        </div>
+        <PhoneField label={lbl('Contact Number', 'Contact Number')} required={requiredContact}
+          code={value.countryCode} number={value.contactNumber}
+          error={!!requiredContact && fieldError(k('contactNumber'), !value.contactNumber.trim())}
+          onTouch={() => markTouched(k('contactNumber'))}
+          onCode={(v) => onChange('countryCode', v)} onNumber={(v) => onChange('contactNumber', v)} />
 
         {visible('addrEmail') && <Fld label="Email">
           <Input
