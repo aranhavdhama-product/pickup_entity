@@ -2167,7 +2167,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
       setShowErrors(true)
       /* a folded package hides its errors — open the first incomplete one */
       const badPkg = !useItems && !isFtl ? parcels.find((p) => !pkgOk(p)) : undefined
-      if (badPkg?.packageId) { setOpenPkgId(badPkg.packageId); setAllPkgs(true) }
+      if (badPkg?.packageId) setOpenPkgId(badPkg.packageId)
       const first = sections.find((s) => !doneOf[s])
       if (first) setTimeout(() => jumpTo(first), 60)
       return
