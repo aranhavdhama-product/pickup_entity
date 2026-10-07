@@ -9,7 +9,8 @@
  *                     equals the form's estimate), the carrier on every card, Grid | List as the builder set it. The
  *                     form hands over what it offers in the `grow-order-draft-checkout` sidecar; when the builder
  *                     hides Service Type there is nothing to choose: the default service is a line in the summary.
- *   · Payment       — Payment Mode (Prepaid / COD, COD amount), remarks, then "How you pay": tick ONE OR MORE
+ *   · Payment       — "How you pay" (Payment Mode, the COD amount and the remarks are asked on step 1, in the form's
+ *                     Payment card, 2026-10-07 — they come in the draft's `consignment`): tick ONE OR MORE
  *                     methods (`SplitPaymentSheet`: Wallet · Card (demo) · Pay later on a Postpaid account · Cash on
  *                     delivery for a COD order) and split the payable amount; the amount follows the chosen service.
  *
@@ -28,9 +29,8 @@ import { inboundHubFor } from '../../growOrders/hubs'
 import { growOrderActions, newOrderId, newOrderNumber, orderById, pickupRequestById } from '../../growOrders/store'
 import type { GrowOrder, PaymentMode } from '../../growOrders/types'
 import { toast } from '../../nueva/toast'
-import { Button, Input, MenuSelect, PageHeader, Panel, WizardSteps } from '../../nueva/components'
+import { Button, PageHeader, Panel, WizardSteps } from '../../nueva/components'
 import { money, ORDER_STEPS } from './utils'
-import { SFld } from '../../components/consignmentForm'
 import { usePortalMerchant } from './pickupGate'
 import { isDue, recordSplitPayment, type LedgerEntry, type PaymentPart } from '../../growOrders/ledger'
 import { bookableServices, quoteLane, type RateCurrency, type ServiceQuote } from '../../growOrders/rates'
@@ -67,10 +67,10 @@ export default function CheckoutPage() {
   const [ov] = useState<OverageSidecar | null>(readOverageSidecar)
   /** Written by the form's Continue — which services to offer, hidden or not, Grid | List, the label, where Back goes. */
   const [side] = useState(readCheckoutSidecar)
-  const [remarks, setRemarks] = useState('')
-  /* the Create Consignment form's Payment Mode / Order Amount prefill the payment */
-  const [payment, setPayment] = useState<PaymentMode>(() => (draft?.consignment?.paymentMode === 'COD' ? 'COD' : 'Prepaid'))
-  const [cod, setCod] = useState(() => (draft?.consignment?.paymentMode === 'COD' && draft.consignment.orderAmount ? String(draft.consignment.orderAmount) : ''))
+  /* step 1's Payment card (2026-10-07): Payment Mode, the COD amount and the remarks come with the draft */
+  const payment: PaymentMode = draft?.consignment?.paymentMode === 'COD' ? 'COD' : 'Prepaid'
+  const cod = payment === 'COD' ? draft?.consignment?.orderAmount ?? 0 : 0
+  const remarks = draft?.consignment?.remarks?.trim() ?? ''
   const portal = usePortalMerchant()
   const [placed, setPlaced] = useState<Placed | null>(null)
   /* the currency the form quoted in (₱, or $ on the Chicago network); the form's tax rule: whole pesos, cents for dollars */
@@ -265,24 +265,13 @@ export default function CheckoutPage() {
             </Panel>
           )}
           <Panel title="Payment">
-            <div className="grid grid-cols-2 gap-4 px-5 pb-5 pt-2">
-              <SFld label="Payment Mode">
-                <MenuSelect value={payment} options={['Prepaid', 'COD']} onChange={(v) => setPayment(v as PaymentMode)} />
-              </SFld>
-              {payment === 'COD' && (
-                <SFld label={`COD Amount (${cur})`}>
-                  <Input type="number" value={cod} onChange={setCod} />
-                </SFld>
-              )}
-              <div className="col-span-2">
-                <SFld label="Add remarks if any">
-                  <textarea rows={2} value={remarks} onChange={(e) => setRemarks(e.target.value)}
-                    placeholder="Remarks for the driver or the receiver"
-                    className="w-full rounded-md border border-warm-300 bg-surface px-3 py-2 text-[13px] text-ink placeholder:text-warm-400
-                               transition-shadow focus:border-brand-500 focus:ring-[3px] focus:ring-brand-500/20" />
-                </SFld>
-              </div>
-              <div className="col-span-2 border-t border-line pt-4">
+            <div className="px-5 pb-5 pt-2">
+              {/* Payment Mode / COD amount / remarks were asked on step 1 (the form's Payment card) */}
+              <p className="text-[12px] text-ink-3">
+                {payment === 'COD' ? `Cash on delivery${cod ? ` · ${money(cod, cur)} collected from the receiver` : ''}` : 'Prepaid'}
+                {remarks ? ` · Remarks: ${remarks}` : ''}
+              </p>
+              <div className="mt-4 border-t border-line pt-4">
                 <p className="text-[13px] font-bold text-ink">How you pay</p>
                 {chosen ? (
                   <>

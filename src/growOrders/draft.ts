@@ -130,6 +130,8 @@ export interface ConsignmentFields {
   routingType?: string
   paymentMode?: string
   orderAmount?: number | null
+  /** Grow (2026-10-07): "Remarks for the driver or the receiver", asked in the form's Payment card */
+  remarks?: string
   schedulingConfirmation?: boolean
   /**
    * "Dedicated truck (FTL / FCL)" — a whole vehicle for this consignment. On a parcel consignment

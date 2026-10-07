@@ -85,7 +85,7 @@ import { packageReady } from '../GrowOrders/packageModel'
 import { windowOk as slotWindowOk } from '../GrowOrders/utils'
 import { ServiceTypeChooser, type BookingMode, type FleetVehicle } from '../GrowOrders/serviceCards'
 /* the console's field registry — pure module, read-only here */
-import { byKeyMandatory, CONSIGNMENT_FIELDS, fieldLabel, loadFieldConfig, loadFormBehavior, type FieldDef } from '../ConsignmentAdd/fieldConfig'
+import { CONSIGNMENT_FIELDS, fieldLabel, loadFieldConfig, loadFormBehavior, type FieldDef } from '../ConsignmentAdd/fieldConfig'
 
 
 /* ---- option lists ---- */
@@ -642,7 +642,7 @@ function SFld({ label, required, info, error, errorNow, helper, className = '', 
  * All fields lists every field in one searchable dialog. The labels only carry state tags. */
 /** the form's own checks require these — locked like the system's mandatory fields */
 /** grouped keys drive several controls — hide / require together, no single label to rename */
-const GROUP_KEYS = new Set(['addrLines23', 'addrCoordinates', 'addrFloorLift', 'addrWindow', 'skuDimensions', 'skuWeight', 'pkgDimensions'])
+const GROUP_KEYS = new Set(['addrLines23', 'addrCoordinates', 'addrFloorLift', 'addrWindow'])
 /** v2-only configurable keys (owner, 2026-09-29): Lift on its own, the whole VAS section, each Handling category */
 const catKey = (name: string) => `cat:${name}`
 const V2_FIELDS: FieldDef[] = [
@@ -659,6 +659,19 @@ const V2_FIELDS: FieldDef[] = [
   /* owner, 2026-10-06: Package Id optional (Grow: under More by default); a SKU's Origin Country configurable like HSN */
   { key: 'pkgId', defaultLabel: 'Package Id', section: 'Package fields', form: 'full', apiPath: 'packageDetails[].id' },
   { key: 'skuOrigin', defaultLabel: 'Origin Country', section: 'SKU fields', form: 'full', apiPath: 'skuDetails[].originCountry' },
+  /* owner, 2026-10-07 ("apart from Consignment Number and Order Number everything should be configured by the form
+     builder"): the controls that had no builder key get one — a package's type and quantity, the address's core fields
+     (renamed only: routing and the rate need them), its postal code, Grow's payment remarks and the Vehicle Details card */
+  { key: 'pkgType', defaultLabel: 'Package Type', section: 'Package fields', form: 'full', apiPath: 'packageDetails[].packageType' },
+  { key: 'pkgQty', defaultLabel: 'Quantity', section: 'Package fields', form: 'full', apiPath: 'packageDetails[].quantity' },
+  { key: 'addrName', defaultLabel: 'Name', section: 'Address details', form: 'simplified', apiPath: 'shipFrom/shipTo.contact.name' },
+  { key: 'addrLine1', defaultLabel: 'Address Line 1', section: 'Address details', form: 'simplified', apiPath: 'address.line1' },
+  { key: 'addrCountry', defaultLabel: 'Country', section: 'Address details', form: 'simplified', apiPath: 'address.country' },
+  { key: 'addrState', defaultLabel: 'State', section: 'Address details', form: 'simplified', apiPath: 'address.state' },
+  { key: 'addrCity', defaultLabel: 'City', section: 'Address details', form: 'simplified', apiPath: 'address.city' },
+  { key: 'addrPostal', defaultLabel: 'Postal Code', section: 'Address details', form: 'simplified', apiPath: 'address.pincode' },
+  { key: 'remarks', defaultLabel: 'Add remarks if any', section: 'Payment', form: 'full', apiPath: 'consignmentDetails.remarks' },
+  { key: 'vehicleDetails', defaultLabel: 'Vehicle Details', section: 'Handling & scheduling', form: 'full', apiPath: 'consignmentDetails.vehicles[]' },
 ]
 const V2_KEYS = new Set(V2_FIELDS.map((f) => f.key))
 /** the two goods sections: shown / hidden only — not renamed, not under More, not moved */
@@ -666,17 +679,23 @@ const GOODS_SECTIONS = new Set([PKG_SECTION, SKU_SECTION])
 const FIELD_DEF = new Map([...CONSIGNMENT_FIELDS, ...V2_FIELDS].map((f) => [f.key, f]))
 /* 2026-10-05 (owner: "in Service Type I can't hide that field"): Service Type is no longer locked — hidden, every
    consignment gets the builder's DEFAULT service (its rule's `defaultValue`); a draft / Modify keeps its own */
-const FORM_LOCKED = new Set(['skuWeight', 'skuDimensions', 'pkgWeight', 'pkgDimensions', 'addrContact'])
-/* owner, 2026-10-06 ("in Grow, Consignment Type and Ship By Date can also be hidden"): system-mandatory, but on the GROW
-   form a merchant may never see them — hidden, every order books Forward and ships by today (a resumed draft / a Modify
-   keeps its own). The console keeps both locked: there the type decides each end (Reverse, Transfer). */
-const GROW_UNLOCKED = new Set(['consignmentType', 'shipByDate'])
+/* 2026-10-07 (owner: "apart from Consignment Number and Order Number everything should be configured by the form
+   builder, optional, in both Grow and the console"): the only SYSTEM lock left is the Order Number (the identifier every
+   consignment is found by; Consignment Number keeps its own rules). Reference Number, Consignment Type, Ship By Date,
+   Merchant, the package / SKU weight and size and the Contact Number can now be hidden or made optional on BOTH forms —
+   each hidden one has a fallback: Reference = the Order Number, type = Forward, ship by = today, Merchant = the signed-in
+   / first merchant, weight and size = not asked (the rate then works from what is given). Locked by THIS form: an
+   address's Name · Line 1 · Country · State · City — the route and the rate are worked out from them (rename only). */
+const SYSTEM_LOCKED = new Set(['orderNumber'])
+const FORM_LOCKED = new Set(['addrName', 'addrLine1', 'addrCountry', 'addrState', 'addrCity'])
+/** fields that start REQUIRED while shown (the form needed them before 2026-10-07) — the builder can make them optional */
+const DEFAULT_REQUIRED = new Set(['referenceNumber', 'merchant', 'pkgWeight', 'skuWeight', 'skuDimensions', 'addrContact'])
 /** a value that is always valid — can be hidden, never "required" */
 const NOT_REQUIRABLE = new Set(['scannable', 'schedulingConfirmation', 'clearanceRequired', 'splittable', 'dedicateTruck', 'serviceType',
-  ...GROW_UNLOCKED, ...[...V2_KEYS].filter((k) => k !== 'skuOrigin')])
+  'consignmentType', 'shipByDate', ...[...V2_KEYS].filter((k) => k !== 'skuOrigin' && k !== 'addrPostal' && k !== 'remarks')])
 /** the typed-text fields a Format can check (2026-10-05) — the system's mandatory identifiers included; custom Text fields too */
 const FORMATABLE = new Set(['orderNumber', 'referenceNumber', 'consignmentNumber', 'exchangeOrderNumber',
-  'addrCompanyName', 'addrEmail', 'addrLandmark', 'addrSuburb', 'addrContact', 'specialInstructions',
+  'addrCompanyName', 'addrEmail', 'addrLandmark', 'addrSuburb', 'addrContact', 'specialInstructions', 'remarks',
   'skuDescription', 'skuHsn', 'skuImage', 'pkgTracking', 'pkgDescription', 'pkgPalletSpace'])
 /** where an optional field starts: its section's "More information" fold (the builder can move it) */
 const DEFAULT_MORE = new Set(['addrCompanyName', 'addrLines23', 'addrLandmark', 'addrSuburb', 'addrCoordinates', 'addrFloorLift',
@@ -692,8 +711,9 @@ const GROW_MORE = new Set(['pkgId'])
 const defaultMoreOf = (k: string, grow: boolean) => DEFAULT_MORE.has(k) || (grow && GROW_MORE.has(k))
   || (SKU_ROW_KEYS.has(k) && !(grow && GROW_SKU_FRONT.has(k)))
 /** keys that can sit in a section's More fold (never a locked one); every custom field can */
-const movable = (k: string) => isCustomKey(k) || (FIELD_DEF.has(k) && !byKeyMandatory(k) && !FORM_LOCKED.has(k) && !GOODS_SECTIONS.has(k)
-  && k !== 'vas' && k !== 'serviceType' && !k.startsWith('cat:'))
+const movable = (k: string) => isCustomKey(k) || (FIELD_DEF.has(k) && !SYSTEM_LOCKED.has(k) && !FORM_LOCKED.has(k) && !GOODS_SECTIONS.has(k)
+  && k !== 'vas' && k !== 'serviceType' && k !== 'vehicleDetails' && !k.startsWith('cat:')
+  && k !== 'consignmentType' && k !== 'shipByDate' && k !== 'merchant')
 
 /** 'last' = one of the Package & SKU card's two sections, the only one still shown */
 export type FieldLock = 'system' | 'form' | 'last' | null
@@ -1040,7 +1060,7 @@ const SECTION_ZONE = '__sections'
 const SECTION_TITLES: Record<string, string> = {
   'sec-consignment': 'Consignment details', 'sec-parties': 'Ship From → Ship To', 'sec-packages': 'Package & SKU',
   'sec-vehicle': 'Vehicle Details', 'sec-handling': 'Handling', 'sec-extras': 'Service & instructions', 'sec-service': 'Service',
-  'sec-carrier': 'Carriers', 'sec-summary': 'Summary',
+  'sec-carrier': 'Carriers', 'sec-summary': 'Summary', 'sec-payment': 'Payment',
 }
 /** While the form is edited: a small pill on a card's top edge — move the whole card one place up or down. */
 function SectionMover({ title, first, last, onMove }: { title: string; first: boolean; last: boolean; onMove: (dir: -1 | 1) => void }) {
@@ -1156,11 +1176,13 @@ function PartyBlock({ party, set, nameLabel, requireContact, hid, variant = 'ful
       value={val(k)} error={miss(val(k), !!o.required) ? 'Required field.' : undefined}
       onChange={(v) => set({ [k]: v } as Partial<Party>)} />
   )
-  const sel = (k: 'country' | 'postalCode' | 'state', label: string, list: string[], required: boolean) => (
-    <F label={label} required={required} value={party[k] ?? ''} options={opts(list)}
+  const sel = (k: 'country' | 'postalCode' | 'state', label: string, list: string[], required: boolean, fieldKey?: string) => (
+    <F label={label} required={required} value={party[k] ?? ''} options={opts(list)} fieldKey={fieldKey}
       error={miss(party[k], required) ? 'Required field.' : undefined} onChange={(v) => set({ [k]: v })} />
   )
   const L = (k: string, d: string) => b?.label(k) ?? d
+  /** a renamed field's name, else the form's own wording (the Name says Sender / Customer by role) */
+  const Lr = (k: string, d: string) => { const l = b?.label(k); return l && l !== FIELD_DEF.get(k)?.defaultLabel ? l : d }
   /* Contact Number's Format (builder) — said once the box is left, or after an Add Order attempt */
   const phoneFmt = b?.formatError('addrContact', party.contactNumber) ?? null
   const [phoneLeft, setPhoneLeft] = useState(false)
@@ -1169,28 +1191,28 @@ function PartyBlock({ party, set, nameLabel, requireContact, hid, variant = 'ful
   const inMore = (k: string) => !!b?.inMore(k)
   /* the order a person writes an address in — Country → Postal Code → Suburb → City → State (owner) */
   const contactEntries: RevealEntry[] = [
-    [null, text('name', nameLabel, { required: true, placeholder: 'eg, John Doe' })],
+    [null, text('name', Lr('addrName', nameLabel), { required: true, placeholder: 'eg, John Doe', fieldKey: 'addrName' })],
     !hid('addrCompanyName') && ['addrCompanyName', text('businessName', L('addrCompanyName', 'Company Name'), { placeholder: 'eg, Random Company', fieldKey: 'addrCompanyName' }), filled(party.businessName)],
-    [null, <SFld key="phone" label={L('addrContact', 'Contact Number')} fieldKey="addrContact" required={requireContact}
+    !hid('addrContact') && ['addrContact', <SFld key="phone" label={L('addrContact', 'Contact Number')} fieldKey="addrContact" required={requireContact}
       error={miss(party.contactNumber, !!requireContact) || phoneFmt || false} errorNow={!!phoneFmt && phoneLeft}>
       <div onBlur={() => setPhoneLeft(true)}>
         <PhoneInput code={party.countryCode ?? ''} number={party.contactNumber} codes={DIAL_CODES}
           invalid={(showErrors && miss(party.contactNumber, !!requireContact)) || (!!phoneFmt && (showErrors || phoneLeft))}
           onCode={(v) => set({ countryCode: v })} onNumber={(v) => set({ contactNumber: v })} />
       </div>
-    </SFld>],
+    </SFld>, filled(party.contactNumber)],
     !hid('addrEmail') && ['addrEmail', text('email', L('addrEmail', 'Email'), { type: 'email', placeholder: 'eg, johndoe@xyz.com', fieldKey: 'addrEmail' }), filled(party.email)],
   ]
   const addressEntries: RevealEntry[] = [
-    [null, text('line1', 'Address Line 1', { required: true, placeholder: 'eg, Building No., Street' })],
+    [null, text('line1', L('addrLine1', 'Address Line 1'), { required: true, placeholder: 'eg, Building No., Street', fieldKey: 'addrLine1' })],
     !hid('addrLines23') && ['addrLines23', text('line2', 'Address Line 2', { placeholder: 'eg, Street 1 A', fieldKey: 'addrLines23' }), filled(party.line2)],
     !hid('addrLines23') && ['addrLines23', <F key="line3" label="Address Line 3" value={party.line3 ?? ''} placeholder="eg, Behind High School" onChange={(v) => set({ line3: v })} />, filled(party.line3)],
     !hid('addrLandmark') && ['addrLandmark', text('landmark', L('addrLandmark', 'Landmark'), { placeholder: 'eg, Behind High School', fieldKey: 'addrLandmark' }), filled(party.landmark)],
-    [null, <div key="country" className="contents">{sel('country', 'Country', COUNTRIES, true)}</div>],
-    [null, <div key="postal" className="contents">{sel('postalCode', 'Postal Code', POSTCODES, rto)}</div>],
+    [null, <div key="country" className="contents">{sel('country', L('addrCountry', 'Country'), COUNTRIES, true, 'addrCountry')}</div>],
+    !hid('addrPostal') && ['addrPostal', <div key="postal" className="contents">{sel('postalCode', L('addrPostal', 'Postal Code'), POSTCODES, rto, 'addrPostal')}</div>, filled(party.postalCode)],
     !hid('addrSuburb') && ['addrSuburb', text('county', L('addrSuburb', 'Suburb / County'), { fieldKey: 'addrSuburb' }), filled(party.county)],
-    [null, text('city', 'City', { required: true })],
-    [null, <div key="state" className="contents">{sel('state', 'State', STATES, true)}</div>],
+    [null, text('city', L('addrCity', 'City'), { required: true, fieldKey: 'addrCity' })],
+    [null, <div key="state" className="contents">{sel('state', L('addrState', 'State'), STATES, true, 'addrState')}</div>],
     !rto && !hid('addrCoordinates') && ['addrCoordinates', text('latitude', 'Latitude', { type: 'number', fieldKey: 'addrCoordinates' }), filled(party.latitude)],
     !rto && !hid('addrCoordinates') && ['addrCoordinates', text('longitude', 'Longitude', { type: 'number' }), filled(party.longitude)],
     !rto && !hid('addrFloorLift') && ['addrFloorLift', text('floorNumber', 'Floor Number', { type: 'number', fieldKey: 'addrFloorLift' }), filled(party.floorNumber)],
@@ -1382,13 +1404,13 @@ const SUMMARY_LINES: Record<'console' | 'grow', SummaryLine[]> = {
   ],
   grow: [
     { key: 'shipFrom', label: 'Ship From' }, { key: 'shipTo', label: 'Ship To' }, { key: 'goods', label: 'Packages' },
-    { key: 'service', label: 'Service' },
+    { key: 'service', label: 'Service' }, { key: 'payment', label: 'Payment' },
     { key: 'totals', label: 'Price', foot: true }, { key: 'eta', label: 'ETA', foot: true },
   ],
 }
 const summaryLinesOf = (p: 'console' | 'grow') => SUMMARY_LINES[p]
 /** the builder's All fields groups, in card order (their fields are listed in the form) */
-const FIELD_GROUP_IDS = ['sec-consignment', 'addresses', 'sec-packages', 'sec-handling', 'sec-service']
+const FIELD_GROUP_IDS = ['sec-consignment', 'addresses', 'sec-packages', 'sec-handling', 'sec-service', 'sec-payment']
 /** the Ship From → Ship To card's choices while the form is edited — RadioCards (owner, 2026-10-06) */
 const ARRANGE_OPTIONS: { value: AddressArrangement; label: string; sub: string }[] = [
   { value: 'side', label: 'Side by side', sub: 'Ship From left, Ship To right' },
@@ -1414,8 +1436,10 @@ const ADDRESS_LAYOUT_ROWS: { key: 'addresses' | 'shipFrom' | 'shipTo' | 'rto'; l
 /** Grow (merchant portal): the carrier's / ops' fields never render — the merchant is the header ⇄, the carrier
     allocates the carrier, ops set the loading time, vehicle, coordinates and pallet space. (The load type is Grow's
     own Handling question; owner 2026-09-29: the Handling categories and tags show on Grow too.) */
-const MERCHANT_OFF = new Set(['merchant', 'consignmentNumber', 'totalLoadingTime', 'dedicateTruck', 'vehicleType',
+const MERCHANT_OFF = new Set(['merchant', 'consignmentNumber', 'totalLoadingTime', 'vehicleType',
   'addrCoordinates', 'pkgPalletSpace'])
+/** the console form never has these (Grow's own Payment card asks them) */
+const CONSOLE_OFF = new Set(['remarks'])
 /**
  * The route element. On the console, `?edit=console` opens the form builder on the Console form and `?edit=grow`
  * on the Grow portal form — the Grow merchant form itself, mounted here as its own preview (2026-10-05). The `key`
@@ -1543,10 +1567,10 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   const rawOff = (k: string) => !!rules[k]?.hidden
   const pkgOff = rawOff(PKG_SECTION) && !(rawOff(SKU_SECTION) && merchantMode && !!growChanges[SKU_SECTION]?.hidden)
   const skuOff = rawOff(SKU_SECTION) && !pkgOff
-  const lockOf = (k: string): FieldLock => (byKeyMandatory(k) && !(merchantMode && GROW_UNLOCKED.has(k)) ? 'system' : FORM_LOCKED.has(k) ? 'form'
+  const lockOf = (k: string): FieldLock => (SYSTEM_LOCKED.has(k) ? 'system' : FORM_LOCKED.has(k) ? 'form'
     : (k === PKG_SECTION && skuOff) || (k === SKU_SECTION && pkgOff) ? 'last' : null)
   const baseHidden = (k: string) => !!fieldCfg[k]?.hidden || behavior.hidden.includes(k)
-  const ownHidden = (k: string) => (merchantMode && MERCHANT_OFF.has(k)) || (!lockOf(k) && (rules[k]?.hidden ?? baseHidden(k)))
+  const ownHidden = (k: string) => (merchantMode ? MERCHANT_OFF : CONSOLE_OFF).has(k) || (!lockOf(k) && (rules[k]?.hidden ?? baseHidden(k)))
   const hiddenWith = (k: string): string | null => {
     const parent = FIELD_DEF.get(k)?.dependsOn
     return parent && (ownHidden(parent) || hiddenWith(parent)) ? parent : null
@@ -1555,7 +1579,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   const known = (k: string) => FIELD_DEF.has(k) || !!customOf(k)
   /* a Yes / No field always holds a value — never "required", like the switches */
   const requirable = (k: string) => known(k) && !lockOf(k) && !NOT_REQUIRABLE.has(k) && customOf(k)?.kind !== 'yesno'
-  const need = (k: string) => !simple && requirable(k) && !isHidden(k) && !!rules[k]?.required
+  const need = (k: string) => !simple && requirable(k) && !isHidden(k) && (rules[k]?.required ?? DEFAULT_REQUIRED.has(k))
   const inMore = (k: string) => movable(k) && !need(k) && (rules[k]?.more ?? defaultMoreOf(k, merchantMode))
   /* Format (2026-10-05): the typed-text fields; 'any' = no check (how the Grow form drops a console Format) */
   const formatable = (k: string) => FORMATABLE.has(k) || customOf(k)?.kind === 'text'
@@ -1568,12 +1592,12 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   /* owner, 2026-10-05: off by default — the preview reads as the real form; turn it on (or use All fields) to bring one back */
   const [showHidden, setShowHidden] = useState(false)
   /* a field the Grow portal never has (MERCHANT_OFF) stays out of its preview too — nothing to switch on */
-  const hid = (key: string) => (merchantMode && MERCHANT_OFF.has(key)) || (editing ? !showHidden && isHidden(key) : isHidden(key))
+  const hid = (key: string) => (merchantMode ? MERCHANT_OFF : CONSOLE_OFF).has(key) || (editing ? !showHidden && isHidden(key) : isHidden(key))
   const lbl = (key: string) => rules[key]?.label?.trim() || customOf(key)?.label
     || (V2_KEYS.has(key) ? FIELD_DEF.get(key)!.defaultLabel : fieldLabel(key, fieldCfg))
   /** a rule with its defaults filled in — the Grow form keeps only what really differs from the console form */
   const norm = (k: string, r?: FieldRuleV2) => ({
-    hidden: r?.hidden ?? baseHidden(k), required: !!r?.required, label: r?.label?.trim() ?? '',
+    hidden: r?.hidden ?? baseHidden(k), required: r?.required ?? DEFAULT_REQUIRED.has(k), label: r?.label?.trim() ?? '',
     more: r?.more ?? defaultMoreOf(k, merchantMode), format: JSON.stringify(r?.format && r.format.preset !== 'any' ? r.format : null),
     value: r?.defaultValue?.trim() ?? '',
   })
@@ -1581,6 +1605,8 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     const cur: FieldRuleV2 = growSetup ? { ...growBase[k], ...r[k], ...patch } : { ...r[k], ...patch }
     if (patch.hidden) cur.required = false
     if (patch.required) cur.hidden = false
+    /* a field that starts required (DEFAULT_REQUIRED) comes back required when it is shown again */
+    if (patch.hidden === false && DEFAULT_REQUIRED.has(k) && cur.required === false) delete cur.required
     if (!growSetup) return { ...r, [k]: cur }
     const base = norm(k, growBase[k])
     const next = norm(k, cur)
@@ -1720,6 +1746,8 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   /* owner, 2026-09-29: errors only after someone tries to add the order */
   const [showErrors, setShowErrors] = useState(false)
   const custom = (key: string, registryDefault: string, copy: string) => { const l = lbl(key); return l === registryDefault ? copy : l }
+  /** the builder's own name for a field, else the form's wording (a field whose label carries its units) */
+  const ownLbl = (key: string, d: string) => rules[key]?.label?.trim() || d
 
   /* ---- Ship From ---- */
   const firstSender = (): Party => saved?.sender
@@ -1839,6 +1867,13 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   /* ---- Grow: the load type, the lane's services + ESTIMATED rates (growOrders/rates), the Ship From hub's fleet ---- */
   /* owner, 2026-09-29: Shared unless it is a full-vehicle booking — the service cards show at once */
   const [mode, setMode] = useState<BookingMode | null>(ftlFirst ? 'ftl' : 'ltl')
+  /* Dedicate Truck + Vehicle Details are builder fields on both forms (2026-10-07). Dedicate Truck hidden = nobody is asked:
+     every consignment gets the builder's default (shared, unless "Dedicated truck" is picked under "While it is hidden").
+     Vehicle Details hidden = the carrier picks the vehicle (one of the hub's vehicles carries the whole load). */
+  const truckHidden = !simple && isHidden('dedicateTruck')
+  const truckDefault = rules.dedicateTruck?.defaultValue === 'on'
+  const vehicleCard = !hid('vehicleDetails')
+  const vehiclesAuto = !simple && !editing && isHidden('vehicleDetails')
   const lm: BookingMode = mode ?? 'ltl'
   const laneHub = useMemo(() => shipFromHubOf(fromList ? senderStore : null, sender), [fromList, senderStore, sender])
   const currency = merchantMode ? currencyForHub(laneHub, sender) : CURRENCY
@@ -1867,7 +1902,8 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
      the builder's preview, under "Next step" (hidden: only with "Show hidden fields", faded, so it can be brought back) */
   const growServiceCard = editing && (!serviceHidden || showHidden)
   const laneOk = laneReady(sender) && allDrops.every(laneReady)
-  const weightOk = goods.length > 0 && goods.every(packageReady)
+  /* the rate needs a weight or a size — unless the builder made the weight optional / hid it (then any package counts) */
+  const weightOk = goods.length > 0 && goods.every((p) => packageReady(p) || (p.quantity > 0 && !need('pkgWeight')))
   const ready = laneOk && weightOk
   /* plain (no useMemo): it reads the hidden-service default, which the compiler cannot memoise around */
   const fleet: FleetVehicle[] = (() => {
@@ -1891,7 +1927,10 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   /* owner, 2026-10-06 ("see the other branch's vehicle selection"): a full vehicle is booked in a Vehicle Details card —
      the second branch's table (vehicle type · how many · est. load · deliver to) with the Ship From hub's fleet as the
      types; the console's rows model, so a resumed draft / an FTL pickup request reopens its own vehicles */
-  const mVehicles: FtlVehicle[] = useMemo(() => (mode === 'ftl' ? vehicles.filter((v) => !!v.vehicleType) : []), [mode, vehicles])
+  /* plain (no useMemo): the fleet is rebuilt every render */
+  const mVehicles: FtlVehicle[] = mode !== 'ftl' ? []
+    : vehiclesAuto ? (fleet[0] ? [{ vehicleType: fleet[0].code, actualLoadKg: Math.round(weights.chargeable) || 0, addressIdx: allDrops.map((_, i) => i) }] : [])
+    : vehicles.filter((v) => !!v.vehicleType)
   const vehicleLine = [...new Set(mVehicles.map((v) => v.vehicleType))]
     .map((t) => `${mVehicles.filter((v) => v.vehicleType === t).length} × ${t}`).join(', ')
   const quotes = !merchantMode || !mode ? [] : !ready
@@ -1904,7 +1943,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   /* one eligible service = preselected; a service the lane / mode no longer offers is dropped */
   const selected = !ready ? '' : quotes.some((q) => q.code === growService) ? growService : quotes.length === 1 ? quotes[0].code : ''
   const quote = quotes.find((q) => q.code === selected) ?? null
-  const ftlOk = mode !== 'ftl' || (mVehicles.length > 0 && rows.every((r) => !!r.vehicleType && r.count >= 1 && r.loadKg > 0 && r.addressIdx.length > 0)
+  const ftlOk = mode !== 'ftl' || vehiclesAuto || (mVehicles.length > 0 && rows.every((r) => !!r.vehicleType && r.count >= 1 && r.loadKg > 0 && r.addressIdx.length > 0)
     && allDrops.every((_, i) => mVehicles.some((v) => v.addressIdx.includes(i))))
   /* Grow step 1: the service is picked at checkout — until then the form shows the lowest rate for this route */
   const cheapest = merchantMode && ready && ftlOk && quotes.length ? Math.min(...quotes.map((q) => q.net)) : null
@@ -1917,6 +1956,14 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     }
     setMode(m); setC({ dedicateTruck: m === 'ftl' })
   }
+  /* Grow, Dedicate Truck hidden: the builder's default load type — unless the order is a full vehicle by where it came
+     from (an FTL pickup request, a draft, /add/vehicle) or it answers an overage scan */
+  const forcedMode: BookingMode | null = merchantMode && truckHidden && !fromOverage && !ftlFirst ? (truckDefault ? 'ftl' : 'ltl') : null
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- following the builder's rule (a hidden field's default)
+    if (forcedMode && mode !== forcedMode) changeMode(forcedMode)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- changeMode reads the fleet at that moment
+  }, [forcedMode, mode])
 
   /* ---- Grow: the pickup module decides the pickup window (owner, 2026-09-25): off → none · manual → optional
      ("schedule later") · auto + ask the shipper → required · auto without asking → the computed booking is shown ---- */
@@ -1947,7 +1994,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   const fromPr = pr && isFtl ? pr : undefined
   const serviceLoad = useMemo(() => loadTypeOf(service), [service])
   const dedicatedLocked = serviceLoad !== 'both'
-  const dedicated = !isFtl && (serviceLoad === 'ftl' || (serviceLoad === 'both' && !!c.dedicateTruck))
+  const dedicated = !isFtl && (serviceLoad === 'ftl' || (serviceLoad === 'both' && (truckHidden ? truckDefault : !!c.dedicateTruck)))
   const parcelLoadKg = goods.reduce((n, p) => n + (p.weight || 0) * (p.quantity || 0), 0)
   const shipFromHub = useMemo(() => {
     if (senderStore && senderStore !== OTHER_ADDRESS) {
@@ -1960,6 +2007,9 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
      The switches belong to one pair of ends: a new pair starts with every stop on. ---- */
   const ctype = TYPE_RULES[c.consignmentType ?? 'Forward'] ? (c.consignmentType ?? 'Forward') : 'Forward'
   const typeRule = TYPE_RULES[ctype]
+  /** Grow's payment (2026-10-07: asked on step 1, in its own Payment card): Prepaid unless COD is chosen */
+  const growPayMode: 'Prepaid' | 'COD' = typeRule.payment && c.paymentMode === 'COD' ? 'COD' : 'Prepaid'
+  const codAsked = merchantMode && growPayMode === 'COD' && !isHidden('paymentMode') && !isHidden('orderAmount')
   /* any address typed on the form (the card's caption says so) */
   const anyInline = inlineOf('from') || inlineOf('to') || (typeRule.rto && c.rtoMode === RTO_MODES[1] && inlineOf('rto'))
   /* owner, 2026-10-06: Ship From | Ship To side by side (default — Saved card or Fields on form, both portals; they stack
@@ -2040,25 +2090,35 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
 
   /* ---- identifiers: the account's identifier setting (Order / Reference / both) ---- */
   /* the Simplified form asks one number; the reference copies it (the original's rule) */
-  const idPref = simple ? 'orderNumber' : behavior.identifier
+  /* 2026-10-07: Reference Number can be hidden (it then copies the Order Number) or optional (blank = the Order Number) */
+  const refHidden = !simple && isHidden('referenceNumber')
+  const idPref = simple || refHidden ? 'orderNumber' : behavior.identifier
   const effectiveOrder = (idPref === 'referenceNumber' ? c.referenceNumber : c.orderNumber) ?? ''
-  const effectiveRef = (idPref === 'orderNumber' ? c.orderNumber : c.referenceNumber) ?? ''
+  const effectiveRef = (idPref === 'orderNumber' ? c.orderNumber : filled(c.referenceNumber) ? c.referenceNumber : c.orderNumber) ?? ''
+  /* the Reference Number must be typed: required by the builder, or the only identifier shown */
+  const refRequired = idPref === 'referenceNumber' || need('referenceNumber')
 
   /* ------------------------------------------------ completion + validation
      = AddOrderPage's Regular required set + the builder's "required" rules (only for shown fields) */
   const needOk = (k: string, ok: boolean) => (need(k) ? [ok] : [])
+  /* a package's weight (required while shown — the default) and, when the builder asks for it, a Custom package's size */
+  const needW = need('pkgWeight')
+  const dimsOkOf = (p: Parcel) => !need('pkgDimensions') || packageValue(p, packageTypes) !== CUSTOM_PACKAGE || (p.l > 0 && p.w > 0 && p.h > 0)
   const str = (v: unknown) => (v == null ? '' : String(v))
   /* the account's own fields in a card (2026-10-05): Required + Format */
   const customReq = (card: CustomFieldCard) => customDefs.filter((d) => d.card === card)
     .flatMap((d) => [...needOk(d.key, filled(cfv[d.key])), fmtOk(d.key, cfv[d.key])])
   /* a hidden Ship By Date (Grow) is today — never a check the merchant cannot see */
-  const consignmentReq = [filled(effectiveOrder), filled(effectiveRef), !!c.consignmentType, filled(c.shipByDate) || isHidden('shipByDate'), ...(merchantMode ? [] : [!!merchant]),
+  const consignmentReq = [filled(effectiveOrder), filled(effectiveRef), ...(refRequired && idPref === 'both' ? [filled(c.referenceNumber)] : []),
+    !!c.consignmentType, filled(c.shipByDate) || isHidden('shipByDate'),
+    /* Merchant hidden / optional: the signed-in (first) merchant is recorded */
+    ...(merchantMode || !need('merchant') ? [] : [!!merchant]),
     ...needOk('consignmentNumber', filled(c.consignmentNumber)),
     /* an Exchange names the order it exchanges (owner, 2026-09-29: fields follow the type) */
     ...(!simple && ctype === 'Exchange' && !hid('exchangeOrderNumber') ? [filled(c.exchangeOrderNumber)] : []),
     /* Simplified: the delivery Start / End time on the Ship By Date are required (the original's rule) */
     ...(simple ? [filled(timeOf(receiver.windowStart)), filled(timeOf(receiver.windowEnd))] : []),
-    ...(typeRule.payment ? [...needOk('paymentMode', !!c.paymentMode), ...needOk('orderAmount', (c.orderAmount ?? 0) > 0)] : []),
+    ...(typeRule.payment && !merchantMode ? [...needOk('paymentMode', !!c.paymentMode), ...needOk('orderAmount', (c.orderAmount ?? 0) > 0)] : []),
     /* Format rules on the numbers as typed (a copied identifier is checked where it is typed) */
     ...(idPref !== 'referenceNumber' ? [fmtOk('orderNumber', c.orderNumber)] : []),
     ...(idPref !== 'orderNumber' ? [fmtOk('referenceNumber', c.referenceNumber)] : []),
@@ -2067,14 +2127,16 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     ...customReq('sec-consignment'),
   ]
   /** what an address still misses, in words (the card says it) — base required + the builder's rules */
+  /* the Ship To / return address's Contact Number: required while shown (the default); the builder can hide it or make it optional */
+  const contactReq = simple || need('addrContact')
   const missingOf = (p: Party, role: 'from' | 'to' | 'rto'): string[] => {
     if (role !== 'rto' && (role === 'from' ? fromEnd.kind === 'facility' : HUB_CODES.has(p.locationCode ?? ''))) return []
     const out: string[] = []
     const add = (ok: boolean, label: string) => { if (!ok) out.push(label) }
     add(filled(p.name), role === 'to' ? 'Customer Name' : 'Sender Name')
-    if (role !== 'from') add(filled(p.contactNumber), 'Contact Number')
-    add(filled(p.line1), 'Address Line 1'); add(filled(p.country), 'Country'); add(filled(p.state), 'State'); add(filled(p.city), 'City')
-    if (role === 'rto') add(filled(p.postalCode), 'Postal Code')
+    if (role !== 'from' && contactReq) add(filled(p.contactNumber), lbl('addrContact'))
+    add(filled(p.line1), lbl('addrLine1')); add(filled(p.country), lbl('addrCountry')); add(filled(p.state), lbl('addrState')); add(filled(p.city), lbl('addrCity'))
+    if ((role === 'rto' && !isHidden('addrPostal')) || need('addrPostal')) add(filled(p.postalCode), lbl('addrPostal'))
     if (need('addrEmail')) add(filled(p.email), lbl('addrEmail'))
     if (need('addrCompanyName')) add(filled(p.businessName), lbl('addrCompanyName'))
     if (need('addrLines23')) add(filled(p.line2), 'Address Line 2')
@@ -2103,13 +2165,14 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   const pieceReq = isFtl
     ? [!!consoleFtl, vehicles.length > 0, uncovered.length === 0,
       ...rows.map((r) => !!r.vehicleType && r.count >= 1 && r.loadKg > 0 && r.addressIdx.length > 0), noDg]
-    : [...goods.map((p) => p.quantity > 0 && (simple || p.weight > 0)), noDg,
+    : [...goods.map((p) => p.quantity > 0 && (simple || !needW || p.weight > 0)), noDg,
       /* package-level rules apply where packages are typed (Items mode derives them) */
-      ...(useItems ? [] : parcels.flatMap((p) => [...needOk('pkgTracking', filled(p.trackingNumber)),
+      ...(useItems ? [] : parcels.flatMap((p) => [...needOk('pkgTracking', filled(p.trackingNumber)), dimsOkOf(p),
         ...needOk('pkgPalletSpace', filled(p.palletSpace)), ...needOk('pkgDescription', filled(p.description)),
         fmtOk('pkgTracking', p.trackingNumber), fmtOk('pkgPalletSpace', p.palletSpace), fmtOk('pkgDescription', p.description)]))]
-  const skuLineOk = (it: ParcelItem) => !!it.skuCode && filled(it.name) && it.quantity >= 1 && it.weightKg > 0
-    && (it.lengthCm ?? 0) > 0 && (it.widthCm ?? 0) > 0 && (it.heightCm ?? 0) > 0
+  /* 2026-10-07: a SKU's weight and size are required while shown (the default) — the builder can hide them or make them optional */
+  const skuLineOk = (it: ParcelItem) => !!it.skuCode && filled(it.name) && it.quantity >= 1 && (!need('skuWeight') || it.weightKg > 0)
+    && (!need('skuDimensions') || ((it.lengthCm ?? 0) > 0 && (it.widthCm ?? 0) > 0 && (it.heightCm ?? 0) > 0))
   const skuRuleOk = (it: ParcelItem) => [...needOk('skuCategory', filled(it.category)), ...needOk('skuDescription', filled(it.description)),
     ...needOk('skuHsn', filled(it.hsnCode)), ...needOk('skuOrigin', filled(it.originCountry)), ...needOk('skuImage', filled(it.imageUrl)), ...needOk('skuUnitCost', (it.unitCost ?? 0) > 0),
     fmtOk('skuDescription', it.description), fmtOk('skuHsn', it.hsnCode), fmtOk('skuImage', it.imageUrl)].every(Boolean)
@@ -2117,7 +2180,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   const skuReq = isFtl || (!simple && !skusAsked) ? [] : skuLines.map(({ it }) => (simple ? isBlankItem(it) || filled(it.name) : skuLineOk(it) && skuRuleOk(it)))
   /** one package is complete — its own fields and its SKU lines. A folded package row says "Incomplete" after an Add
       attempt, and the first incomplete one opens. */
-  const pkgOk = (p: Parcel) => p.quantity > 0 && p.weight > 0
+  const pkgOk = (p: Parcel) => p.quantity > 0 && (!needW || p.weight > 0) && dimsOkOf(p)
     && [...needOk('pkgTracking', filled(p.trackingNumber)), ...needOk('pkgPalletSpace', filled(p.palletSpace)), ...needOk('pkgDescription', filled(p.description)),
       fmtOk('pkgTracking', p.trackingNumber), fmtOk('pkgPalletSpace', p.palletSpace), fmtOk('pkgDescription', p.description)].every(Boolean)
     && (!skusAsked || (p.items ?? []).every((it) => skuLineOk(it) && skuRuleOk(it)))
@@ -2134,12 +2197,15 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     : [...vehicleReq, !!(isFtl ? consoleFtl : consoleService), ...needOk('labelFormat', !!c.labelFormat),
       ...needOk('totalLoadingTime', (c.totalLoadingTime ?? 0) > 0)]
   const handlingReq = [...needOk('tags', (c.tags ?? []).length > 0), ...customReq('sec-handling')]
+  /* Grow's Payment card: a COD order says how much to collect (unless the builder hides the amount) */
+  const paymentReq = merchantMode ? [...needOk('paymentMode', true), ...(codAsked ? [(c.orderAmount ?? 0) > 0] : []),
+    ...needOk('remarks', filled(c.remarks)), fmtOk('remarks', c.remarks)] : []
   const extrasReq = [...vasReq, ...needOk('specialInstructions', filled(c.specialInstructions)), fmtOk('specialInstructions', c.specialInstructions),
     /* Grow asks Label Format in its Service & instructions card */
     ...(merchantMode ? needOk('labelFormat', !!c.labelFormat) : []),
     ...customReq('sec-service')]
   const allReq = [...consignmentReq, ...serviceReq, ...fromReq, ...toReq, ...rtoReq, ...routeReq, ...goodsReq, ...pieceReq, ...skuReq,
-    ...handlingReq, ...extrasReq, ...carrierReq]
+    ...handlingReq, ...extrasReq, ...carrierReq, ...paymentReq]
   const filledCount = allReq.filter(Boolean).length
   const canSubmit = filledCount === allReq.length
   const missingCount = allReq.length - filledCount
@@ -2300,6 +2366,8 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
       /* owner, 2026-10-06: "Barcode on every box" is ONE switch (Package & SKU's header; Handling on a vehicle form) */
       scannable: !!c.scannable,
       dedicateTruck: isFtl || dedicated,
+      /* hidden (2026-10-07): Forward and today, unless the consignment already had its own */
+      consignmentType: c.consignmentType || 'Forward', shipByDate: c.shipByDate || today(),
       orderNumber: effectiveOrder.trim(), referenceNumber: effectiveRef.trim(),
       /* owner, 2026-09-29: no fallback — a blank Consignment Number stays blank */
       consignmentNumber: c.consignmentNumber?.trim() ?? '',
@@ -2357,7 +2425,9 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
         merchantCode: merchant?.code ?? null, merchantName: merchant?.name ?? '',
         rto: typeRule.rto && c.rtoMode === RTO_MODES[1] ? rto : null,
         ...(typeRule.rto ? {} : { rtoMode: RTO_MODES[0] }),
-        ...(typeRule.payment ? {} : { paymentMode: '', orderAmount: null }),
+        /* Grow's Payment card (2026-10-07): Prepaid or COD (hidden = Prepaid); the COD amount only for COD; the remarks */
+        paymentMode: growPayMode, orderAmount: growPayMode === 'COD' && !isHidden('orderAmount') ? c.orderAmount ?? null : null,
+        remarks: isHidden('remarks') ? c.remarks ?? '' : (c.remarks ?? '').trim(),
         ...(ctype === 'Exchange' ? {} : { exchangeOrderNumber: '' }),
         packages: ftl ? [] : goods.map((p) => ({
           packageId: p.packageId, packageType: p.packageTypeName || CUSTOM_PACKAGE_NAME, quantity: p.quantity,
@@ -2425,10 +2495,10 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
      the flow — it is the vertical card beside the form (see the layout at the bottom), so it takes no place here */
   const sumSec: string[] = []
   /* Grow: no Service Type card on step 1 — it is chosen at checkout; the builder previews it after the cards, unmovable */
-  const sections = merchantMode ? ['sec-consignment', 'sec-parties', 'sec-packages', 'sec-handling', ...(mode === 'ftl' ? ['sec-vehicle'] : []),
-    'sec-extras', ...sumSec]
+  const sections = merchantMode ? ['sec-consignment', 'sec-parties', 'sec-packages', 'sec-handling', ...(mode === 'ftl' && vehicleCard ? ['sec-vehicle'] : []),
+    'sec-extras', 'sec-payment', ...sumSec]
     : simple ? ['sec-consignment', 'sec-parties', isFtl ? 'sec-vehicle' : 'sec-packages', 'sec-carrier'] : isFtl
-    ? ['sec-consignment', 'sec-parties', ...svcSec, 'sec-vehicle', ...(handlingVisible ? ['sec-handling'] : []), 'sec-carrier', ...sumSec]
+    ? ['sec-consignment', 'sec-parties', ...svcSec, ...(vehicleCard ? ['sec-vehicle'] : []), ...(handlingVisible ? ['sec-handling'] : []), 'sec-carrier', ...sumSec]
     : ['sec-consignment', 'sec-parties', 'sec-packages', ...(handlingVisible ? ['sec-handling'] : []), ...svcSec, 'sec-carrier', ...sumSec]
   /* owner, 2026-10-05 ("allow the user to move sections up and down"): the cards follow the saved order (zone
      SECTION_ZONE of the field order, so it is edited, saved, reset and — on Grow — inherited like the fields'); a card
@@ -2444,7 +2514,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     'sec-service': done(serviceReq) && done(extrasReq),
     'sec-carrier': done(carrierReq),
     'sec-summary': true,
-    ...(merchantMode ? { 'sec-extras': done(extrasReq), 'sec-service': done(serviceReq), 'sec-vehicle': ftlOk } : {}),
+    ...(merchantMode ? { 'sec-extras': done(extrasReq), 'sec-service': done(serviceReq), 'sec-vehicle': ftlOk, 'sec-payment': done(paymentReq) } : {}),
   }
 
   const proceed = () => {
@@ -2513,15 +2583,15 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
       {(() => {
         const r = arrange(sortApi, 'consignment', [
           /* Merchant first: it decides the Ship From addresses and the package presets below */
-          !merchantMode && [null, <F key="me" fieldKey="merchant" label="Merchant" required value={merchant?.code ?? ''} placeholder="eg, ELEX"
-            options={masters.merchants.map((m) => ({ value: m.code, label: m.name }))} error={err(!merchant)}
+          !merchantMode && !hid('merchant') && [null, <F key="me" fieldKey="merchant" label={lbl('merchant')} required={need('merchant')} value={merchant?.code ?? ''} placeholder="eg, ELEX"
+            options={masters.merchants.map((m) => ({ value: m.code, label: m.name }))} error={err(need('merchant') && !merchant)}
             onChange={(v) => setMerchantCode(v || null)} />],
           idPref !== 'referenceNumber' && [null, <F key="on" fieldKey="orderNumber" label={lbl('orderNumber')} required value={c.orderNumber ?? ''} placeholder="eg, ABC0001"
             error={err(!filled(effectiveOrder))} onChange={(v) => setC({ orderNumber: v })}
             helper={idPref === 'orderNumber' ? `${lbl('referenceNumber')} is copied from this.` : undefined} />],
-          idPref !== 'orderNumber' && [null, <F key="rn" fieldKey="referenceNumber" label={lbl('referenceNumber')} required value={c.referenceNumber ?? ''} placeholder="eg, ABC0001"
-            error={err(!filled(effectiveRef))} onChange={(v) => setC({ referenceNumber: v })}
-            helper={idPref === 'referenceNumber' ? `${lbl('orderNumber')} is copied from this.` : undefined} />],
+          (idPref !== 'orderNumber' || (editing && refHidden && !hid('referenceNumber'))) && ['referenceNumber', <F key="rn" fieldKey="referenceNumber" label={lbl('referenceNumber')} required={refRequired} value={c.referenceNumber ?? ''} placeholder="eg, ABC0001"
+            error={err(refRequired && !filled(c.referenceNumber))} onChange={(v) => setC({ referenceNumber: v })}
+            helper={idPref === 'referenceNumber' ? `${lbl('orderNumber')} is copied from this.` : !refRequired ? `Blank = the ${lbl('orderNumber')}` : undefined} />, filled(c.referenceNumber)],
           !hid('consignmentNumber') && ['consignmentNumber', <F key="cn" fieldKey="consignmentNumber" label={lbl('consignmentNumber')} value={c.consignmentNumber ?? ''} placeholder="eg, 0001"
             onChange={(v) => setC({ consignmentNumber: v })} />, filled(c.consignmentNumber)],
           !hid('consignmentType') && [null, <F key="ct" fieldKey="consignmentType" label={lbl('consignmentType')} required value={ctype}
@@ -2531,9 +2601,9 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
             <F key="ex" fieldKey="exchangeOrderNumber" label={lbl('exchangeOrderNumber')} required={ctype === 'Exchange'} value={c.exchangeOrderNumber ?? ''} placeholder="eg, ABC0000"
               error={ctype === 'Exchange' && !filled(c.exchangeOrderNumber) ? 'Required field.' : undefined}
               onChange={(v) => setC({ exchangeOrderNumber: v })} helper={editing ? 'Shown for an Exchange' : 'The order being exchanged'} />, filled(c.exchangeOrderNumber)],
-          !hid('paymentMode') && (typeRule.payment || editing) && ['paymentMode', <F key="pm" fieldKey="paymentMode" label={lbl('paymentMode')} value={c.paymentMode ?? ''} placeholder="eg, Prepaid"
+          !merchantMode && !hid('paymentMode') && (typeRule.payment || editing) && ['paymentMode', <F key="pm" fieldKey="paymentMode" label={lbl('paymentMode')} value={c.paymentMode ?? ''} placeholder="eg, Prepaid"
             options={opts(PAYMENT_MODES)} onChange={(v) => setC({ paymentMode: v })} />, !!c.paymentMode],
-          !hid('orderAmount') && (typeRule.payment || editing) && ['orderAmount', <FNum key="oa" fieldKey="orderAmount" label={c.paymentMode === 'COD' ? 'Amount to collect (COD)' : lbl('orderAmount')} blankZero
+          !merchantMode && !hid('orderAmount') && (typeRule.payment || editing) && ['orderAmount', <FNum key="oa" fieldKey="orderAmount" label={c.paymentMode === 'COD' ? 'Amount to collect (COD)' : lbl('orderAmount')} blankZero
             placeholder="eg, 100.22" unit={merchantMode ? currency : undefined} value={c.orderAmount ?? 0} onChange={(n) => setC({ orderAmount: n || null })} />, (c.orderAmount ?? 0) > 0],
           ...customEntries('sec-consignment'),
         ], inMore, secOpen('sec-consignment'))
@@ -2852,7 +2922,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
         {!folded && (
           <div className="mt-6">
             <PartyBlock wide half={!stackAddr} party={p} set={patchParty(role, idx)} nameLabel={role === 'to' ? 'Customer Name' : 'Sender Name'}
-              requireContact={role !== 'from'} hid={hid} variant={role === 'rto' ? 'rto' : 'full'} />
+              requireContact={role !== 'from' && contactReq} hid={hid} variant={role === 'rto' ? 'rto' : 'full'} />
           </div>
         )}
         {typed && !editing && (
@@ -2967,7 +3037,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
         {addr && (
           <div className="pb-4 pt-2">
             <PartyBlock grouped party={partyOf(addr.role, addr.idx)} set={patchParty(addr.role, addr.idx)}
-              nameLabel={addr.role === 'to' ? 'Customer Name' : 'Sender Name'} requireContact={addr.role !== 'from'} hid={hid}
+              nameLabel={addr.role === 'to' ? 'Customer Name' : 'Sender Name'} requireContact={addr.role !== 'from' && contactReq} hid={hid}
               variant={addr.role === 'rto' ? 'rto' : 'full'} />
             {/* any address typed here can be kept — Ship From and Ship To alike */}
             {!addr.setup && (addr.isNew || valueOf(addr.role === 'rto' ? 'from' : addr.role, partyOf(addr.role, addr.idx)) === '') && (
@@ -3168,18 +3238,21 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
       </div>}
       {/* Grow (owner, 2026-10-06: "Tags and Dedicate Truck in one line"): the two as fields side by side, labels on top,
           the field grid's widths — Load type = the Dedicate Truck switch (on = a full vehicle, picked in Vehicle Details) */}
-      {merchantMode && (
+      {merchantMode && (!hid('tags') || !hid('dedicateTruck')) && (
         <div className={`${handlingChipsVisible || switchesRow ? 'mt-6' : ''} grid grid-cols-1 ${FIELD_GAPS} sm:grid-cols-[repeat(auto-fill,minmax(220px,1fr))]`}>
           {!hid('tags') && (
             <SFld fieldKey="tags" label={lbl('tags')} required={need('tags')}>
               <MultiSelectDropdown size="sm" options={TAG_OPTIONS} values={c.tags ?? []} noun="tags" placeholder="Add tags" onChange={(v) => setC({ tags: v })} />
             </SFld>
           )}
-          <SFld label="Load type">
-            <SwitchBox icon={Truck} label="Dedicate Truck" checked={mode === 'ftl'} disabled={!!fromOverage || pr?.shipmentType === 'FTL'}
-              onChange={(on) => changeMode(on ? 'ftl' : 'ltl')}
-              title={mode === 'ftl' ? 'Full vehicle (FTL / FCL) — its vehicles are picked in Vehicle Details' : 'Shared vehicle (LTL / LCL) — switch on for a whole vehicle'} />
-          </SFld>
+          {/* 2026-10-07: a builder field on Grow too — hidden, every order books the builder's default (shared unless set) */}
+          {!hid('dedicateTruck') && (
+            <SFld fieldKey="dedicateTruck" label={custom('dedicateTruck', 'Dedicate Truck', 'Load type')}>
+              <SwitchBox icon={Truck} label="Dedicate Truck" checked={mode === 'ftl'} disabled={!!fromOverage || pr?.shipmentType === 'FTL' || truckHidden}
+                onChange={(on) => changeMode(on ? 'ftl' : 'ltl')}
+                title={mode === 'ftl' ? 'Full vehicle (FTL / FCL) — its vehicles are picked in Vehicle Details' : 'Shared vehicle (LTL / LCL) — switch on for a whole vehicle'} />
+            </SFld>
+          )}
         </div>
       )}
       {need('tags') && !(c.tags ?? []).length && <ErrLine className="mt-2">Add at least one tag.</ErrLine>}
@@ -3197,7 +3270,12 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     : !ownPresets ? `Showing all package types — none assigned to ${merchant?.name ?? 'this merchant'}` : undefined
   const [skuMore, setSkuMore] = useState<Set<string>>(new Set())
   const flip = <T,>(s: Set<T>, k: T) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n }
-  const SKU_COLS = 'grid grid-cols-[28px_minmax(0,1.3fr)_minmax(0,1.4fr)_84px_104px_minmax(0,1.5fr)_80px_96px] items-start gap-x-3'
+  /* a SKU line's columns — Unit Weight and Dimensions leave when the builder hides them (2026-10-07) */
+  const skuWHid = hid('skuWeight')
+  const skuDHid = hid('skuDimensions')
+  const SKU_COLS = 'grid items-start gap-x-3'
+  const skuColsStyle = { gridTemplateColumns: ['28px', 'minmax(0,1.3fr)', 'minmax(0,1.4fr)', '84px', ...(skuWHid ? [] : ['104px']),
+    ...(skuDHid ? [] : ['minmax(0,1.5fr)']), '80px', '96px'].join(' ') }
   /** picked from the SKU master (its name / size / weight came with it) vs typed by hand */
   const isMasterSku = (it: ParcelItem) => !!it.skuCode && masters.skus.some((sk) => sk.code === it.skuCode)
   /** a SKU line's details (owner, 2026-10-06: "Grow — HSN Code, Origin Country and Cost in the default view"): the ones not
@@ -3258,6 +3336,9 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
             const picked = !!it.skuCode
             const dimsOk = (it.lengthCm ?? 0) > 0 && (it.widthCm ?? 0) > 0 && (it.heightCm ?? 0) > 0
             const weightOk = it.weightKg > 0
+            /* only what the builder still asks (2026-10-07: a SKU's weight / size can be hidden or optional) */
+            const askW = !skuWHid && !weightOk
+            const askD = !skuDHid && !dimsOk
             /* a typed SKU has nothing from the master — its details start open */
             const open = itemMore.has(l.id) !== (picked && !isMasterSku(it))
             const det = picked ? skuDetails(it, (patch) => setLine(l.id, patch), open || editing) : null
@@ -3277,18 +3358,19 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
                   onChange={(q) => setLine(l.id, { quantity: q })} />
                 <div className="min-w-0">
                   {!picked ? <span className="flex h-8 items-center text-[13px] text-ink-3">Pick a SKU</span>
-                    : weightOk && dimsOk
+                    : !askW && !askD
                       ? <span className="flex h-8 items-center text-[13px] text-ink-2">
-                          {round2(iu.toW(it.weightKg))} {iu.w} · {iu.toD(it.lengthCm ?? 0)} × {iu.toD(it.widthCm ?? 0)} × {iu.toD(it.heightCm ?? 0)} {iu.d}
+                          {[weightOk && `${round2(iu.toW(it.weightKg))} ${iu.w}`, dimsOk && `${iu.toD(it.lengthCm ?? 0)} × ${iu.toD(it.widthCm ?? 0)} × ${iu.toD(it.heightCm ?? 0)} ${iu.d}`]
+                            .filter(Boolean).join(' · ') || '—'}
                         </span>
                       : (
                         /* the SKU master has no size / weight for this SKU — ask only what is missing */
-                        <div className="grid grid-cols-[88px_minmax(0,1fr)] gap-2">
-                          <NumBox unit={iu.w} blankZero placeholder={iu.w} value={iu.toW(it.weightKg)} precision={iu.precision} error={err(!weightOk)}
-                            onChange={(w) => setLine(l.id, { weightKg: iu.fromW(w) })} />
-                          <DimsBox error units={iu} l={it.lengthCm ?? 0} w={it.widthCm ?? 0} h={it.heightCm ?? 0}
-                            onChange={(d) => setLine(l.id, { ...(d.l !== undefined ? { lengthCm: d.l } : {}), ...(d.w !== undefined ? { widthCm: d.w } : {}), ...(d.h !== undefined ? { heightCm: d.h } : {}) })} />
-                          <p className="col-span-2 text-[12px] text-ink-3">Not in the SKU master — enter the weight and size of one unit.</p>
+                        <div className={`grid gap-2 ${askW && askD ? 'grid-cols-[88px_minmax(0,1fr)]' : 'grid-cols-1'}`}>
+                          {askW && <NumBox unit={iu.w} blankZero placeholder={iu.w} value={iu.toW(it.weightKg)} precision={iu.precision} error={err(need('skuWeight') && !weightOk)}
+                            onChange={(w) => setLine(l.id, { weightKg: iu.fromW(w) })} />}
+                          {askD && <DimsBox error={need('skuDimensions')} units={iu} l={it.lengthCm ?? 0} w={it.widthCm ?? 0} h={it.heightCm ?? 0}
+                            onChange={(d) => setLine(l.id, { ...(d.l !== undefined ? { lengthCm: d.l } : {}), ...(d.w !== undefined ? { widthCm: d.w } : {}), ...(d.h !== undefined ? { heightCm: d.h } : {}) })} />}
+                          <p className={`${askW && askD ? 'col-span-2' : ''} text-[12px] text-ink-3`}>Not in the SKU master — enter {askW && askD ? 'the weight and size' : askW ? 'the weight' : 'the size'} of one unit.</p>
                         </div>
                       )}
                 </div>
@@ -3326,13 +3408,13 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   const skuTable = (rows: ReactNode, u: Units) => (
     <div className="overflow-x-auto">
       <div className="min-w-[860px]">
-        <div className={`${SKU_COLS} border-b border-warm-200 pb-2 text-[13px] text-ink-2`}>
+        <div className={`${SKU_COLS} border-b border-warm-200 pb-2 text-[13px] text-ink-2`} style={skuColsStyle}>
           <span>#</span>
           <span>SKU Code<span className="text-danger-fg"> *</span></span>
           <span>Name<span className="text-danger-fg"> *</span></span>
           <span>Quantity<span className="text-danger-fg"> *</span></span>
-          <span>Unit Weight<span className="text-danger-fg"> *</span></span>
-          <span>Dimensions ({u.d})<span className="text-danger-fg"> *</span></span>
+          {!skuWHid && <Configurable fieldKey="skuWeight"><span>{ownLbl('skuWeight', 'Unit Weight')}{need('skuWeight') && <span className="text-danger-fg"> *</span>}</span></Configurable>}
+          {!skuDHid && <Configurable fieldKey="skuDimensions"><span>{ownLbl('skuDimensions', 'Dimensions')} ({u.d}){need('skuDimensions') && <span className="text-danger-fg"> *</span>}</span></Configurable>}
           <span className="text-right">Total</span>
           <span />
         </div>
@@ -3350,7 +3432,8 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     const open = skuMore.has(key) !== (!!it.skuCode && !isMasterSku(it))
     const det = skuDetails(it, upd, open || editing)
     const missing = [!it.skuCode && 'SKU code', !filled(it.name) && 'name', !(it.quantity >= 1) && 'quantity',
-      !(it.weightKg > 0) && 'weight', !((it.lengthCm ?? 0) > 0 && (it.widthCm ?? 0) > 0 && (it.heightCm ?? 0) > 0) && 'dimensions']
+      need('skuWeight') && !(it.weightKg > 0) && 'weight',
+      need('skuDimensions') && !((it.lengthCm ?? 0) > 0 && (it.widthCm ?? 0) > 0 && (it.heightCm ?? 0) > 0) && 'dimensions']
       .filter(Boolean) as string[]
     const vol = (it.lengthCm ?? 0) * (it.widthCm ?? 0) * (it.heightCm ?? 0)
     return (
@@ -3360,17 +3443,17 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
             Sample line — how a SKU is entered (not saved)
           </span>
         )}
-        <div className={SKU_COLS}>
+        <div className={SKU_COLS} style={skuColsStyle}>
           <span className="flex h-8 items-center text-[13px] text-ink-3">{n + 1}</span>
           <SkuCode item={it} skus={masters.skus} onPick={(sk) => { if (!preview) pickSku(i, k, sk) }} onUnlink={() => upd({ skuCode: null })}
             onCustom={(code) => upd({ skuCode: code })} autoFocus={!preview && focusLine?.i === i && focusLine.k === k} />
           {/* a master SKU's name comes with it; a typed one is yours to name */}
           <Input value={it.name} placeholder="eg, Refrigerator 300 L" disabled={isMasterSku(it)} onChange={(v) => upd({ name: v })} />
           <NumBox integer min={1} blankZero placeholder="1" value={it.quantity} error={err(it.quantity < 1)} onChange={(q) => upd({ quantity: q })} />
-          <NumBox unit={u.w} blankZero placeholder="0" value={u.toW(it.weightKg)} precision={u.precision} error={err(!(it.weightKg > 0))}
-            onChange={(w) => upd({ weightKg: u.fromW(w) })} />
-          <DimsBox units={u} l={it.lengthCm ?? 0} w={it.widthCm ?? 0} h={it.heightCm ?? 0} error
-            onChange={(d) => upd({ ...(d.l !== undefined ? { lengthCm: d.l } : {}), ...(d.w !== undefined ? { widthCm: d.w } : {}), ...(d.h !== undefined ? { heightCm: d.h } : {}) })} />
+          {!skuWHid && <NumBox unit={u.w} blankZero placeholder="0" value={u.toW(it.weightKg)} precision={u.precision} error={err(need('skuWeight') && !(it.weightKg > 0))}
+            onChange={(w) => upd({ weightKg: u.fromW(w) })} />}
+          {!skuDHid && <DimsBox units={u} l={it.lengthCm ?? 0} w={it.widthCm ?? 0} h={it.heightCm ?? 0} error={need('skuDimensions')}
+            onChange={(d) => upd({ ...(d.l !== undefined ? { lengthCm: d.l } : {}), ...(d.w !== undefined ? { widthCm: d.w } : {}), ...(d.h !== undefined ? { heightCm: d.h } : {}) })} />}
           <span className="flex min-h-8 flex-col items-end justify-center text-[13px] tabular-nums text-ink-2">
             <span>{it.weightKg && it.quantity ? `${round2(u.toW(it.weightKg * it.quantity))} ${u.w}` : '-'}</span>
             {vol * it.quantity > 0 && <span className="text-[12px] text-ink-3">{u.vol(vol * it.quantity)}</span>}
@@ -3405,25 +3488,28 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
        each field its own width — Quantity and Weight narrow */
     const cell = (id: string) => `max-sm:basis-full ${PKG_CELL[id] ?? PKG_CELL.other}`
     const r = arrange(sortApi, 'package', [
-      [null, <div key="type" className={cell('type')} title={packageTypeTitle}>
-        <F label="Package Type" required value={packageValue(p, packageTypes)} options={packageTypeOpts} onChange={(v) => pickPackageType(i, v)} />
-      </div>],
+      /* 2026-10-07: every package field is a builder field — Package Type hidden = a Custom package (its size typed),
+         Quantity hidden = one box per line, weight / size hidden = not asked */
+      !hid('pkgType') && ['pkgType', <div key="type" className={cell('type')} title={packageTypeTitle}>
+        <F fieldKey="pkgType" label={lbl('pkgType')} required value={packageValue(p, packageTypes)} options={packageTypeOpts} onChange={(v) => pickPackageType(i, v)} />
+      </div>, true],
       /* "Barcode on every box" on (the Handling switch): a line is ONE box — its quantity stays 1 */
-      [null, <div key="qty" className={cell('qty')} title={barcodeEach ? 'One box with its own barcode — Barcode on every box is on' : undefined}>
-        <FNum label="Quantity" required integer min={1} blankZero placeholder="eg, 1" value={p.quantity}
+      !hid('pkgQty') && ['pkgQty', <div key="qty" className={cell('qty')} title={barcodeEach ? 'One box with its own barcode — Barcode on every box is on' : undefined}>
+        <FNum fieldKey="pkgQty" label={lbl('pkgQty')} required integer min={1} blankZero placeholder="eg, 1" value={p.quantity}
           error={err(!(p.quantity > 0))} disabled={barcodeEach && p.quantity <= 1} onChange={(q) => setParcel(i, { quantity: q })} />
-      </div>],
+      </div>, true],
       /* a preset's size IS its master row — typed only for a Custom package */
-      [null, <div key="dims" className={cell('dims')}>
-        <SFld fieldKey="pkgDimensions" label={`Dimensions (${u.d})`} helper={isCustom ? undefined : 'From the package type'}>
-          {isCustom ? <DimsBox units={u} l={p.l} w={p.w} h={p.h} onChange={(d) => setParcel(i, d)} />
+      !hid('pkgDimensions') && ['pkgDimensions', <div key="dims" className={cell('dims')}>
+        <SFld fieldKey="pkgDimensions" label={`${ownLbl('pkgDimensions', 'Dimensions')} (${u.d})`} required={isCustom && need('pkgDimensions')}
+          error={isCustom && need('pkgDimensions') && !(p.l > 0 && p.w > 0 && p.h > 0)} helper={isCustom ? undefined : 'From the package type'}>
+          {isCustom ? <DimsBox units={u} l={p.l} w={p.w} h={p.h} error={need('pkgDimensions')} onChange={(d) => setParcel(i, d)} />
             : <ReadBox value={`${u.toD(p.l)} × ${u.toD(p.w)} × ${u.toD(p.h)}`} />}
         </SFld>
-      </div>],
-      [null, <div key="weight" className={cell('weight')}>
-        <FNum fieldKey="pkgWeight" label={`Weight (${u.w})`} required placeholder="eg, 10" blankZero value={u.toW(p.weight)} precision={u.precision}
-          error={err(!(p.weight > 0))} onChange={(w) => setParcel(i, { weight: u.fromW(w), weightMode: 'manual' })} />
-      </div>],
+      </div>, p.l > 0],
+      !hid('pkgWeight') && ['pkgWeight', <div key="weight" className={cell('weight')}>
+        <FNum fieldKey="pkgWeight" label={`${ownLbl('pkgWeight', 'Weight')} (${u.w})`} required={need('pkgWeight')} placeholder="eg, 10" blankZero value={u.toW(p.weight)} precision={u.precision}
+          error={err(need('pkgWeight') && !(p.weight > 0))} onChange={(w) => setParcel(i, { weight: u.fromW(w), weightMode: 'manual' })} />
+      </div>, p.weight > 0],
       !hid('pkgTracking') && ['pkgTracking', <div key="tr" className={cell('tr')}>
         <F fieldKey="pkgTracking" label={lbl('pkgTracking')} value={p.trackingNumber ?? ''} disabled={!!fromOverage && i === 0}
           helper={fromOverage && i === 0 ? 'The overage scan barcode' : undefined} onChange={(v) => setParcel(i, { trackingNumber: v })} />
@@ -3681,18 +3767,24 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
       </>
     )
   }
+  /* 2026-10-07: the card is a builder field (`vehicleDetails`) — rename it, or hide it: the carrier then picks the vehicle
+     (one of the Ship From hub's vehicles carries the whole load to every Ship To address) */
   const vehicleSection = (
-    <FormCard id="sec-vehicle" title="Vehicle Details"
+    <FormCard id="sec-vehicle" title={lbl('vehicleDetails')}
       caption={`A full-truck booking — book the vehicles that fit the load for ${consoleFtl}. Each one is dedicated to this order.`}>
-      {vehicleTable(vehicleOpts.map((x) => ({ code: x.code, name: vehicleTypeOf(masters.vehicleTypes, x.code)?.name ?? x.code,
-        capacity: vehicleTypeOf(masters.vehicleTypes, x.code)?.capacity })), payloadOf)}
+      <Configurable fieldKey="vehicleDetails">
+        {vehicleTable(vehicleOpts.map((x) => ({ code: x.code, name: vehicleTypeOf(masters.vehicleTypes, x.code)?.name ?? x.code,
+          capacity: vehicleTypeOf(masters.vehicleTypes, x.code)?.capacity })), payloadOf)}
+      </Configurable>
     </FormCard>
   )
   /* Grow, Dedicate Truck on: the same table on the Ship From hub's fleet */
   const growVehicleSection = (
-    <FormCard id="sec-vehicle" title="Vehicle Details"
+    <FormCard id="sec-vehicle" title={lbl('vehicleDetails')}
       caption={`A full vehicle just for this order — book the vehicles that fit the load, and the Ship To addresses each one serves.${fleetNote ? ` ${fleetNote}` : ''}`}>
-      {vehicleTable(fleet, (code) => fleet.find((v) => v.code === code)?.payloadKg ?? 0)}
+      <Configurable fieldKey="vehicleDetails">
+        {vehicleTable(fleet, (code) => fleet.find((v) => v.code === code)?.payloadKg ?? 0)}
+      </Configurable>
     </FormCard>
   )
 
@@ -3873,6 +3965,27 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
       {extrasSection(svcAbove, vasAlone)}
     </FormCard>
   )
+  /* Grow · Payment (owner, 2026-10-07: "Payment Mode, COD, COD Amount, remarks — asked in the same flow as the form"):
+     its own card on step 1, configured like every field (hide · Required · rename · order, zone `payment`). Checkout
+     only asks HOW the merchant pays. COD Amount shows for a COD order; hidden Payment Mode = Prepaid. */
+  const payReveal = arrange(sortApi, 'payment', [
+    !hid('paymentMode') && typeRule.payment && ['paymentMode', <F key="pm" fieldKey="paymentMode" label={lbl('paymentMode')} value={growPayMode}
+      options={opts(['Prepaid', 'COD'])} onChange={(v) => setC({ paymentMode: v, ...(v === 'COD' ? {} : { orderAmount: null }) })}
+      helper={growPayMode === 'COD' ? 'Cash is collected from the receiver at delivery' : undefined} />, true],
+    !hid('orderAmount') && typeRule.payment && (growPayMode === 'COD' || editing) && ['orderAmount',
+      <FNum key="oa" fieldKey="orderAmount" label={`${custom('orderAmount', 'Order Amount', 'COD Amount')} (${currency})`} required={codAsked} blankZero
+        placeholder="eg, 1500" value={c.orderAmount ?? 0} error={err(codAsked && !((c.orderAmount ?? 0) > 0))}
+        helper={editing && growPayMode !== 'COD' ? 'Shown for a COD order' : undefined}
+        onChange={(n) => setC({ orderAmount: n || null })} />, (c.orderAmount ?? 0) > 0],
+    !hid('remarks') && ['remarks', <F key="rm" fieldKey="remarks" label={lbl('remarks')} multiline rows={2} value={c.remarks ?? ''}
+      placeholder="Remarks for the driver or the receiver" className="sm:col-span-2" onChange={(v) => setC({ remarks: v })} />, filled(c.remarks)],
+  ], inMore, secOpen('sec-payment'))
+  const paymentSection = !(payReveal.nodes.length > 0 || payReveal.waiting > 0) ? null : (
+    <FormCard id="sec-payment" title="Payment" caption="Prepaid or cash on delivery, and a note for the driver or the receiver.">
+      <SGrid>{payReveal.nodes}</SGrid>
+      <RevealToggle open={secOpen('sec-payment')} onToggle={() => toggleSec('sec-payment')} waiting={payReveal.waiting} waitingFilled={payReveal.waitingFilled} className="mt-6" />
+    </FormCard>
+  )
   /* Grow, Service Type hidden: the merchant books the default service without choosing (the card leaves the form; a full
      vehicle's vehicles are in Vehicle Details); the builder's preview keeps the whole card, faded, so it can be selected */
   const serviceChooser = (
@@ -3976,6 +4089,12 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     carrier: {
       title: 'Carrier', jump: 'sec-carrier',
       value: c.carrier || muted('Not chosen yet'),
+    },
+    /* Grow (2026-10-07): the Payment card read back */
+    payment: {
+      title: 'Payment', jump: paymentSection ? 'sec-payment' : null,
+      value: growPayMode === 'COD' ? `Cash on delivery${codAsked && (c.orderAmount ?? 0) > 0 ? ` · ${money(c.orderAmount ?? 0, currency)}` : ''}` : 'Prepaid',
+      sub: filled(c.remarks) && !isHidden('remarks') ? `Remarks: ${c.remarks!.trim()}` : '',
     },
   }
   const toggleLine = (key: string, on: boolean) => {
@@ -4173,6 +4292,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   const byId: Record<string, ReactNode> = merchantMode ? {
     'sec-consignment': consignmentSection, 'sec-parties': partiesSection, 'sec-packages': packagesSection,
     'sec-handling': merchantHandlingSection, 'sec-vehicle': growVehicleSection, 'sec-extras': merchantExtrasSection, 'sec-service': merchantServiceSection,
+    'sec-payment': paymentSection,
     'sec-summary': summarySection,
   } : simple ? {
     'sec-consignment': simpleConsignment, 'sec-parties': simpleParties, 'sec-packages': simplePackages,
@@ -4306,16 +4426,17 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   /* every field the builder can change, by the card it sits in (a field this form never has is left out) */
   const fieldGroups = [
     { id: 'sec-consignment', title: 'Consignment details', keys: ['merchant', 'orderNumber', 'referenceNumber', 'consignmentNumber', 'consignmentType',
-      'shipByDate', 'exchangeOrderNumber', 'paymentMode', 'orderAmount', ...customKeys('sec-consignment')] },
-    { id: 'addresses', title: 'Addresses', keys: ['addrCompanyName', 'addrContact', 'addrEmail', 'addrLines23', 'addrLandmark', 'addrSuburb',
-      'addrCoordinates', 'addrFloorLift', 'addrLift', 'addrWindow', 'schedulingConfirmation'] },
-    { id: 'sec-packages', title: 'Package & SKU', keys: [PKG_SECTION, SKU_SECTION, 'pkgWeight', 'pkgDimensions', 'pkgTracking', 'pkgId', 'pkgDescription',
+      'shipByDate', 'exchangeOrderNumber', ...(merchantMode ? [] : ['paymentMode', 'orderAmount']), ...customKeys('sec-consignment')] },
+    { id: 'addresses', title: 'Addresses', keys: ['addrName', 'addrCompanyName', 'addrContact', 'addrEmail', 'addrLine1', 'addrLines23', 'addrLandmark',
+      'addrCountry', 'addrPostal', 'addrSuburb', 'addrCity', 'addrState', 'addrCoordinates', 'addrFloorLift', 'addrLift', 'addrWindow', 'schedulingConfirmation'] },
+    { id: 'sec-packages', title: 'Package & SKU', keys: [PKG_SECTION, SKU_SECTION, 'pkgType', 'pkgQty', 'pkgWeight', 'pkgDimensions', 'pkgTracking', 'pkgId', 'pkgDescription',
       'pkgPalletSpace', 'skuWeight', 'skuDimensions', 'skuCategory', 'skuDescription', 'skuHsn', 'skuOrigin', 'skuUnitCost', 'skuImage'] },
     { id: 'sec-handling', title: 'Handling', keys: [...GOODS_CATEGORIES.map(({ name }) => catKey(name)), 'scannable', 'splittable', 'clearanceRequired',
-      'tags', ...customKeys('sec-handling')] },
-    { id: 'sec-service', title: 'Service & instructions', keys: ['serviceType', 'dedicateTruck', 'vehicleType', 'labelFormat', 'totalLoadingTime',
-      'specialInstructions', 'vas', ...customKeys('sec-service')] },
-  ].map((g) => ({ ...g, keys: g.keys.filter((k) => known(k) && !(merchantMode && MERCHANT_OFF.has(k))) }))
+      'tags', ...(merchantMode ? ['dedicateTruck', 'vehicleDetails'] : []), ...customKeys('sec-handling')] },
+    { id: 'sec-service', title: 'Service & instructions', keys: ['serviceType', ...(merchantMode ? [] : ['dedicateTruck', 'vehicleType', 'vehicleDetails']),
+      'labelFormat', 'totalLoadingTime', 'specialInstructions', 'vas', ...customKeys('sec-service')] },
+    ...(merchantMode ? [{ id: 'sec-payment', title: 'Payment', keys: ['paymentMode', 'orderAmount', 'remarks'] }] : []),
+  ].map((g) => ({ ...g, keys: g.keys.filter((k) => known(k) && !(merchantMode ? MERCHANT_OFF : CONSOLE_OFF).has(k)) }))
   /** a field's name as the form shows it */
   const fieldName = (k: string) => (k === 'dedicateTruck' ? custom('dedicateTruck', 'Dedicate Truck', 'Load type')
     : k === 'scannable' ? custom('scannable', 'Scannable', 'Barcode on every box')
@@ -4332,6 +4453,18 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   const verb = merchantMode || growSetup ? 'the order can go to checkout' : 'the consignment can be added'
   /** settings only one field has (Service Type: the service used while it is hidden) */
   const fieldExtra = (k: string): ReactNode => {
+    /* Dedicate Truck (2026-10-07): what a hidden switch gives every consignment */
+    if (k === 'dedicateTruck') return (
+      <div>
+        <PanelHeading>While it is hidden</PanelHeading>
+        <SFld label="Every consignment books">
+          <MenuSelect value={truckDefault ? 'on' : 'off'} options={['off', 'on']}
+            labels={(v) => (v === 'on' ? 'A dedicated truck (full vehicle)' : 'A shared vehicle')}
+            onChange={(v) => setRule('dedicateTruck', { defaultValue: v })} />
+        </SFld>
+        <p className="mt-2 text-[12px] text-ink-3">A full-vehicle order or pickup request keeps its own.</p>
+      </div>
+    )
     if (k !== 'serviceType') return null
     /* the console offers the static list; the Grow form books from the Service Type master's Active rows */
     const list = growSetup || merchantMode ? services.map((x) => x.code) : SERVICE_TYPES
@@ -4392,6 +4525,13 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
             <SettingRow title="Show on the form" checked={!own && !parent} disabled={!!parent} onChange={(on) => setRule(k, { hidden: !on })}
               hint={parent ? `Hidden because ${fieldName(parent)} is hidden.` : own
                 ? (k === 'serviceType' ? 'Hidden — every consignment gets the service below.'
+                  : k === 'dedicateTruck' ? 'Hidden — every consignment gets the load type below.'
+                  : k === 'vehicleDetails' ? 'Hidden — the carrier picks the vehicle for a dedicated truck.'
+                  : k === 'referenceNumber' ? `Hidden — it copies the ${lbl('orderNumber')}.`
+                  : k === 'consignmentType' ? 'Hidden — every consignment is Forward.'
+                  : k === 'shipByDate' ? 'Hidden — every consignment ships by the day it is created.'
+                  : k === 'paymentMode' ? 'Hidden — every order is Prepaid.'
+                  : k === 'merchant' ? 'Hidden — the signed-in merchant is recorded.'
                   : k === PKG_SECTION ? 'Hidden — people enter SKUs and how many; the packages are worked out.'
                   : k === SKU_SECTION ? 'Hidden — people enter packages only.'
                   : 'Hidden — people do not see it. Saved consignments keep their answer.')
