@@ -64,7 +64,7 @@ import {
   ADDITIONAL_SERVICES, DEFAULT_FTL_SERVICE, DRAFT_KEY, FTL_SERVICE_CODES, FTL_SERVICE_TYPES, PARCEL_SERVICES, SERVICE_TYPES, VEHICLE_SPECS,
   clearDraftKeys, draftFromOrder, loadTypeOf, ftlQuoteVehicles, ftlServiceType, readOverageSidecar, setCheckoutSidecar, setDraftSidecar,
   totalLoadKg, vehiclesFor,
-  vehiclesOf, type ConsignmentFields, type CustomFieldValue, type FtlVehicle, type OrderDraft, type Parcel, type ParcelItem, type UnitSystem, type VasLine,
+  vehiclesOf, type ConsignmentFields, type CustomFieldValue, type FtlVehicle, type OrderDraft, type Parcel, type ParcelItem, type UnitSystem, type VasLine, type WeightUnit, type DimUnit,
 } from '../../growOrders/draft'
 import {
   CUSTOM_FIELD_CARDS, CUSTOM_FIELD_KINDS, DEFAULT_LAYOUT, FIELD_WIDTHS, FORMAT_PRESETS, PKG_SECTION, SKU_SECTION, applyOrder, clearLegacyGoods, formatError, formatMessage, formatSummary,
@@ -171,44 +171,43 @@ const filled = (v: string | undefined) => !!(v ?? '').trim()
 const KG_PER_LB = 0.45359237
 const KG_PER_OZ = 0.028349523125
 const CM_PER_IN = 2.54
+/** what decides a package's units: the two independent choices, else the older pair (`unitSystem`), else kg · cm */
+type UnitSrc = Pick<Parcel, 'unitSystem' | 'weightUnit' | 'dimUnit'>
 interface Units {
-  system: UnitSystem
   /** the weight / length unit as shown */
-  w: string; d: string
+  w: WeightUnit; d: DimUnit
   /** kg → shown · shown → kg; cm → shown · shown → cm */
   toW: (kg: number) => number; fromW: (v: number) => number
   toD: (cm: number) => number; fromD: (v: number) => number
-  /** cm³ → cm³ or in³ (a package's size) · cm³ → "0.012 m³" or "0.4 ft³" (a total) */
+  /** cm³ → the size unit cubed (a package's size) · cm³ → "0.012 m³" or "0.4 ft³" (a total) */
   toV: (cm3: number) => number; vol: (cm3: number) => string
   /** a shown value is rounded — NumBox keeps what was typed while it rounds to the same value */
   precision?: number
 }
-const round3 = (n: number) => Number(n.toFixed(3))
-const METRIC: Units = {
-  /* rounded only to hide a converted value's float tail (4.5359237 kg typed as 10 lb) */
-  system: 'metric', w: 'kg', d: 'cm', precision: 3, toW: round3, fromW: (v) => v, toD: round3, fromD: (v) => v,
-  toV: (cm3) => cm3, vol: (cm3) => `${(cm3 / 1e6).toFixed(3)} m³`,
+const WEIGHT_UNITS: WeightUnit[] = ['kg', 'g', 'lb', 'oz']
+const DIM_UNITS: DimUnit[] = ['cm', 'in', 'mm', 'm']
+const WEIGHT_PER_KG: Record<WeightUnit, number> = { kg: 1, g: 1000, lb: 1 / KG_PER_LB, oz: 1 / KG_PER_OZ }
+const WEIGHT_DIGITS: Record<WeightUnit, number> = { kg: 3, g: 1, lb: 2, oz: 2 }
+const CM_PER_UNIT: Record<DimUnit, number> = { cm: 1, in: CM_PER_IN, mm: 0.1, m: 100 }
+const DIM_DIGITS: Record<DimUnit, number> = { cm: 3, in: 2, mm: 1, m: 4 }
+const LEGACY_PAIR: Record<UnitSystem, [WeightUnit, DimUnit]> = { metric: ['kg', 'cm'], gram: ['g', 'cm'], imperial: ['lb', 'in'], ounce: ['oz', 'in'] }
+/* rounded only to hide a converted value's float tail (4.5359237 kg typed as 10 lb) */
+const rounded = (n: number, digits: number) => Number(n.toFixed(digits))
+function unitsFor(w: WeightUnit, d: DimUnit): Units {
+  const wf = WEIGHT_PER_KG[w], df = CM_PER_UNIT[d]
+  return {
+    w, d, precision: WEIGHT_DIGITS[w],
+    toW: (kg) => rounded(kg * wf, WEIGHT_DIGITS[w]), fromW: (v) => v / wf,
+    toD: (cm) => rounded(cm / df, DIM_DIGITS[d]), fromD: (v) => v * df,
+    toV: (cm3) => cm3 / df ** 3,
+    vol: (cm3) => (d === 'in' ? `${(cm3 / 28316.846592).toFixed(3)} ft³` : `${(cm3 / 1e6).toFixed(3)} m³`),
+  }
 }
-const IMPERIAL: Units = {
-  system: 'imperial', w: 'lb', d: 'in', precision: 2,
-  toW: (kg) => round2(kg / KG_PER_LB), fromW: (v) => v * KG_PER_LB,
-  toD: (cm) => round2(cm / CM_PER_IN), fromD: (v) => v * CM_PER_IN,
-  toV: (cm3) => cm3 / CM_PER_IN ** 3, vol: (cm3) => `${(cm3 / 28316.846592).toFixed(3)} ft³`,
+const METRIC: Units = unitsFor('kg', 'cm')
+const unitsOf = (s?: UnitSrc | null): Units => {
+  const legacy = LEGACY_PAIR[s?.unitSystem ?? 'metric'] ?? LEGACY_PAIR.metric
+  return unitsFor(s?.weightUnit ?? legacy[0], s?.dimUnit ?? legacy[1])
 }
-/* g + cm: the weight in grams (small parcels), the size in cm — numbers still kept in kg */
-const GRAM: Units = {
-  system: 'gram', w: 'g', d: 'cm', precision: 1, toW: (kg) => round2(kg * 1000), fromW: (v) => v / 1000, toD: round3, fromD: (v) => v,
-  toV: (cm3) => cm3, vol: (cm3) => `${(cm3 / 1e6).toFixed(3)} m³`,
-}
-/* oz + in: the weight in ounces, the size in inches */
-const OUNCE: Units = {
-  system: 'ounce', w: 'oz', d: 'in', precision: 2,
-  toW: (kg) => round2(kg / KG_PER_OZ), fromW: (v) => v * KG_PER_OZ,
-  toD: (cm) => round2(cm / CM_PER_IN), fromD: (v) => v * CM_PER_IN,
-  toV: (cm3) => cm3 / CM_PER_IN ** 3, vol: (cm3) => `${(cm3 / 28316.846592).toFixed(3)} ft³`,
-}
-const UNITS: Record<UnitSystem, Units> = { metric: METRIC, gram: GRAM, imperial: IMPERIAL, ounce: OUNCE }
-const unitsOf = (s: UnitSystem | undefined): Units => UNITS[s ?? 'metric'] ?? METRIC
 /** a SKU line saved with its own units (the retired per-SKU Weight / Dimension unit) — its numbers to kg + cm */
 function canonItem(it: ParcelItem): ParcelItem {
   const w = (it.weightUom ?? 'KG').toUpperCase()
@@ -225,15 +224,18 @@ function canonParcel(p: Parcel): Parcel {
   const imperial = (p.items ?? []).some((it) => /^(LBS?|IN)$/i.test(it.weightUom ?? '') || /^IN$/i.test(it.dimUom ?? ''))
   return { ...p, items: p.items?.map(canonItem), ...(!p.unitSystem && imperial ? { unitSystem: 'imperial' as const } : {}) }
 }
-/** A package's units — ONE small dropdown at input height: kg · cm, g · cm, lb · in, oz · in (owner, 2026-10-07). */
-const UNIT_OPTIONS: { value: UnitSystem; text: string }[] = [
-  { value: 'metric', text: 'kg · cm' }, { value: 'gram', text: 'g · cm' }, { value: 'imperial', text: 'lb · in' }, { value: 'ounce', text: 'oz · in' },
-]
-function UnitPick({ value, onChange, label = 'Units' }: { value: UnitSystem; onChange: (v: UnitSystem) => void; label?: string }) {
+/** A package's units — TWO small dropdowns at input height, set independently (owner, 2026-10-07): the weight unit (kg · g · lb · oz)
+    and the size unit (cm · in · mm · m). */
+function UnitPick({ units, onChange, label = 'Units' }: { units: Pick<Units, 'w' | 'd'>; onChange: (patch: { weightUnit?: WeightUnit; dimUnit?: DimUnit }) => void; label?: string }) {
   return (
-    <div className="w-[96px] shrink-0" aria-label={label} title={label}>
-      <MenuSelect value={value} options={UNIT_OPTIONS.map((o) => o.value)} labels={(v) => UNIT_OPTIONS.find((o) => o.value === v)?.text ?? v}
-        onChange={(v) => onChange(v as UnitSystem)} />
+    <div className="flex shrink-0 items-center gap-1.5" role="group" aria-label={label} title={label}>
+      <div className="w-[68px]" title="Weight unit">
+        <MenuSelect value={units.w} options={WEIGHT_UNITS} onChange={(v) => onChange({ weightUnit: v as WeightUnit })} />
+      </div>
+      <span className="text-ink-3" aria-hidden>·</span>
+      <div className="w-[68px]" title="Size unit">
+        <MenuSelect value={units.d} options={DIM_UNITS} onChange={(v) => onChange({ dimUnit: v as DimUnit })} />
+      </div>
     </div>
   )
 }
@@ -1885,7 +1887,10 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
      other package picked), so switching the choice never loses one. */
   const separateLayout = layout.skuList === 'separate' && !useItems && !simple && !isFtl && !pkgOff && !skuOff
   /* the SKU-based list's units (owner, 2026-10-06: kg + cm or lb + in) — every line's worked-out package carries them */
-  const [itemUnit, setItemUnit] = useState<UnitSystem>(() => (savedParcels?.[0] ? canonParcel(savedParcels[0]).unitSystem ?? 'metric' : 'metric'))
+  const [itemUnit, setItemUnit] = useState<UnitSrc>(() => {
+    const f = savedParcels?.[0] ? canonParcel(savedParcels[0]) : undefined
+    return { unitSystem: f?.unitSystem, weightUnit: f?.weightUnit, dimUnit: f?.dimUnit }
+  })
   /* owner, 2026-10-05: with several packages ONE is open for editing and the rest fold to one-line rows; past
      PKG_PAGE rows the list stops at "Show all" — 100 packages no longer means 100 cards to scroll past */
   const [openPkgId, setOpenPkgId] = useState<string | null>(null)
@@ -1898,7 +1903,9 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     quantity: l.item.quantity, weight: round2(l.item.weightKg), weightMode: 'auto',
     l: l.item.lengthCm ?? 0, w: l.item.widthCm ?? 0, h: l.item.heightCm ?? 0,
     items: [{ ...l.item, quantity: 1 }], itemInfo: l.item.name,
-    ...(itemUnit !== 'metric' ? { unitSystem: itemUnit } : {}),
+    ...(itemUnit.unitSystem ? { unitSystem: itemUnit.unitSystem } : {}),
+    ...(itemUnit.weightUnit ? { weightUnit: itemUnit.weightUnit } : {}),
+    ...(itemUnit.dimUnit ? { dimUnit: itemUnit.dimUnit } : {}),
   })), [lines, itemUnit])
   /* THE packages every reader uses — only the mode on screen is validated and saved */
   const goods = useItems ? itemParcels : parcels
@@ -3520,7 +3527,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
       before I can configure them"): every column and the details show, and nothing is written. */
   const skuRow = (it: ParcelItem, i: number, k: number, n: number, preview = false) => {
     const key = preview ? `sample:${i}` : `${i}:${k}`
-    const u = unitsOf(parcels[i]?.unitSystem)
+    const u = unitsOf(parcels[i])
     const upd = (patch: Partial<ParcelItem>) => { if (!preview) setItem(i, k, patch) }
     const open = skuMore.has(key) !== (!!it.skuCode && !isMasterSku(it))
     const det = skuDetails(it, upd, open || editing, true)
@@ -3577,7 +3584,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
       in the package's units */
   const packageFields = (p: Parcel, i: number, below?: ReactNode, adder?: ReactNode) => {
     const isCustom = packageValue(p, packageTypes) === CUSTOM_PACKAGE
-    const u = unitsOf(p.unitSystem)
+    const u = unitsOf(p)
     /* owner, 2026-10-06 ("reduce quantity and weight width; Package Id in the line without expanding"): one wrapping row,
        each field its own width — Quantity and Weight narrow */
     const PKG_KEY: Record<string, string> = { type: 'pkgType', qty: 'pkgQty', dims: 'pkgDimensions', weight: 'pkgWeight' }
@@ -3654,7 +3661,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   const skusOf = (p: Parcel) => (p.items ?? []).filter((it) => !isBlankItem(it))
   /* a new package takes the last one's units */
   const addParcel = () => {
-    const np: Parcel = { ...newParcel(), barcodeEach, ...(parcels[parcels.length - 1]?.unitSystem ? { unitSystem: parcels[parcels.length - 1].unitSystem } : {}) }
+    const np: Parcel = { ...newParcel(), barcodeEach, ...(() => { const l = parcels[parcels.length - 1]; return l ? { unitSystem: l.unitSystem, weightUnit: l.weightUnit, dimUnit: l.dimUnit } : {} })() }
     setFocusLine(null); setParcels((ps) => [...ps, np]); setOpenPkgId(np.packageId ?? null)
   }
   /** a copy right below — new id, no tracking number (it is per box); its SKUs and units too */
@@ -3666,7 +3673,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     setOpenPkgId(copy.packageId ?? null)
   }
   const pkgLine = (p: Parcel) => {
-    const u = unitsOf(p.unitSystem)
+    const u = unitsOf(p)
     const items = skusOf(p)
     const type = packageValue(p, packageTypes) === CUSTOM_PACKAGE ? 'Custom' : p.packageTypeName
     return [type, `${p.quantity || 0} × ${u.toD(p.l)} × ${u.toD(p.w)} × ${u.toD(p.h)} ${u.d}`, p.weight ? `${round2(u.toW(p.weight))} ${u.w} each` : 'no weight',
@@ -3678,12 +3685,12 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     const open = id === openId
     const many = parcels.length > 1
     const bad = showErrors && !pkgOk(p)
-    const u = unitsOf(p.unitSystem)
+    const u = unitsOf(p)
     const total = p.weight ? `${round2(u.toW(p.weight * p.quantity))} ${u.w}` : '-'
     const actions = (
       <span className="flex shrink-0 items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
         {/* owner, 2026-10-06: the package's units — its weight, its size and its SKUs follow */}
-        {open && !separateLayout && <span className="mr-2"><UnitPick value={u.system} label={`Package ${i + 1} units`} onChange={(v) => setParcel(i, { unitSystem: v })} /></span>}
+        {open && !separateLayout && <span className="mr-2"><UnitPick units={u} label={`Package ${i + 1} units`} onChange={(patch) => setParcel(i, patch)} /></span>}
         {!editing && <Tip text="Duplicate — a copy right below"><button type="button" aria-label={`Duplicate package ${i + 1}`} onClick={() => duplicateParcel(i)}
           className="inline-flex h-8 w-8 items-center justify-center rounded-md text-ink-3 hover:bg-warm-100 hover:text-ink">
           <Copy size={14} />
@@ -3747,7 +3754,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   const pieces = parcels.reduce((n, p) => n + (p.quantity || 0), 0)
   /* the total in lb when every package is in lb, else kg */
   /* the total in the packages' unit when they all share one, else kg */
-  const barU = parcels.length && parcels.every((p) => (p.unitSystem ?? 'metric') === (parcels[0].unitSystem ?? 'metric')) ? unitsOf(parcels[0].unitSystem) : METRIC
+  const barU = parcels.length && parcels.every((p) => unitsOf(p).w === unitsOf(parcels[0]).w) ? unitsOf(parcels[0]) : METRIC
   const addPackageBar = (
     <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
       <AddMoreButton label="Add Package" onClick={addParcel} />
@@ -3792,8 +3799,8 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     )
   }
   /* the separate list's one unit: every package shares it (the SKU list sits above all of them) */
-  const sepUnits = unitsOf(parcels[0]?.unitSystem)
-  const setAllUnits = (v: UnitSystem) => setParcels((ps) => ps.map((x) => ({ ...x, unitSystem: v })))
+  const sepUnits = unitsOf(parcels[0])
+  const setAllUnits = (patch: { weightUnit?: WeightUnit; dimUnit?: DimUnit }) => setParcels((ps) => ps.map((x) => ({ ...x, ...patch })))
   /* SKUs, then packages: the SKU list, then the boxes — each box picks what is packed in it */
   const separateBlock = (
     <div>
@@ -3824,9 +3831,9 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     <div>
       {packageList((p, i) => packageFields(p, i,
         !skusAsked ? null
-          : (p.items ?? []).length > 0 ? <div className="mt-6">{skuTable((p.items ?? []).map((it, k) => skuRow(it, i, k, k)), unitsOf(p.unitSystem))}</div>
+          : (p.items ?? []).length > 0 ? <div className="mt-6">{skuTable((p.items ?? []).map((it, k) => skuRow(it, i, k, k)), unitsOf(p))}</div>
           /* the builder shows a sample SKU line, so its fields can be set without adding one */
-          : editing ? <div className="mt-6">{skuTable(skuRow(blankItem(), i, 0, 0, true), unitsOf(p.unitSystem))}</div> : null,
+          : editing ? <div className="mt-6">{skuTable(skuRow(blankItem(), i, 0, 0, true), unitsOf(p))}</div> : null,
         skusAsked ? <AddRowLink label="Add SKU" onClick={() => addItem(i)} /> : undefined))}
       {addPackageBar}
     </div>
@@ -3845,8 +3852,8 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
         : !skusAsked ? 'Each package — its type, size and weight.'
         : separateLayout ? 'List the SKUs, then the packages — each package picks the SKUs packed in it.'
         : "Each package, and the SKUs packed in it. A package's weight adds up from its type and SKUs unless you type one."}
-      action={useItems && !editing ? <UnitPick value={itemUnit} onChange={setItemUnit} label="Units of the SKUs" />
-        : separateLayout && !editing ? <UnitPick value={sepUnits.system} onChange={setAllUnits} label="Units of the SKUs and packages" /> : undefined}>
+      action={useItems && !editing ? <UnitPick units={iu} onChange={(patch) => setItemUnit((x) => ({ ...x, ...patch }))} label="Units of the SKUs" />
+        : separateLayout && !editing ? <UnitPick units={sepUnits} onChange={setAllUnits} label="Units of the SKUs and packages" /> : undefined}>
       {editing && !isFtl && (
         <div className="mb-6 flex flex-wrap items-center gap-x-5 gap-y-3 rounded-lg border border-dashed border-warm-300 px-4 pb-3 pt-4">
           <span className="text-[13px] font-bold text-ink">Sections</span>

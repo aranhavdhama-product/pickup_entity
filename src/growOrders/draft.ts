@@ -78,9 +78,15 @@ export interface Parcel {
    *  unit flows to the SKU"). Display only: `weight` / `l w h` and the SKUs' `weightKg` / `…Cm` always stay kg and cm.
    *  Absent = metric. */
   unitSystem?: UnitSystem
+  /** weight and size units are set INDEPENDENTLY (owner, 2026-10-07: "weight and unit can be set differently"); when present they
+   *  win over `unitSystem` (the older kg·cm / g·cm / lb·in / oz·in pairs). Display only — the numbers stay kg and cm. */
+  weightUnit?: WeightUnit
+  dimUnit?: DimUnit
 }
 /** kg + cm · g + cm · lb + in · oz + in (owner, 2026-10-07: a Units dropdown with the four) */
 export type UnitSystem = 'metric' | 'gram' | 'imperial' | 'ounce'
+export type WeightUnit = 'kg' | 'g' | 'lb' | 'oz'
+export type DimUnit = 'cm' | 'in' | 'mm' | 'm'
 
 /**
  * One Value Added Service line — the console's VAS row
