@@ -16,6 +16,8 @@
  * Every key here is listed in ./formSync SETUP_KEYS — a NEW setup key must join it, or it is not kept on the server.
  */
 
+import { loadFieldConfig, loadFormBehavior } from '../ConsignmentAdd/fieldConfig'
+
 export type FormPortal = 'console' | 'grow'
 
 /* ------------------------------------------------------------------ format ---- */
@@ -412,3 +414,36 @@ export function customFieldShown(key: string, portal: FormPortal): boolean {
 /** a stored Yes / No value, in words */
 export const customValueText = (kind: CustomFieldKind | undefined, v: string) =>
   (kind === 'yesno' ? (v === 'true' ? 'Yes' : 'No') : v)
+
+/* ------------------------------------------------------- the views read the setup ---- */
+
+/**
+ * What the form builder decided, for the READING pages (owner, 2026-10-07: "make sure the form builder effects are on the
+ * View Consignment and Modify Consignment pages"): a field the builder hides is not shown on the consignment's view,
+ * a renamed one carries its new name. Same rules the form reads — the console's, with Grow's own changes on top for
+ * the Grow portal — plus the account's older Form Builder / Base Modules hides. The fields the form can never hide
+ * (the Order Number and an address's name, line 1, country, state and city) always show. A view never deletes
+ * anything: a hidden field's answer is kept on the consignment, just not displayed.
+ */
+export interface ViewSetup {
+  /** is the field (a builder key) shown on this portal's form — so it shows on the view */
+  shown: (key: string) => boolean
+  /** the field's name: the builder's rename, else the view's own label */
+  label: (key: string, fallback: string) => string
+}
+const VIEW_ALWAYS = new Set(['orderNumber', 'addrName', 'addrLine1', 'addrCountry', 'addrState', 'addrCity'])
+export function loadViewSetup(portal: FormPortal): ViewSetup {
+  const c = loadRules('console')
+  const rules = portal === 'grow' ? growRules(c, loadRules('grow')) : c
+  const cfg = loadFieldConfig()
+  const behavior = loadFormBehavior()
+  const baseHidden = (k: string) => !!cfg[k]?.hidden || behavior.hidden.includes(k)
+  return {
+    shown: (k) => VIEW_ALWAYS.has(k) || !(rules[k]?.hidden ?? baseHidden(k)),
+    label: (k, fallback) => rules[k]?.label?.trim() || cfg[k]?.label?.trim() || fallback,
+  }
+}
+/** `[builder key | null, label, value]` rows → the `[label, value]` pairs the setup allows (null key = always shown) */
+export function viewPairs<V>(vs: ViewSetup, rows: [string | null, string, V][]): [string, V][] {
+  return rows.filter(([k]) => !k || vs.shown(k)).map(([k, label, v]) => [k ? vs.label(k, label) : label, v])
+}

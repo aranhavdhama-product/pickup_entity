@@ -31,7 +31,7 @@ import type { GrowOrder, Party } from '../../growOrders/types'
 import { stateTone, type LocalConsignmentRow } from '../LocalPFP/adapter'
 import { planningActions, usePlanning } from '../LocalPFP/planningStore'
 import { dash, stamp } from '../LocalPFP/overlayFormat'
-import { customValueText } from './formSetup'
+import { customFieldShown, customValueText, loadViewSetup, viewPairs, type ViewSetup } from './formSetup'
 import {
   attemptsOf, eventsOf, loadsOf, merchantEventsOf, piecesOf, skuLinesOf, vasLinesOf,
   type AttemptOutcome, type AttemptView, type EventGroup, type PieceView,
@@ -109,20 +109,23 @@ const addressOf = (p: Party) => [p.line1, p.line2, p.city, p.state, p.postalCode
 const kg = (n: number) => `${n} kg`
 const mm3 = (n: number) => `${n.toLocaleString()} mm³`
 
-function partyPairs(p: Party, nameLabel: string, whenLabel: string, when: string, tzLabel: string, code: string): Pair[] {
-  return [
-    ['Location Code', dash(p.locationCode || code)], ['Company Name', dash(p.businessName)],
-    [nameLabel, dash(p.name)], ['Address Line 1', dash(p.line1)],
-    ['Address Line 2', dash(p.line2)], ['Address Line 3', dash(p.line3)],
-    ['Landmark', dash(p.landmark)], ['Postal Code', dash(p.postalCode)],
-    ['City', dash(p.city)], ['State', dash(p.state)],
-    ['Suburb / County', dash(p.county)], ['Country', dash(p.country)],
-    ['Contact Number', dash(p.contactNumber)], ['Secondary Contact Number', '—'],
-    ['Email', dash(p.email)], ['Address Type', '—'],
-    [whenLabel, stamp(when)], [tzLabel, TZ],
-    ['Lat, Long', p.latitude && p.longitude ? `${p.latitude}, ${p.longitude}` : '—'], ['Facility Code', dash(code).toLowerCase()],
-    ['Lift Available', p.liftAvailable === undefined ? '—' : p.liftAvailable ? 'Yes' : 'No'], ['Floor Number', dash(p.floorNumber)],
-  ]
+/** what the form builder decided (hidden fields, renamed fields) — read when the view opens (owner, 2026-10-07) */
+const useSetup = () => useMemo(() => loadViewSetup('console'), [])
+
+function partyPairs(vs: ViewSetup, p: Party, nameLabel: string, whenLabel: string, when: string, tzLabel: string, code: string): Pair[] {
+  return viewPairs<ReactNode>(vs, [
+    [null, 'Location Code', dash(p.locationCode || code)], ['addrCompanyName', 'Company Name', dash(p.businessName)],
+    ['addrName', nameLabel, dash(p.name)], ['addrLine1', 'Address Line 1', dash(p.line1)],
+    ['addrLines23', 'Address Line 2', dash(p.line2)], ['addrLines23', 'Address Line 3', dash(p.line3)],
+    ['addrLandmark', 'Landmark', dash(p.landmark)], ['addrPostal', 'Postal Code', dash(p.postalCode)],
+    ['addrCity', 'City', dash(p.city)], ['addrState', 'State', dash(p.state)],
+    ['addrSuburb', 'Suburb / County', dash(p.county)], ['addrCountry', 'Country', dash(p.country)],
+    ['addrContact', 'Contact Number', dash(p.contactNumber)], [null, 'Secondary Contact Number', '—'],
+    ['addrEmail', 'Email', dash(p.email)], [null, 'Address Type', '—'],
+    ['addrWindow', whenLabel, stamp(when)], ['addrWindow', tzLabel, TZ],
+    ['addrCoordinates', 'Lat, Long', p.latitude && p.longitude ? `${p.latitude}, ${p.longitude}` : '—'], [null, 'Facility Code', dash(code).toLowerCase()],
+    ['addrLift', 'Lift Available', p.liftAvailable === undefined ? '—' : p.liftAvailable ? 'Yes' : 'No'], ['addrFloorLift', 'Floor Number', dash(p.floorNumber)],
+  ])
 }
 
 /* ---------------------------------------------------------------- page --- */
@@ -308,34 +311,35 @@ function SummarySection({ row, o, pieces }: { row: LocalConsignmentRow; o: GrowO
 
 function OrderSection({ row, o, scheduled }: { row: LocalConsignmentRow; o: GrowOrder; scheduled: boolean }) {
   const c = o.consignment
+  const vs = useSetup()
   return (
     <>
       <FoldCard title="Summary">
-        <Pairs pairs={[
-          ['Order Number', row.orderNumber], ['Reference Number', row.referenceNumber],
-          ['Consignment Number', row.consignmentNumber], ['Consignment Type', c?.consignmentType || row.orderTypeLabel],
-          ['Consignment State', String(row.state)], ['Exception State', dash(row.exception)],
-          ['Carrier Code', dash(row.carrier).toUpperCase()], ['Merchant', row.merchant],
-          ['Total Weight', kg(row.weightKg)], ['Total Volume', mm3(row.volumeMm3)],
-          ['SKU Quantity', row.skuCount], ['Package Quantity', row.pieces],
-          ['Service Type', row.serviceType], ['Payment Amount', `${o.currency} ${(c?.orderAmount ?? o.codAmount ?? 0).toLocaleString()}`],
-          ['Cost Code', '—'], ['Current Facility', dash(row.shipFromCode)],
-          ['Can be delivered in parts', c?.splittable ? 'Yes' : 'No'], ['Tags', dash([...(o.tags ?? []), row.tag].filter(Boolean).join(', '))],
-          ['Scheduling Confirmation Required', c?.schedulingConfirmation ? 'Yes' : 'No'], ['Scheduling Confirmed', scheduled ? 'Yes' : '—'],
-          ['Total Loading Time', c?.totalLoadingTime ? `${c.totalLoadingTime} min` : '—'],
-        ]} />
+        <Pairs pairs={viewPairs<ReactNode>(vs, [
+          ['orderNumber', 'Order Number', row.orderNumber], ['referenceNumber', 'Reference Number', row.referenceNumber],
+          ['consignmentNumber', 'Consignment Number', row.consignmentNumber], ['consignmentType', 'Consignment Type', c?.consignmentType || row.orderTypeLabel],
+          [null, 'Consignment State', String(row.state)], [null, 'Exception State', dash(row.exception)],
+          [null, 'Carrier Code', dash(row.carrier).toUpperCase()], ['merchant', 'Merchant', row.merchant],
+          [null, 'Total Weight', kg(row.weightKg)], [null, 'Total Volume', mm3(row.volumeMm3)],
+          [null, 'SKU Quantity', row.skuCount], [null, 'Package Quantity', row.pieces],
+          ['serviceType', 'Service Type', row.serviceType], ['orderAmount', 'Payment Amount', `${o.currency} ${(c?.orderAmount ?? o.codAmount ?? 0).toLocaleString()}`],
+          [null, 'Cost Code', '—'], [null, 'Current Facility', dash(row.shipFromCode)],
+          ['splittable', 'Can be delivered in parts', c?.splittable ? 'Yes' : 'No'], ['tags', 'Tags', dash([...(o.tags ?? []), row.tag].filter(Boolean).join(', '))],
+          ['schedulingConfirmation', 'Scheduling Confirmation Required', c?.schedulingConfirmation ? 'Yes' : 'No'], [null, 'Scheduling Confirmed', scheduled ? 'Yes' : '—'],
+          ['totalLoadingTime', 'Total Loading Time', c?.totalLoadingTime ? `${c.totalLoadingTime} min` : '—'],
+        ])} />
       </FoldCard>
       {/* the account's own form fields (consignment form builder, 2026-10-05) — as they were asked */}
-      {(c?.customFields ?? []).length > 0 && (
+      {(c?.customFields ?? []).some((f) => customFieldShown(f.key, 'console')) && (
         <FoldCard title="Additional details">
-          <Pairs pairs={(c?.customFields ?? []).map((f) => [f.label, customValueText(f.kind, f.value)])} />
+          <Pairs pairs={(c?.customFields ?? []).filter((f) => customFieldShown(f.key, 'console')).map((f): Pair => [vs.label(f.key, f.label), customValueText(f.kind, f.value)])} />
         </FoldCard>
       )}
       <FoldCard title="Ship From">
-        <Pairs pairs={partyPairs(o.sender, 'Sender Name', 'Planned Pickup Date/Time', row.pickupWindow?.start ?? '', 'Pickup Timezone', row.shipFromCode ?? '')} />
+        <Pairs pairs={partyPairs(vs, o.sender, 'Sender Name', 'Planned Pickup Date/Time', row.pickupWindow?.start ?? '', 'Pickup Timezone', row.shipFromCode ?? '')} />
       </FoldCard>
       <FoldCard title="Ship To">
-        <Pairs pairs={partyPairs(o.receiver, 'Receiver Name', 'Planned Delivery Date/Time', row.deliveryWindow?.start ?? '', 'Delivery Timezone', row.shipToCode ?? '')} />
+        <Pairs pairs={partyPairs(vs, o.receiver, 'Receiver Name', 'Planned Delivery Date/Time', row.deliveryWindow?.start ?? '', 'Delivery Timezone', row.shipToCode ?? '')} />
       </FoldCard>
       <FoldCard title="Pre-Routing Details">
         <Pairs pairs={[
@@ -352,25 +356,26 @@ function OrderSection({ row, o, scheduled }: { row: LocalConsignmentRow; o: Grow
 /* --------------------------------------------------------------- Piece --- */
 
 function PieceSection({ row, o, pieces }: { row: LocalConsignmentRow; o: GrowOrder; pieces: PieceView[] }) {
+  const vs = useSetup()
   return (
     <>
       {pieces.map((p) => (
         <FoldCard key={p.id} title={`Id: ${p.id}`}>
-          <Pairs pairs={[
-            ['Tracking Number', p.trackingNumber], ['Storage Location', '—'],
-            ['State', p.state], ['Exception State', dash(row.exception)],
-            ['Type', p.type], ['Description', dash(p.skuDescription)],
-            ['Value', `${o.currency} ${p.value.toLocaleString()}`], ['Current Facility', dash(row.shipFromCode)],
-            ['Created Weight', kg(p.weightKg)], ['Created Volume', mm3(p.volumeMm3)],
-            ['Weight', kg(p.weightKg)], ['Volume', mm3(p.volumeMm3)],
-            ['Quantity', 1], ['SKU Quantity', p.skuQuantity],
-            ['Length', `${o.pkg.lengthCm} cm`], ['Width', `${o.pkg.widthCm} cm`],
-            ['Height', `${o.pkg.heightCm} cm`], ['Barcode', dash(o.trackingNumber === p.trackingNumber ? '' : '')],
-            ['SKU Code', p.skuCode], ['Proof of Damage', '—'],
-            ['Pallet Space', p.palletSpaces],
-            ['Label Url', <button key="l" type="button" className="text-brand-500 hover:underline"
+          <Pairs pairs={viewPairs<ReactNode>(vs, [
+            ['pkgTracking', 'Tracking Number', p.trackingNumber], [null, 'Storage Location', '—'],
+            [null, 'State', p.state], [null, 'Exception State', dash(row.exception)],
+            ['pkgType', 'Type', p.type], ['pkgDescription', 'Description', dash(p.skuDescription)],
+            [null, 'Value', `${o.currency} ${p.value.toLocaleString()}`], [null, 'Current Facility', dash(row.shipFromCode)],
+            ['pkgWeight', 'Created Weight', kg(p.weightKg)], [null, 'Created Volume', mm3(p.volumeMm3)],
+            ['pkgWeight', 'Weight', kg(p.weightKg)], [null, 'Volume', mm3(p.volumeMm3)],
+            ['pkgQty', 'Quantity', 1], [null, 'SKU Quantity', p.skuQuantity],
+            ['pkgDimensions', 'Length', `${o.pkg.lengthCm} cm`], ['pkgDimensions', 'Width', `${o.pkg.widthCm} cm`],
+            ['pkgDimensions', 'Height', `${o.pkg.heightCm} cm`], [null, 'Barcode', dash(o.trackingNumber === p.trackingNumber ? '' : '')],
+            [null, 'SKU Code', p.skuCode], [null, 'Proof of Damage', '—'],
+            ['pkgPalletSpace', 'Pallet Space', p.palletSpaces],
+            [null, 'Label Url', <button key="l" type="button" className="text-brand-500 hover:underline"
               onClick={() => toast.info('Demo only — labels are a platform service, not a local one.')}>Download Label</button>],
-          ]} />
+          ])} />
         </FoldCard>
       ))}
     </>
@@ -380,12 +385,13 @@ function PieceSection({ row, o, pieces }: { row: LocalConsignmentRow; o: GrowOrd
 /* ------------------------------------------------------------ Tracking --- */
 
 function TrackingSection({ row, o }: { row: LocalConsignmentRow; o: GrowOrder }) {
+  const vs = useSetup()
   const pw = row.pickupWindow, dw = row.deliveryWindow
   return (
     <>
       <FoldCard title="Schedule">
         <Pairs pairs={[
-          ['Ship By Date', dash(row.shipByDate)], ['Dispatch Date', stamp(row.dispatchDate)],
+          ...(vs.shown('shipByDate') ? [[vs.label('shipByDate', 'Ship By Date'), dash(row.shipByDate)] as Pair] : []), ['Dispatch Date', stamp(row.dispatchDate)],
           ['Pickup Start Time', stamp(pw?.start)], ['Pickup End Time', stamp(pw?.end)],
           ['Pickup Timezone', TZ], ['Delivery Start Time', stamp(dw?.start)],
           ['Delivery End Time', stamp(dw?.end)], ['Delivery Timezone', TZ],
@@ -396,8 +402,8 @@ function TrackingSection({ row, o }: { row: LocalConsignmentRow; o: GrowOrder })
       <FoldCard title="Charges & Pricing">
         {o.charges || o.codAmount > 0
           ? <Pairs pairs={[
-            ['Payment Mode', o.paymentMode],
-            ...(o.codAmount > 0 ? [['COD Amount', `${o.currency} ${o.codAmount.toLocaleString()}`] as Pair] : []),
+            ...(vs.shown('paymentMode') ? [[vs.label('paymentMode', 'Payment Mode'), o.paymentMode] as Pair] : []),
+            ...(o.codAmount > 0 && vs.shown('orderAmount') ? [[vs.label('orderAmount', 'COD Amount'), `${o.currency} ${o.codAmount.toLocaleString()}`] as Pair] : []),
             ...(o.charges ? [['Shipping', `${o.currency} ${o.charges.shipping.toLocaleString()}`] as Pair, ['Tax', `${o.currency} ${o.charges.tax.toLocaleString()}`] as Pair, ['Total', `${o.currency} ${o.charges.total.toLocaleString()}`] as Pair] : []),
           ]} />
           : <p className="px-5 py-10 text-center text-[13px] text-ink-3">No pricing information available</p>}
@@ -405,7 +411,7 @@ function TrackingSection({ row, o }: { row: LocalConsignmentRow; o: GrowOrder })
       <FoldCard title="Carrier & Tracking Information">
         <Pairs pairs={[
           ['Carrier Code', dash(row.carrier).toUpperCase()], ['Carrier Name', dash(row.carrier)],
-          ['Service Type', row.serviceType], ['Current Status', String(row.state)],
+          ...(vs.shown('serviceType') ? [[vs.label('serviceType', 'Service Type'), row.serviceType] as Pair] : []), ['Current Status', String(row.state)],
           ['Current Facility', dash(row.shipFromCode).toLowerCase()], ['Origin Depot', dash(row.shipFromCode).toLowerCase()],
           ['Destination Depot', dash(row.shipToCode).toLowerCase()], ['Type', 'Managed'],
           ['Master Tracking Number', dash(o.trackingNumber)], ['Manifest Number', '—'],
@@ -421,26 +427,27 @@ function TrackingSection({ row, o }: { row: LocalConsignmentRow; o: GrowOrder })
 /* ----------------------------------------------------------------- SKU --- */
 
 function SkuSection({ row, o, pieces }: { row: LocalConsignmentRow; o: GrowOrder; pieces: PieceView[] }) {
+  const vs = useSetup()
   const lines = skuLinesOf(o)
   return (
     <>
       {lines.map((it, i) => (
         <FoldCard key={`${it.skuCode}-${i}`} title={`SKU: ${it.skuCode || it.name}`}>
-          <Pairs pairs={[
-            ['SKU Code', dash(it.skuCode)], ['HSN Name', dash(it.category || it.hsnCode)],
-            ['Product Name', dash(it.name)], ['Description', dash(it.description)],
-            ['Line Item Number', `Line ${i + 1}`], ['Package', pieces[Math.min(i, pieces.length - 1)]?.id ?? '—'],
-            ['Total Value', it.unitCost ? `${(it.unitCost * it.quantity).toLocaleString()}` : '—'], ['Unit Price', it.unitCost ? `${o.currency} ${it.unitCost.toLocaleString()}` : '—'],
-            ['Weight per Unit', kg(it.weightKg)], ['Volume', it.lengthCm && it.widthCm && it.heightCm ? mm3(it.lengthCm * it.widthCm * it.heightCm * 1000) : '—'],
-            ['Quantity', it.quantity], ['UOM', o.pkg.kind === 'Document' ? 'doc' : 'box'],
-            ['Origin Country', dash(it.originCountry)], ['Length', it.lengthCm ? `${it.lengthCm} ${it.dimUom ?? 'cm'}` : '—'],
-            ['Width', it.widthCm ? `${it.widthCm} ${it.dimUom ?? 'cm'}` : '—'], ['Height', it.heightCm ? `${it.heightCm} ${it.dimUom ?? 'cm'}` : '—'],
-            ['Pickup Service Time', row.serviceTimeMin], ['Delivery Service Time', row.serviceTimeMin],
-            ['Category', dash(it.category)],
-            ['Image Url', it.imageUrl
+          <Pairs pairs={viewPairs<ReactNode>(vs, [
+            [null, 'SKU Code', dash(it.skuCode)], ['skuHsn', 'HSN Name', dash(it.category || it.hsnCode)],
+            [null, 'Product Name', dash(it.name)], ['skuDescription', 'Description', dash(it.description)],
+            [null, 'Line Item Number', `Line ${i + 1}`], [null, 'Package', pieces[Math.min(i, pieces.length - 1)]?.id ?? '—'],
+            [null, 'Total Value', it.unitCost ? `${(it.unitCost * it.quantity).toLocaleString()}` : '—'], ['skuUnitCost', 'Unit Price', it.unitCost ? `${o.currency} ${it.unitCost.toLocaleString()}` : '—'],
+            ['skuWeight', 'Weight per Unit', kg(it.weightKg)], ['skuDimensions', 'Volume', it.lengthCm && it.widthCm && it.heightCm ? mm3(it.lengthCm * it.widthCm * it.heightCm * 1000) : '—'],
+            [null, 'Quantity', it.quantity], [null, 'UOM', o.pkg.kind === 'Document' ? 'doc' : 'box'],
+            ['skuOrigin', 'Origin Country', dash(it.originCountry)], ['skuDimensions', 'Length', it.lengthCm ? `${it.lengthCm} ${it.dimUom ?? 'cm'}` : '—'],
+            ['skuDimensions', 'Width', it.widthCm ? `${it.widthCm} ${it.dimUom ?? 'cm'}` : '—'], ['skuDimensions', 'Height', it.heightCm ? `${it.heightCm} ${it.dimUom ?? 'cm'}` : '—'],
+            [null, 'Pickup Service Time', row.serviceTimeMin], [null, 'Delivery Service Time', row.serviceTimeMin],
+            ['skuCategory', 'Category', dash(it.category)],
+            ['skuImage', 'Image Url', it.imageUrl
               ? <a key="i" href={it.imageUrl} target="_blank" rel="noreferrer" className="text-brand-500 hover:underline">View Image</a>
               : '—'],
-          ]} />
+          ])} />
         </FoldCard>
       ))}
     </>

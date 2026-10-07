@@ -22,7 +22,7 @@ import type { GrowOrder, Party } from '../../growOrders/types'
 import { vehiclesOf, type Parcel } from '../../growOrders/draft'
 import { deliveryDate, quoteService, vasPrice, volumetricKg, type RateCurrency } from '../../growOrders/rates'
 import { stamp } from '../LocalPFP/overlayFormat'
-import { customFieldShown, customValueText } from '../LocalConsignments/formSetup'
+import { customFieldShown, customValueText, loadViewSetup, type ViewSetup } from '../LocalConsignments/formSetup'
 import type { ReadSection } from '../LocalConsignments/ConsignmentView'
 import { MGrid, MSection } from './merchantFormBits'
 import { RateCard } from './serviceCards'
@@ -46,6 +46,12 @@ const rField = (label: string, children: ReactNode, wide?: boolean) => (
     </div>
 )
 
+/** `[builder key | null, label, value, wide?]` — the form builder's hides and renames applied (owner, 2026-10-07: "form
+    builder effects on the view consignment page"); a null key is never hidden */
+type KRow = [string | null, string, Val, boolean?]
+const keyed = (vs: ViewSetup, rows: KRow[]): [string, Val, boolean?][] =>
+  rows.filter(([k]) => !k || vs.shown(k)).map(([k, label, v, wide]) => [k ? vs.label(k, label) : label, v, wide])
+
 /** A field grid of only the pairs that have a value; nothing at all when none does. */
 function fields(pairs: [string, Val, boolean?][], cols: 2 | 3 | 4 = 4): ReactNode {
   const shown = pairs.filter(([, v]) => has(v))
@@ -59,16 +65,16 @@ const windowText = (start?: string | null, end?: string | null) =>
 const yes = (b: boolean | undefined, label = 'Yes') => (b ? label : '')
 
 /** A party as the form's address card reads it back: who, where, how to reach them. */
-function partyBlock(p: Party, title?: string, key?: number): ReactNode {
+function partyBlock(vs: ViewSetup, p: Party, title?: string, key?: number): ReactNode {
   return (
     <div key={key} className="flex flex-col gap-4">
       {title && <p className="text-[13px] font-bold text-ink">{title}</p>}
-      {fields([
-        ['Name', p.name], ['Company Name', p.businessName],
-        ['Contact Number', p.contactNumber], ['Email', p.email],
-        ['Address', joinAddr(p), true],
-        ['Floor', p.floorNumber], ['Lift Available', p.liftAvailable === undefined ? '' : p.liftAvailable ? 'Yes' : 'No'],
-      ])}
+      {fields(keyed(vs, [
+        ['addrName', 'Name', p.name], ['addrCompanyName', 'Company Name', p.businessName],
+        ['addrContact', 'Contact Number', p.contactNumber], ['addrEmail', 'Email', p.email],
+        [null, 'Address', joinAddr(p), true],
+        ['addrFloorLift', 'Floor', p.floorNumber], ['addrLift', 'Lift Available', p.liftAvailable === undefined ? '' : p.liftAvailable ? 'Yes' : 'No'],
+      ]))}
     </div>
   )
 }
@@ -88,6 +94,7 @@ function parcelsOf(o: GrowOrder): Parcel[] {
 
 export function merchantReadSections(row: ShipmentRow, o: GrowOrder): ReadSection[] {
   const c = o.consignment ?? {}
+  const vs = loadViewSetup('grow')
   const cur = (o.currency === '$' ? '$' : '₱') as RateCurrency
   const ftl = o.shipmentType === 'FTL'
   const out: ReadSection[] = []
@@ -120,16 +127,18 @@ export function merchantReadSections(row: ShipmentRow, o: GrowOrder): ReadSectio
     node: (
       <MSection id="read-order" title="Consignment details">
         {fields([
-          ['Order Number', row.orderNumber], ['Reference Number', row.referenceNumber !== row.orderNumber ? row.referenceNumber : ''],
-          ['Consignment Type', c.consignmentType || row.orderTypeLabel], ['Ship By Date', c.shipByDate || row.shipByDate],
-          ['Payment Mode', c.paymentMode || o.paymentMode], ['Order Amount', amount != null ? money(amount, cur) : ''],
-          ['Payment Status', o.paymentStatus], ['Label Format', c.labelFormat],
-          ['Barcode labels on boxes', yes(c.scannable)], ['Can be delivered in parts', yes(c.splittable)],
-          ['Scheduling Confirmation Required', yes(c.schedulingConfirmation)], ['Clearance Required', yes(c.clearanceRequired)],
-          ['Special instructions', instructions, true],
+          ...keyed(vs, [
+            ['orderNumber', 'Order Number', row.orderNumber], ['referenceNumber', 'Reference Number', row.referenceNumber !== row.orderNumber ? row.referenceNumber : ''],
+            ['consignmentType', 'Consignment Type', c.consignmentType || row.orderTypeLabel], ['shipByDate', 'Ship By Date', c.shipByDate || row.shipByDate],
+            ['paymentMode', 'Payment Mode', c.paymentMode || o.paymentMode], ['orderAmount', 'Order Amount', amount != null ? money(amount, cur) : ''],
+            [null, 'Payment Status', o.paymentStatus], ['labelFormat', 'Label Format', c.labelFormat],
+            ['scannable', 'Barcode labels on boxes', yes(c.scannable)], ['splittable', 'Can be delivered in parts', yes(c.splittable)],
+            ['schedulingConfirmation', 'Scheduling Confirmation Required', yes(c.schedulingConfirmation)], ['clearanceRequired', 'Clearance Required', yes(c.clearanceRequired)],
+            ['specialInstructions', 'Special instructions', instructions, true],
+          ]),
           /* the account's own fields — only those the Grow portal form shows */
           ...(c.customFields ?? []).filter((f) => customFieldShown(f.key, 'grow'))
-            .map((f): [string, Val] => [f.label, customValueText(f.kind, f.value)]),
+            .map((f): [string, Val] => [vs.label(f.key, f.label), customValueText(f.kind, f.value)]),
         ])}
       </MSection>
     ),
@@ -141,8 +150,8 @@ export function merchantReadSections(row: ShipmentRow, o: GrowOrder): ReadSectio
     node: (
       <MSection id="read-pickup" title="Ship From">
         <div className="flex flex-col gap-4">
-          {partyBlock(o.sender)}
-          {fields([['Pickup window', windowText(row.pickupWindow?.start ?? o.sender.windowStart, row.pickupWindow?.end ?? o.sender.windowEnd), true]])}
+          {partyBlock(vs, o.sender)}
+          {fields(keyed(vs, [['addrWindow', 'Pickup window', windowText(row.pickupWindow?.start ?? o.sender.windowStart, row.pickupWindow?.end ?? o.sender.windowEnd), true]]))}
         </div>
       </MSection>
     ),
@@ -157,12 +166,12 @@ export function merchantReadSections(row: ShipmentRow, o: GrowOrder): ReadSectio
       <MSection id="read-deliver" title="Ship To">
         <div className="flex flex-col gap-5">
           {drops.map((d, i) => (
-            partyBlock(d, drops.length > 1 ? `Delivery address ${i + 1}` : undefined, i)
+            partyBlock(vs, d, drops.length > 1 ? `Delivery address ${i + 1}` : undefined, i)
           ))}
-          {fields([['Delivery window', windowText(row.deliveryWindow?.start ?? o.receiver.windowStart, row.deliveryWindow?.end ?? o.receiver.windowEnd), true]])}
+          {fields(keyed(vs, [['addrWindow', 'Delivery window', windowText(row.deliveryWindow?.start ?? o.receiver.windowStart, row.deliveryWindow?.end ?? o.receiver.windowEnd), true]]))}
           {(rto || c.rtoMode) && (
             <div className="border-t border-line pt-4">
-              {rto ? partyBlock(rto, 'Return To Origin (RTO) · Different address')
+              {rto ? partyBlock(vs, rto, 'Return To Origin (RTO) · Different address')
                 : fields([['Return To Origin (RTO)', c.rtoMode || 'Same As Ship From']])}
             </div>
           )}
@@ -193,20 +202,20 @@ export function merchantReadSections(row: ShipmentRow, o: GrowOrder): ReadSectio
                     {p.quantity > 1 && <span className="text-[12px] text-ink-3">× {p.quantity}</span>}
                   </div>
                   <div className="flex flex-col gap-4 px-4 py-4">
-                    {fields([
-                      ['Cargo type', p.cargoType], ['Weight', p.weight ? `${p.weight} kg` : ''],
-                      ['L × W × H', p.l && p.w && p.h ? `${p.l} × ${p.w} × ${p.h} cm` : ''],
-                      ['Chargeable weight', p.weight || vol ? `${Math.max(p.weight, vol).toFixed(2)} kg` : ''],
-                      ['Tracking Number', p.trackingNumber], ['Description', p.description || (items.length ? '' : p.itemInfo), true],
-                    ])}
+                    {fields(keyed(vs, [
+                      [null, 'Cargo type', p.cargoType], ['pkgWeight', 'Weight', p.weight ? `${p.weight} kg` : ''],
+                      ['pkgDimensions', 'L × W × H', p.l && p.w && p.h ? `${p.l} × ${p.w} × ${p.h} cm` : ''],
+                      [null, 'Chargeable weight', p.weight || vol ? `${Math.max(p.weight, vol).toFixed(2)} kg` : ''],
+                      ['pkgTracking', 'Tracking Number', p.trackingNumber], ['pkgDescription', 'Description', p.description || (items.length ? '' : p.itemInfo), true],
+                    ]))}
                     {items.length > 0 && (
                       <SimpleTable rows={items.map((it, k) => ({ ...it, k }))} rowKey={(it) => it.k} columns={[
                         { label: 'SKU', render: (it) => <span>{it.name || '—'}{it.skuCode && <span className="block font-mono text-[12px] text-ink-3">{it.skuCode}</span>}</span> },
-                        { label: 'HSN Code', render: (it) => it.hsnCode || '—' },
-                        { label: 'Origin Country', render: (it) => it.originCountry || '—' },
+                        ...(vs.shown('skuHsn') ? [{ label: vs.label('skuHsn', 'HSN Code'), render: (it: (typeof items)[number]) => it.hsnCode || '—' }] : []),
+                        ...(vs.shown('skuOrigin') ? [{ label: vs.label('skuOrigin', 'Origin Country'), render: (it: (typeof items)[number]) => it.originCountry || '—' }] : []),
                         { label: 'Quantity', align: 'right', render: (it) => it.quantity },
-                        { label: 'Weight', align: 'right', render: (it) => `${it.weightKg} kg` },
-                        ...(items.some((it) => it.unitCost) ? [{ label: 'Unit Cost', align: 'right' as const, render: (it: (typeof items)[number]) => (it.unitCost ? money(it.unitCost, cur) : '—') }] : []),
+                        ...(vs.shown('skuWeight') ? [{ label: vs.label('skuWeight', 'Weight'), align: 'right' as const, render: (it: (typeof items)[number]) => `${it.weightKg} kg` }] : []),
+                        ...(items.some((it) => it.unitCost) && vs.shown('skuUnitCost') ? [{ label: 'Unit Cost', align: 'right' as const, render: (it: (typeof items)[number]) => (it.unitCost ? money(it.unitCost, cur) : '—') }] : []),
                       ]} />
                     )}
                   </div>
