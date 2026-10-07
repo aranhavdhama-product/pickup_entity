@@ -127,7 +127,11 @@ export function runGenerator(by: GeneratorRun['by'], opts: { from?: string; hubC
     /* 1 — yesterday's collections nobody assigned are closed (23:59); their waybills wait for the next run */
     const closed = growOrderActions.closeUnassignedScheduleRequests(today).length
     /* 2 — one request per active run per operating day, once */
-    const have = new Set(growOrdersSnapshot().pickupRequests.map(keyOfPr).filter((k): k is string => !!k))
+    /* a request the roster itself retired (paused / re-timed / deleted → SCHEDULE_CHANGED) does not hold its slot — resuming the
+       schedule makes it again; one an OPERATOR cancelled, failed or completed does (that day's run is settled, never resurrected) */
+    const have = new Set(growOrdersSnapshot().pickupRequests
+      .filter((p) => !(p.status === 'Cancelled' && p.cancelReason === 'SCHEDULE_CHANGED'))
+      .map(keyOfPr).filter((k): k is string => !!k))
     let created = 0, existing = 0
     for (let date = from; date <= to; date = addDays(date, 1)) {
       const dow = dayOf(date)

@@ -829,4 +829,9 @@ bend one to its own shape.
 ## Dev
 
 - `npm run dev` — Vite dev server on **port 3000** (strict).
+- **Logic smoke test** (2026-10-07) — `scripts/pickup-smoke.html` runs the roster generator, the risk engine, the dispatcher guards, the
+  end-of-day close and the manifest switch against the real store code (29 checks, PASS / FAIL lines). Run: `npx vite --port 3055`, then
+  `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --virtual-time-budget=15000 --dump-dom
+  http://localhost:3055/scripts/pickup-smoke.html` and read the `<pre id="out">`. It clears localStorage — never open it on a browser
+  profile whose demo data you want to keep.
 - Surfaces under `/console/settings` and the whole `/local` app use the `fe-nueva` class to apply the Lato font.

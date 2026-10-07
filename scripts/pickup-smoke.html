@@ -1,0 +1,129 @@
+<!doctype html><html><body><pre id="out">running…</pre>
+<script type="module">
+const log = []
+const ok = (name, cond, extra = '') => log.push(`${cond ? 'PASS' : 'FAIL'}  ${name}${extra ? ' — ' + extra : ''}`)
+try {
+  localStorage.clear()
+  const { growOrderActions, growOrdersSnapshot, ORDER_DEFAULTS, newOrderId } = await import('/src/growOrders/store.ts')
+  const sm = await import('/src/growOrders/scheduleModel.ts')
+  const ps = await import('/src/growOrders/pickupSchedules.ts')
+  const pm = await import('/src/config/pickupModule.ts')
+  const tabs = await import('/src/growOrders/tabs.ts')
+  const plan = await import('/src/pages/LocalPFP/planningStore.ts')
+  const vc = await import('/src/config/vehicleConfig.ts')
+
+  // seeded schedules are PAUSED and nothing was generated
+  ok('seed: 2 schedules, both paused', sm.scheduleStore.get().schedules.length === 2 && sm.scheduleStore.get().schedules.every((s) => s.status === 'Paused'))
+  const before = growOrdersSnapshot().pickupRequests.filter((p) => p.schedule).length
+  ok('seed: no roster requests exist yet', before === 0)
+
+  // resume schedule 1 -> validated, saved, generator ran
+  const r = ps.setScheduleStatus('sch-1', 'Active', 'smoke')
+  ok('resume sch-1 accepted', r.ok === true, r.ok ? '' : r.errors.join('; '))
+  const run1 = sm.scheduleStore.get().lastRun
+  ok('generator ran after the change', !!run1 && run1.status === 'Success', run1?.message)
+  const made = growOrdersSnapshot().pickupRequests.filter((p) => p.schedule?.id === 'sch-1')
+  console.log('roster requests', JSON.stringify(made.map((p) => [p.number, p.date, p.slot, p.status, p.source])))
+  ok('requests carry source Schedule + key', made.every((p) => p.source === 'Schedule' && p.schedule?.runId && p.schedule?.date))
+  const keys = made.map((p) => sm.keyOfPr(p))
+  ok('no duplicate keys', new Set(keys).size === keys.length)
+  // idempotent rerun
+  const run2 = ps.runGenerator('Generate now')
+  ok('rerun creates nothing new', run2.created === 0, run2.message)
+  const after = growOrdersSnapshot().pickupRequests.filter((p) => p.schedule?.id === 'sch-1').length
+  ok('rerun leaves the same request count', after === made.length)
+
+  // a consignment ready at MNL-01 joins a run
+  const o = { ...ORDER_DEFAULTS, id: newOrderId(), orderNumber: 'SMOKE-1', storeCode: 'MNL-01', paymentStatus: 'Paid', isDraft: false, status: 'Order Created', createdAt: new Date().toISOString() }
+  growOrderActions.create(o)
+  const o2 = growOrdersSnapshot().orders.find((x) => x.id === o.id)
+  const open = made.filter((p) => p.status === 'Requested')
+  console.log('order after create', JSON.stringify({ pr: o2?.pickupRequestId, tab: tabs.tabOf(o2), hub: o2?.inboundHubCode, openRuns: open.length }))
+  if (open.length) ok('consignment joined a roster run', !!o2?.pickupRequestId && growOrdersSnapshot().pickupRequests.find((p) => p.id === o2.pickupRequestId)?.schedule?.id === 'sch-1')
+  else ok('(no open run left today — join skipped by design)', true)
+
+  // risk engine
+  const now = new Date()
+  const soon = (min) => { const d = new Date(now.getTime() + min * 60000); const p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}` }
+  const fake = (over) => ({ id: 'x', status: 'Requested', orderIds: [], pickedOrderIds: [], endAt: soon(180), startAt: soon(40), attempt: 1, maxAttempts: 3, reattemptPrId: null, handover: { mode: 'both', driverScanned: [], hubScanned: [], closedAt: null, arrivedAtHubAt: null }, tripId: null, ...over })
+  ok('risk: starts in 40m unplanned -> Not planned', tabs.riskReasons(fake({}), now).some((x) => x.code === 'unplanned'))
+  ok('risk: starts in 5h -> nothing', tabs.riskReasons(fake({ startAt: soon(300), endAt: soon(400) }), now).length === 0)
+  ok('risk: window opened 30m ago, nobody on the way -> late', tabs.riskReasons(fake({ startAt: soon(-30), endAt: soon(100) }), now).some((x) => x.code === 'late'))
+  ok('risk: out for pickup is not late', !tabs.riskReasons(fake({ status: 'Out For Pickup', startAt: soon(-30), endAt: soon(100) }), now).some((x) => x.code === 'late'))
+  ok('risk lands in Exception', tabs.localPrTabOf(fake({}), now) === 'Exception')
+  ok('far-future request stays Active', tabs.localPrTabOf(fake({ startAt: soon(600), endAt: soon(700) }), now) === 'Active')
+
+  // dispatcher guards: dedicated vehicle
+  const veh = vc.allVehicles()[0]
+  vc.vehicleConfigActions.upsert({ ...veh, dedicatedTo: ['Some Other Merchant'] })
+  const why = vc.dedicationBlock(veh.name, veh.hubCode, '2GO Express')
+  ok('dedicated vehicle blocks a foreign merchant', !!why && why.includes('dedicated to'), why ?? '')
+  ok('dedicated vehicle allows its own merchant', vc.dedicationBlock(veh.name, veh.hubCode, 'Some Other Merchant') === null)
+
+  // pause: open unassigned roster requests are cancelled
+  const p2 = ps.setScheduleStatus('sch-1', 'Paused', 'smoke')
+  ok('pause accepted', p2.ok === true)
+  const left = growOrdersSnapshot().pickupRequests.filter((p) => p.schedule?.id === 'sch-1' && p.status === 'Requested' && p.date >= sm.ymd(new Date()))
+  ok('pause cancelled unassigned future requests', left.length === 0, `${left.length} still Requested`)
+  const cfg = pm.readPickupModuleConfig()
+  ok('manifestRequired defaults to true', cfg.manifestRequired === true)
+
+  // ---- dispatcher guards in the planning store
+  const sm2 = await import('/src/growOrders/scheduleModel.ts')
+  ps.setScheduleStatus('sch-1', 'Active', 'smoke')
+  const prs = growOrdersSnapshot().pickupRequests.filter((p) => p.schedule?.id === 'sch-1' && p.status === 'Requested')
+  const pr = prs[0]
+  console.log('guard pr', pr?.number, pr?.date, pr?.destinationCode, pr?.storeCode)
+  const hub = pr.destinationCode ?? pr.storeCode
+  const tOther = plan.planningActions.createTrip({ hubCode: hub, date: '2030-01-01', name: 'other-day' })
+  ok('guard: a trip on another day is refused with a reason', (plan.pickupTripBlock(tOther.id, pr.id) || '').includes('runs on 2030-01-01'), plan.pickupTripBlock(tOther.id, pr.id) ?? '')
+  const tHub = plan.planningActions.createTrip({ hubCode: 'CEB-01', date: pr.date, name: 'other-hub' })
+  ok('guard: a trip from another hub is refused', hub === 'CEB-01' || (plan.pickupTripBlock(tHub.id, pr.id) || '').includes('runs from'), plan.pickupTripBlock(tHub.id, pr.id) ?? '')
+  const tOk = plan.planningActions.createTrip({ hubCode: hub, date: pr.date, name: 'good' })
+  ok('guard: the right day + hub is allowed', plan.pickupTripBlock(tOk.id, pr.id) === null, plan.pickupTripBlock(tOk.id, pr.id) ?? '')
+  ok('addPickupToTripOrReason adds it', plan.planningActions.addPickupToTripOrReason(tOk.id, pr.id) === null)
+  const pr2 = prs.find((p) => p.id !== pr.id && p.date === pr.date)
+  if (pr2) {
+    const t2 = plan.planningActions.createTrip({ hubCode: hub, date: pr.date, name: 'second' })
+    plan.planningActions.addPickupToTrip(t2.id, pr2.id)
+    plan.planningActions.assignDriver(tOk.id, 'Driver Smoke', null)
+    const clash = plan.planningActions.assignDriver(t2.id, 'Driver Smoke', null)
+    const overlap = pr.startAt < pr2.endAt && pr2.startAt < pr.endAt
+    ok('guard: a driver on two overlapping trips is refused (only when the windows overlap)', overlap ? !!clash : clash === null, String(clash))
+  }
+  // dedicated vehicle on a trip
+  const v = vc.allVehicles().find((x) => x.hubCode === hub)
+  if (v) {
+    vc.vehicleConfigActions.upsert({ ...v, dedicatedTo: ['Another Merchant Ltd'] })
+    const tv = plan.planningActions.createTrip({ hubCode: hub, date: pr.date, name: 'dedicated', vehicle: v.name })
+    const pr3 = prs.find((p) => p.id !== pr.id)
+    if (pr3) ok('guard: a request cannot go on another merchant\'s dedicated vehicle', (plan.pickupTripBlock(tv.id, pr3.id) || '').includes('dedicated to'), plan.pickupTripBlock(tv.id, pr3.id) ?? '')
+  }
+
+  // ---- end-of-day close of an unassigned roster request
+  const yest = sm.addDays(sm.ymd(new Date()), -1)
+  const stale = growOrderActions.createSchedulePickup({ storeCode: 'CEB-01', destinationCode: 'CEB-01', startAt: yest + 'T09:00', endAt: yest + 'T12:00',
+    schedule: { id: 'sch-2', code: 'SCH-0002', runId: 'seed20', runLabel: '09:00–12:00', date: yest } })
+  const closed = growOrderActions.closeUnassignedScheduleRequests(sm.ymd(new Date()))
+  const st2 = growOrdersSnapshot().pickupRequests.find((x) => x.id === stale.id)
+  ok('end of day: an unassigned roster request of yesterday is closed', closed.some((x) => x.id === stale.id) && st2?.status === 'Cancelled' && st2?.cancelReason === 'NOT_ASSIGNED', `${st2?.status}/${st2?.cancelReason}`)
+  // ---- pause -> resume regenerates (a SCHEDULE_CHANGED cancellation does not hold the slot)
+  ps.setScheduleStatus('sch-1', 'Paused', 'smoke')
+  const resumed = ps.setScheduleStatus('sch-1', 'Active', 'smoke')
+  const again = growOrdersSnapshot().pickupRequests.filter((x) => x.schedule?.id === 'sch-1' && x.status === 'Requested').length
+  ok('resume after pause makes the requests again', resumed.ok && again > 0, `${again} open`)
+  // ---- manifest not required: a completed pickup closes at once
+  pm.writePickupModuleConfig({ manifestRequired: false })
+  const bp = growOrderActions.createBlindPickup({ storeCode: 'CEB-01', expectedPieces: 1, expectedWeightKg: 1, source: 'Console', startAt: sm.ymd(new Date()) + 'T09:00', endAt: sm.ymd(new Date()) + 'T12:00' })
+  const ord = { ...ORDER_DEFAULTS, id: newOrderId(), orderNumber: 'SMOKE-2', storeCode: 'CEB-01', paymentStatus: 'Paid', isDraft: false, status: 'Order Created', createdAt: new Date().toISOString() }
+  growOrderActions.create(ord)
+  growOrderActions.attachOrdersToPickup(bp.id, [ord.id])
+  let guard = 0
+  while (growOrdersSnapshot().pickupRequests.find((x) => x.id === bp.id).status !== 'Completed' && guard++ < 10) growOrderActions.advancePickupRequest(bp.id)
+  const done = growOrdersSnapshot().pickupRequests.find((x) => x.id === bp.id)
+  ok('manifest off: completed pickup is handed over (closed) at once', done.status === 'Completed' && done.handover.closedAt != null && tabs.localPrTabOf(done, new Date()) === 'Closed', `${done.status} closedAt=${done.handover.closedAt}`)
+  pm.writePickupModuleConfig({ manifestRequired: true })
+  // units math round trip
+} catch (e) { log.push('CRASH  ' + (e && e.stack || e)) }
+document.getElementById('out').textContent = log.join('\n') + '\nDONE'
+</script></body></html>
