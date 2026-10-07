@@ -2750,13 +2750,6 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   /* an address typed on the form (Fields on the form) is saved when the consignment is — if its switch is on */
   const [saveTyped, setSaveTyped] = useState<Set<string>>(new Set())
   const slotId = (role: Role, idx: number) => `${role}:${idx}`
-  /* Fields on form, like the second branch (owner, 2026-10-06): a SAVED address picked there reads back as its card; the
-     pencil opens its fields in place (the slot is listed here until another address is picked or it is folded again) */
-  const [openSlots, setOpenSlots] = useState<Set<string>>(new Set())
-  const setSlotOpen = (id: string, on: boolean) => setOpenSlots((xs) => {
-    if (xs.has(id) === on) return xs
-    const n = new Set(xs); if (on) n.add(id); else n.delete(id); return n
-  })
   const keepTypedAddresses = () => {
     for (const id of saveTyped) {
       const [role, i] = id.split(':') as [Role, string]
@@ -2829,7 +2822,6 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   /** a saved address (or a hub) picked for one end — the picker's and the on-form search's choice */
   const applyPick = (role: Role, idx: number, v: string) => {
     const p = partyOf(role, idx)
-    setSlotOpen(slotId(role, idx), false)
     if (role === 'rto') { const st = stores.find((x) => x.code === v); if (st) setRto({ ...st.party, locationCode: v }); return }
     const next = partyFromPick(v)
     if (!next) return
@@ -2863,7 +2855,6 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   /** "Clear" on an address typed on the form — back to an empty address (the window stays) */
   const clearParty = (role: Role, idx: number) => {
     const p = partyOf(role, idx)
-    setSlotOpen(slotId(role, idx), false)
     replaceParty(role, idx, { ...blankParty(), windowStart: p.windowStart, windowEnd: p.windowEnd })
     if (role === 'from') setSenderStore(OTHER_ADDRESS)
   }
@@ -2957,28 +2948,18 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     const srcs = role === 'rto' ? (['merchant'] as Source[]) : sourcesOf(role)
     const what = srcs[0] === 'customers' ? 'address book' : 'your addresses'
     const kindBad = (role === 'from' && fromKindBad) || (role === 'to' && idx === 0 && toKindBad)
-    const missing = missingOf(p, role)
     const invalid = invalidOf(p, role)
-    const picked = pickedHere(role, idx) && (filled(p.name) || filled(p.line1))
-    /* a picked address is its card — unless its pencil opened it, the form is being edited (its fields are the
-       preview), or something in it needs fixing (the fields show what) */
-    const folded = picked && !editing && !openSlots.has(id) && !(showErrors && missing.length > 0) && invalid.length === 0
-    const at = role === 'rto' ? -1 : bookIdx(p)
+    /* "Fields on the form" STAYS fields (owner, 2026-10-07: "when Ship To is selected with inline edit it should not convert into a
+       card"): picking a saved address fills the inputs below the search and leaves them editable — it never folds into a read-back
+       card (that is the OTHER choice, "Saved card"). */
     return (
       <div>
-        {/* folded + a full-width end (One under the other): the search on the left, the card on the right */}
         <div className={`grid gap-x-6 gap-y-4 ${split?.grid ?? ''}`}>
         <div className="flex min-w-0 items-center gap-3 self-start">
           <div className="min-w-0 flex-1">
             <AddressSearch hits={hitsFor(role)} onPick={(h) => applyPick(role, idx, h.value)}
               placeholder={`Search ${what}${srcs.includes('facilities') ? ' or hubs' : ''}`} />
           </div>
-          {picked && !folded && !editing && (
-            <Tip text="Show it as a card again"><button type="button" onClick={() => setSlotOpen(id, false)}
-              className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md px-2 text-[13px] text-ink-2 hover:bg-warm-50 hover:text-ink">
-              <ChevronUp size={14} />Done
-            </button></Tip>
-          )}
           {(filled(p.name) || filled(p.line1)) && !editing && (
             <button type="button" onClick={() => clearParty(role, idx)}
               className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md px-2 text-[13px] text-ink-2 hover:bg-warm-50 hover:text-ink">
@@ -2986,27 +2967,19 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
             </button>
           )}
         </div>
-        {folded && (
-          <div className="min-w-0">
-            <AddressCard party={p} missing={missing} invalid={invalid} onEdit={() => setSlotOpen(id, true)}
-              tag={at >= 0 ? book[at].tag ?? 'Saved' : 'Saved'} />
-          </div>
-        )}
         </div>
         {/* side by side: two columns in its half · one under the other: four across the card */}
-        {!folded && (
-          <div className="mt-6">
-            <PartyBlock wide half={!stackAddr} party={p} set={patchParty(role, idx)} nameLabel={role === 'to' ? 'Customer Name' : 'Sender Name'}
-              requireContact={role !== 'from' && contactReq} hid={hid} variant={role === 'rto' ? 'rto' : 'full'} />
-          </div>
-        )}
+        <div className="mt-6">
+          <PartyBlock wide half={!stackAddr} party={p} set={patchParty(role, idx)} nameLabel={role === 'to' ? 'Customer Name' : 'Sender Name'}
+            requireContact={role !== 'from' && contactReq} hid={hid} variant={role === 'rto' ? 'rto' : 'full'} />
+        </div>
         {typed && !editing && (
           <div className="mt-6 inline-flex">
             <InlineSwitch label="Save this address" title={`It is listed in ${what} next time — saved when the consignment is`}
               checked={saveTyped.has(id)} onChange={(on) => setSaveTyped((xs) => { const n = new Set(xs); if (on) n.add(id); else n.delete(id); return n })} />
           </div>
         )}
-        {!folded && invalid.length > 0 && <p className="mt-3 text-[12px] text-danger-fg">Check the format: {invalid.join(', ')}</p>}
+        {invalid.length > 0 && <p className="mt-3 text-[12px] text-danger-fg">Check the format: {invalid.join(', ')}</p>}
         {kindBad && <ErrLine className="mt-2">Pick an address — this end has a pickup / delivery leg.</ErrLine>}
       </div>
     )

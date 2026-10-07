@@ -159,13 +159,16 @@ export function ServiceTypeChooser({
                 <div className="max-w-[460px]">
                   <MenuSelect value={chosen?.code ?? ''} placeholder={ready ? 'Choose a service' : 'Add the route and packages first'} disabled={!ready}
                     options={quotes.map((q) => q.code)} labels={(c) => quotes.find((q) => q.code === c)?.name ?? c} onChange={pick}
+                    /* one line per service — the name, the rate; the carrier is said ONCE under the box (every service has the same one) */
                     renderOption={(c) => {
                       const q = quotes.find((x) => x.code === c)
                       return q ? (
                         <span className="flex w-full items-center justify-between gap-4">
-                          <span className="min-w-0"><span className="block truncate font-bold text-ink">{q.name}</span>
-                            <span className="block truncate text-[12px] text-ink-3">{carrier || 'Carrier assigned at booking'}</span></span>
-                          <span className="shrink-0 font-bold text-ink">{money(q.net, currency)}</span>
+                          <span className="flex min-w-0 items-center gap-2"><span className="truncate text-ink">{q.name}</span>
+                            {quotes.length > 1 && q.net === Math.min(...quotes.map((x) => x.net)) && (
+                              <span className="shrink-0 rounded-full bg-success-bg px-2 text-[11px] font-bold leading-5 text-success-fg">Lowest</span>
+                            )}</span>
+                          <span className="shrink-0 font-bold tabular-nums text-ink">{money(q.net, currency)}</span>
                         </span>
                       ) : c
                     }}
@@ -174,7 +177,9 @@ export function ServiceTypeChooser({
                       return q ? <span className="flex w-full items-center justify-between gap-3"><span className="truncate">{q.name}</span><span className="shrink-0 font-bold">{money(q.net, currency)}</span></span> : c
                     }} />
                 </div>
-                {chosen && <p className="mt-2 text-[12px] text-ink-3">Carried by {carrier || 'the carrier assigned at booking'}.</p>}
+                <p className="mt-2 text-[12px] text-ink-3">
+                  {quotes.length} service{quotes.length === 1 ? '' : 's'}, all carried by {carrier || 'the carrier assigned at booking'} · estimated rates, before tax.
+                </p>
               </div>
             ) : grid ? (
               /* inside the form's own card (hideMode) the cards sit on it directly — no second frame */

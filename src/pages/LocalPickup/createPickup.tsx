@@ -56,25 +56,25 @@ export function CreatePickupButton({ onPick }: { onPick: (k: CreatePickupKind) =
     return () => { window.removeEventListener('click', h); window.removeEventListener('keydown', k) }
   }, [open])
   if (!blind) return <Button icon={<Plus size={15} />} onClick={() => onPick('request')}>Create pickup</Button>
-  const item = (k: CreatePickupKind, label: string, hint: string, count?: number) => (
-    <button key={k} type="button" role="menuitem" onClick={() => { setOpen(false); onPick(k) }}
-      className="flex w-full items-start gap-3 px-3.5 py-2.5 text-left hover:bg-warm-50">
-      <span className="min-w-0 flex-1">
-        <span className="block text-[13px] font-bold text-ink">{label}</span>
-        <span className="block text-[12px] text-ink-3">{hint}</span>
-      </span>
-      {count !== undefined && <span className="mt-0.5 rounded-full bg-warm-100 px-2 text-[11px] font-bold leading-5 text-ink-2">{count}</span>}
-    </button>
-  )
+  /* Create pickup OPENS the Blind pickup request (owner, 2026-10-07: "when clicking on add pickup, blind pickup request should open");
+     the small arrow beside it keeps the other way — a Pickup request for the consignments already waiting */
   return (
-    <div className="relative" data-create-pickup>
-      <Button icon={<Plus size={15} />} onClick={() => setOpen((v) => !v)}>
-        <span className="inline-flex items-center gap-1.5">Create pickup<ChevronDown size={14} className="-mr-1" /></span>
-      </Button>
+    <div className="relative inline-flex" data-create-pickup>
+      <Button icon={<Plus size={15} />} onClick={() => onPick('blind')}>Create pickup</Button>
+      <button type="button" aria-label="More ways to create a pickup" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)}
+        className="ml-1 inline-flex h-8 w-8 items-center justify-center rounded-md border border-line bg-surface text-ink-2 hover:bg-warm-50 hover:text-ink">
+        <ChevronDown size={14} />
+      </button>
       {open && (
-        <div role="menu" className="absolute right-0 top-full z-40 mt-2 w-[280px] rounded-lg border border-line bg-surface py-1.5 shadow-ds-overlay">
-          {item('request', 'Pickup request', 'For consignments waiting for a pickup', waiting)}
-          {item('blind', 'Blind pickup request', 'Book a pickup before the consignments exist')}
+        <div role="menu" className="absolute right-0 top-full z-40 mt-2 w-[300px] rounded-lg border border-line bg-surface py-1.5 shadow-ds-overlay">
+          <button type="button" role="menuitem" onClick={() => { setOpen(false); onPick('request') }}
+            className="flex w-full items-start gap-3 px-3.5 py-2.5 text-left hover:bg-warm-50">
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13px] font-bold text-ink">Pickup request for waiting consignments</span>
+              <span className="block text-[12px] text-ink-3">Book the consignments that have no pickup yet</span>
+            </span>
+            <span className="mt-0.5 rounded-full bg-warm-100 px-2 text-[11px] font-bold leading-5 text-ink-2">{waiting}</span>
+          </button>
         </div>
       )}
     </div>

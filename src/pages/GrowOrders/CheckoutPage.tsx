@@ -37,7 +37,7 @@ import { bookableServices, quoteLane, type RateCurrency, type ServiceQuote } fro
 import { SplitPaymentSheet } from './paymentSheet'
 import { CheckoutSummary } from './CheckoutSummary'
 import { ServiceTypeChooser } from './serviceCards'
-import { paidNowOf, partLabel, payNote, splitSummary, useSplitPayment } from './splitPayment'
+import { paidNowOf, payNote, splitSummary, useSplitPayment } from './splitPayment'
 import { CheckCircle2 } from 'lucide-react'
 import {
   DRAFT_KEY, DRAFT_PICKUP_KEY, clearDraftKeys, readCheckoutSidecar, readOverageSidecar, vehiclesOf, volKg,
@@ -249,9 +249,10 @@ export default function CheckoutPage() {
       <PageHeader title="Checkout" subtitle="Choose the service and how you pay" onBack={backToForm}
         right={<Button variant="outline" onClick={backToForm}>Back to order details</Button>} />
       <WizardSteps steps={ORDER_STEPS} active={1} done={[0]} onSelect={(i) => { if (i === 0) backToForm() }} />
-      <div className="grid gap-4 lg:grid-cols-[1fr_380px]">
-        {/* left: the two choices — which service, how you pay (owner, 2026-10-07: "How you pay sits on the left") */}
-        <div className="flex min-w-0 flex-col gap-4">
+      {/* ONE choice on the left — which service (owner, 2026-10-07: "payment in the summary section, how to pay section"); the summary, the
+          price and HOW YOU PAY are one column on the right. A hidden Service Type has nothing to choose: one centred column. */}
+      <div className={locked ? 'mx-auto flex max-w-[760px] flex-col gap-4' : 'grid gap-4 lg:grid-cols-[1fr_420px]'}>
+        <div className={`flex min-w-0 flex-col gap-4 ${locked ? 'hidden' : ''}`}>
           {!locked && (
             <Panel title={side?.label ?? 'Service Type'}>
               <div className="px-5 pb-5 pt-2">
@@ -263,16 +264,6 @@ export default function CheckoutPage() {
               </div>
             </Panel>
           )}
-          <Panel title="How you pay">
-            <div className="px-5 pb-5 pt-2">
-              {chosen ? (
-                <>
-                  <p className="mb-3 text-[12px] text-ink-3">Choose one or more ways to pay the {money(payable, cur)}.</p>
-                  <SplitPaymentSheet split={split} />
-                </>
-              ) : <p className="text-[12px] text-ink-3">Choose a service to see what you pay.</p>}
-            </div>
-          </Panel>
         </div>
         <div>
           <div className="flex flex-col gap-4 lg:sticky lg:top-4">
@@ -288,19 +279,22 @@ export default function CheckoutPage() {
                   <div className="flex justify-between"><span className="text-ink-3">Taxes</span><span>{dash(taxes)}</span></div>
                   <div className="mt-3 flex justify-between border-t border-line pt-3 text-[15px] font-bold"><span>Payable Amount</span><span>{dash(payable)}</span></div>
                 </div>
-                {chosen && parts.length > 0 && (
-                  <div className="mt-3 space-y-2 border-t border-line pt-3 text-[13px] text-ink" aria-label="How you pay">
-                    {parts.map((p) => (
-                      <div key={p.method} className="flex justify-between gap-3">
-                        <span className="text-ink-3">{partLabel(p)}</span><span className="tabular-nums">{money(p.amount, cur)}</span>
-                      </div>
-                    ))}
-                    <div className="flex justify-between gap-3 font-bold">
-                      <span className="text-ink-3">{left < 0 ? 'Too much' : 'Remaining'}</span>
-                      <span className={`tabular-nums ${left === 0 ? 'text-success-fg' : 'text-danger-fg'}`}>{money(Math.abs(left), cur)}</span>
-                    </div>
-                  </div>
-                )}
+                {/* how you pay — in the same card as the price it pays (one or more ways; the split must add up) */}
+                <div className="mt-4 border-t border-line pt-4">
+                  <p className="text-[13px] font-bold text-ink">How you pay</p>
+                  {chosen ? (
+                    <>
+                      <p className="mb-3 mt-0.5 text-[12px] text-ink-3">Choose one or more ways to pay the {money(payable, cur)}.</p>
+                      <SplitPaymentSheet split={split} />
+                      {parts.length > 0 && (
+                        <div className="mt-3 flex justify-between gap-3 border-t border-line pt-3 text-[13px] font-bold">
+                          <span className="text-ink-3">{left < 0 ? 'Too much' : 'Remaining'}</span>
+                          <span className={`tabular-nums ${left === 0 ? 'text-success-fg' : 'text-danger-fg'}`}>{money(Math.abs(left), cur)}</span>
+                        </div>
+                      )}
+                    </>
+                  ) : <p className="mt-0.5 text-[12px] text-ink-3">Choose a service to see what you pay.</p>}
+                </div>
                 <div className="mt-5 flex [&>button]:w-full">
                   <Button disabled={!!blocked} onClick={proceed}>{paidNow > 0 ? `Pay ${money(paidNow, cur)} and place order` : 'Place order'}</Button>
                 </div>
