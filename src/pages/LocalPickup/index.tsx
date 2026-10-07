@@ -25,6 +25,7 @@ import {
 import { toast } from '../../nueva/toast'
 import { pickupRequestById, useGrowOrders } from '../../growOrders/store'
 import { useSchedules } from '../../growOrders/scheduleModel'
+import { useNow } from '../../local/useNow'
 import type { GrowPickupRequest } from '../../growOrders/types'
 import {
   ATTENTION_REQUIRED, CONSIGNMENTS_TO_BOOK, LOCAL_PR_TAB_SLUG, inLocalPrTab, localPrTabCounts,
@@ -127,7 +128,7 @@ function PickupRequestsList() {
   const [dialog, setDialog] = useState<Dialog>(null)
 
   /* read the clock on every render — Overdue and the tab buckets move with it */
-  const now = new Date()
+  const now = useNow()
   const byId = useMemo(() => new Map(db.orders.map((o) => [o.id, o])), [db.orders])
   const counts = localPrTabCounts(db.pickupRequests, 0, now)
   const dup = useMemo(() => duplicateIds(db.pickupRequests), [db.pickupRequests])

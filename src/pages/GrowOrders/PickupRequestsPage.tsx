@@ -54,6 +54,7 @@ import { BookPickupDialog, PickupDialog, ReschedulePickupDialog } from './pickup
 import { CancelPickupDialog } from './PickupRequestPage'
 import { usePortalMerchant } from './pickupGate'
 import { merchantPrCsv, usePickupRequestColumns } from './pickupRequestColumns'
+import { useNow } from '../../local/useNow'
 import { useShipmentColumns } from './shipmentTable'
 import { shipmentRowsOf, type ShipmentRow } from './shipmentRows'
 import {
@@ -127,13 +128,15 @@ export default function PickupRequestsPage() {
   /* the merchant's flags = the console's own tags (the SAME derivation the Attention Required
      tab uses), minus Discrepancy — a hub-scan mismatch is the carrier's to reconcile. They
      drive the status chip and the Attention Required funnel filter. */
+  /* the clock ticks a minute (First Mile Ops): a request moves to Exception — late, not planned, overdue — without a reload */
+  const now = useNow()
   const dupes = useMemo(() => duplicateIds(db.pickupRequests), [db.pickupRequests])
   const chipFlagsOf = useMemo(() => {
-    const m = new Map(db.pickupRequests.map((p) => [p.id, statusTags(p, dupes, new Date(), pickupRequestById)
+    const m = new Map(db.pickupRequests.map((p) => [p.id, statusTags(p, dupes, now, pickupRequestById)
       .filter((t) => t.label !== 'Discrepancy')
       .map((t) => (t.label === 'Re-attempt available' ? { ...t, label: 'Re-attempt' } : t))]))
     return (p: GrowPickupRequest) => m.get(p.id) ?? []
-  }, [db.pickupRequests, dupes])
+  }, [db.pickupRequests, dupes, now])
   /* filter vocabulary: the flag without its request number ("Re-attempt scheduled · PR-000140" → "Re-attempt scheduled") */
   const flagsOf = useMemo(() => (p: GrowPickupRequest) => [
     ...chipFlagsOf(p).map((t) => t.label.split(' · ')[0]),
@@ -152,7 +155,7 @@ export default function PickupRequestsPage() {
   const shipCols = useShipmentColumns('grow-eligible-columns-v2', eligible)
   const prCols = usePickupRequestColumns({ allRequests: db.pickupRequests, orders: db.orders, stores: db.stores, tagsOf, flagsOf: chipFlagsOf })
   /* tab counts off the UNFILTERED lists, like the console */
-  const counts = localPrTabCounts(db.pickupRequests, eligible.length)
+  const counts = localPrTabCounts(db.pickupRequests, eligible.length, now)
   const carrierOf = (p: GrowPickupRequest) => (p.carrierMode === 'CARRIER' && p.carrierName ? p.carrierName : '')
 
   /* the pickup POINTS actually in use — a booking collected from a typed-in
@@ -182,7 +185,7 @@ export default function PickupRequestsPage() {
     const f = datePart(from), t = datePart(to)
     const pick = (k: string) => adv[k]?.filter(Boolean) ?? []
     return db.pickupRequests.filter((p) => {
-      if (!inLocalPrTab(p, tab, undefined, pickupRequestById)) return false
+      if (!inLocalPrTab(p, tab, now, pickupRequestById)) return false
       if (status.length && !prStatusLabels(p).some((l) => status.includes(l))) return false
       if (point.length && !point.includes(pickupPointName(p, db.stores))) return false
       /* OVERLAP, not start-date: a window that opens before the range and closes

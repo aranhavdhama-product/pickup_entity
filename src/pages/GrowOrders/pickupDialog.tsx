@@ -20,7 +20,7 @@
  * or across several days.
  */
 import { useMemo, useState, type ReactNode } from 'react'
-import { Boxes, CalendarDays, ChevronDown, Plus, Search, Truck, X } from 'lucide-react'
+import { CalendarDays, ChevronDown, Plus, Search, Truck, X } from 'lucide-react'
 import { blankParty } from '../../growOrders/seed'
 import { findOpenPickupConflict, growOrderActions, useGrowOrders } from '../../growOrders/store'
 import type { GrowOrder, GrowPickupRequest, Party, ShipmentType, StoreLocation } from '../../growOrders/types'
@@ -34,7 +34,7 @@ import { toast } from '../../nueva/toast'
 import { earliestWindow, pickupPolicy, violatesCutoff, type PickupPolicy, type PickupWhere } from '../../growOrders/pickupSlots'
 import { cutoffRuleLine, merchantMayChange, rescheduleError, usePortalMerchant } from './pickupGate'
 import { Button, Field, Input, MenuSelect, Modal, StatusPill } from '../../nueva/components'
-import { Segment } from './merchantFormBits'
+import { SwitchBox } from '../../components/consignmentForm'
 import { SlotWindowFields } from '../LocalPickup/slotFields'
 import { BookingChoiceControl } from '../LocalPickup/bookingCards'
 import { bookGroup, joinCandidates, pickupCountOf, type BookingChoice } from '../LocalPickup/bookingPlan'
@@ -463,10 +463,10 @@ export function PickupDialog({ stores, merchants, onClose, onDone }: {
         label="Create blind pickup" />}>
       <div className="flex flex-col gap-5 pb-3">
         {/* the SAME dialog as the console's (owner, 2026-10-07: "same pickup request things in Grow, without selecting a merchant") */}
-        <Segment<ShipmentType> value={shipType} onChange={setShipType} options={[
-          { value: 'Parcel', label: 'Parcels (LTL)', icon: <Boxes size={17} /> },
-          { value: 'FTL', label: 'Full vehicle (FTL)', icon: <Truck size={17} /> },
-        ]} />
+        <div className="max-w-[320px]">
+          <SwitchBox icon={Truck} label="Dedicate Truck" checked={shipType === 'FTL'} onChange={(on) => setShipType(on ? 'FTL' : 'Parcel')}
+            title="On: a whole vehicle just for this pickup. Off: parcels that travel with other shipments." />
+        </div>
         <div className="grid grid-cols-2 items-start gap-3">
           {/* console only — who the collection is for, ahead of where it is from */}
           {merchants && (
@@ -541,7 +541,7 @@ export function PickupDialog({ stores, merchants, onClose, onDone }: {
               <Field label="Service Type" required>
                 <MenuSelect value={ftlService} options={ftlServiceOptions()} searchable onChange={setFtlService} />
               </Field>
-              <Field label="Vehicle" required>
+              <Field label="Vehicle Type" required>
                 <MenuSelect value={lineType(lines[0])} options={vehicleOpts} searchable labels={vehicleLabel}
                   onChange={(v) => setLine(lines[0].id, { vehicleType: v })} />
                 <p className="mt-1 text-[12px] text-ink-3">

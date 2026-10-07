@@ -11,8 +11,8 @@ import {
 import { toast } from '../../nueva/toast'
 import { growOrderActions, pickupRequestById, useGrowOrders } from '../../growOrders/store'
 import { usePickupModuleConfig } from '../../config/pickupModule'
-import { Boxes, Plus, Truck, X } from 'lucide-react'
-import { Segment } from '../GrowOrders/merchantFormBits'
+import { Plus, Truck, X } from 'lucide-react'
+import { SwitchBox } from '../../components/consignmentForm'
 import type { GrowOrder, GrowPickupRequest, Party, StoreLocation } from '../../growOrders/types'
 import { isPickupEligible } from '../../growOrders/tabs'
 import { CANCEL_REASONS, PICKABLE_FAILURE_REASONS } from '../../growOrders/pickupReasons'
@@ -259,10 +259,11 @@ export function CreatePickupDialog({ onClose, onDone }: { onClose: () => void; o
       footer={<Footer onClose={onClose} onConfirm={submit}
         label="Create blind pickup" />}>
       <div className="flex flex-col gap-5 pb-3">
-        <Segment<'LTL' | 'FTL'> value={kind} onChange={setKind} options={[
-          { value: 'LTL', label: 'Parcels (LTL)', icon: <Boxes size={17} /> },
-          { value: 'FTL', label: 'Full vehicle (FTL)', icon: <Truck size={17} /> },
-        ]} />
+        {/* the consignment form's own switch (owner, 2026-10-07: "dedicated truck should be like the consignment form"): on = a whole vehicle */}
+        <div className="max-w-[320px]">
+          <SwitchBox icon={Truck} label="Dedicate Truck" checked={kind === 'FTL'} onChange={(on) => setKind(on ? 'FTL' : 'LTL')}
+            title="On: a whole vehicle just for this pickup. Off: parcels that travel with other shipments." />
+        </div>
         <div className="grid grid-cols-2 items-end gap-3">
           <Field label="Merchant">
             <MenuSelect value={merchant} placeholder="Any merchant (optional)" options={merchants.map((m) => m.name)} searchable
@@ -325,7 +326,7 @@ export function CreatePickupDialog({ onClose, onDone }: { onClose: () => void; o
               <Field label="Service Type" required>
                 <MenuSelect value={service} options={ftlServiceOptions()} searchable onChange={setService} />
               </Field>
-              <Field label="Vehicle" required>
+              <Field label="Vehicle Type" required>
                 <MenuSelect value={lineType(lines[0])} options={vehicleOpts} searchable labels={vehicleLabel}
                   onChange={(v) => setLine(lines[0].id, { vehicleType: v })} />
               </Field>

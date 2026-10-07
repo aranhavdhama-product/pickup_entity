@@ -10,7 +10,7 @@
 import type { GrowOrder, GrowOrdersDb, GrowPickupRequest, PickupRequestStatus, StoreLocation } from '../../growOrders/types'
 import {
   atDate, atParts, canAddOrdersTo, canReattempt, hasDiscrepancy, isHandedOver, isInTransitToHub, isOpenPr,
-  isOverduePr, isPartiallyPicked, PR_STATUSES, rangesOverlap, reattemptPending,
+  isOverduePr, isPartiallyPicked, PR_STATUSES, rangesOverlap, reattemptPending, riskReasons,
 } from '../../growOrders/tabs'
 import { hubName } from '../../growOrders/hubs'
 import { pickupPointKey, prActionState, splitSiblings, type PrAction } from '../../growOrders/prActions'
@@ -158,6 +158,8 @@ export function duplicateIds(prs: GrowPickupRequest[]): Set<string> {
 export function statusTags(p: GrowPickupRequest, dup: Set<string>, now = new Date(),
   byId?: (id: string) => GrowPickupRequest | undefined): { label: string; tone: Tone }[] {
   const out: { label: string; tone: Tone }[] = []
+  /* the reading BEFORE it is missed (tabs.riskReasons): late, not planned, no driver, slot unconfirmed, not received at the hub */
+  for (const r of riskReasons(p, now)) out.push({ label: r.label, tone: r.tone })
   if (isOverduePr(p, now)) out.push({ label: 'Overdue', tone: 'danger' })
   if (hasDiscrepancy(p)) out.push({ label: 'Discrepancy', tone: 'danger' })
   if (dup.has(p.id)) out.push({ label: 'Duplicate', tone: 'warning' })

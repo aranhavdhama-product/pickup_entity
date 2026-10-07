@@ -210,7 +210,7 @@ export const isOpenPr = (s: PickupRequestStatus): boolean =>
  */
 type PrFacts = Pick<GrowPickupRequest,
   'id' | 'status' | 'orderIds' | 'pickedOrderIds' | 'endAt' | 'attempt' | 'maxAttempts' | 'reattemptPrId' | 'handover'>
-  & Partial<Pick<GrowPickupRequest, 'failureReason'>>
+  & Partial<Pick<GrowPickupRequest, 'failureReason' | 'startAt' | 'tripId' | 'slotConfirmed' | 'carrierMode' | 'statusHistory'>>
 
 /** A failure the Reason Policy parks as "Hold for review" needs a human whatever the
  *  attempt count — the final-attempt hold must not slip into Closed unseen. */
@@ -230,6 +230,53 @@ export const isPartiallyPicked = (p: Pick<GrowPickupRequest, 'status' | 'orderId
 /** Still expected to happen, but the window has already closed. */
 export const isOverduePr = (p: Pick<GrowPickupRequest, 'status' | 'endAt'>, now = new Date()): boolean =>
   isOpenPr(p.status) && !!p.endAt && atDate(p.endAt) < now
+
+/* ------------------------------------------------------------- at risk ---- */
+
+/**
+ * First Mile Ops (owner, 2026-10-07: "design for missed-pickup and dispatcher-error prevention"): the reading BEFORE a pickup is
+ * missed. ONE derived function — every surface (the Pickup page's Exception tab and column, Grow's list, the tags beside a
+ * state) reads it, so no page computes its own risk and a changed rule is retroactive. Nothing is stored and nothing is a
+ * setting: the thresholds are constants below.
+ *   late         — the window opened `LATE_GRACE_MINS` ago and nobody is on the way (the end-of-window reading is `Overdue`)
+ *   unplanned    — the window opens within `lead` and the request is on no trip
+ *   no driver    — it is routed but no driver is on the trip yet, and the window opens within `lead`
+ *   unconfirmed  — the shipper has not confirmed the slot (blocks routing), and the window opens within `lead`
+ *   stuck        — collected, still not at the hub `STUCK_IN_TRANSIT_HOURS` later
+ */
+export interface PrRisk { code: 'late' | 'unplanned' | 'no-driver' | 'unconfirmed' | 'stuck'; label: string; tone: 'danger' | 'warning' }
+export const AT_RISK_LEAD_MINS = 120
+export const LATE_GRACE_MINS = 15
+export const STUCK_IN_TRANSIT_HOURS = 6
+const inWords = (mins: number) => (mins < 90 ? `${Math.max(1, Math.round(mins))} min` : `${(mins / 60).toFixed(1).replace(/\.0$/, '')} h`)
+const clock = (at: string) => at.slice(11, 16)
+
+/** Collected a long time ago and still not received at the hub (no truck-arrival signal, no scan). */
+export function isStuckInTransit(p: PrFacts, now = new Date()): boolean {
+  if (!isInTransitToHub(p)) return false
+  const done = [...(p.statusHistory ?? [])].reverse().find((e) => e.status === 'Completed')?.at
+  return !!done && (now.getTime() - new Date(done).getTime()) / 3_600_000 >= STUCK_IN_TRANSIT_HOURS
+}
+
+export function riskReasons(p: PrFacts, now = new Date(), leadMins = AT_RISK_LEAD_MINS): PrRisk[] {
+  const out: PrRisk[] = []
+  if (isStuckInTransit(p, now)) {
+    const done = [...(p.statusHistory ?? [])].reverse().find((e) => e.status === 'Completed')?.at ?? ''
+    const hours = Math.floor((now.getTime() - new Date(done).getTime()) / 3_600_000)
+    out.push({ code: 'stuck', label: `Not received at the hub — ${hours} h`, tone: 'danger' })
+  }
+  if (!isOpenPr(p.status) || !p.startAt) return out
+  const toStart = (atDate(p.startAt).getTime() - now.getTime()) / 60_000
+  const carrier = p.carrierMode === 'CARRIER'
+  if (p.status !== 'Out For Pickup' && toStart <= -LATE_GRACE_MINS && !isOverduePr(p, now)) {
+    out.push({ code: 'late', label: `Late — window opened ${clock(p.startAt)}`, tone: 'danger' })
+  } else if (toStart > -LATE_GRACE_MINS && toStart <= leadMins && p.status !== 'Out For Pickup') {
+    if (!carrier && p.status === 'Requested' && !p.tripId) out.push({ code: 'unplanned', label: `Not planned — starts in ${inWords(toStart)}`, tone: 'warning' })
+    else if (!carrier && p.status === 'Planned') out.push({ code: 'no-driver', label: `No driver yet — starts in ${inWords(toStart)}`, tone: 'warning' })
+    if (p.slotConfirmed === false) out.push({ code: 'unconfirmed', label: 'Slot unconfirmed', tone: 'warning' })
+  }
+  return out
+}
 
 const sameSet = (a: string[], b: string[]): boolean => {
   const A = new Set(a), B = new Set(b)
@@ -343,12 +390,13 @@ export const localPrTabFromSlug = (slug: string | null): LocalPrTab => {
  */
 export function localPrTabOf(p: PrFacts, now = new Date(), byId?: PrLookup): LocalPrBucket {
   if (p.handover.closedAt != null) return 'Closed'
-  if (isInTransitToHub(p)) return 'Active'
-  /* owner, 2026-09-25: a COMPLETED request never sits under Attention Required — its
-     partial pick / discrepancy flags stay on the row and the detail page, under Closed */
-  if (p.status === 'Completed') return 'Closed'
+  /* collected but on the truck is Active — until it has been out for too long (First Mile Ops 2026-10-07: then it is Exception) */
+  if (isInTransitToHub(p)) return isStuckInTransit(p, now) ? ATTENTION_REQUIRED : 'Active'
+  /* owner, 2026-09-25: a COMPLETED request does not sit under Attention Required for a partial pick (its flag stays on the row and
+     the detail page, under Closed). 2026-10-07: EXCEPT a scan discrepancy at the hub — its handover is still open, so it is not Closed */
+  if (p.status === 'Completed') return hasDiscrepancy(p) ? ATTENTION_REQUIRED : 'Closed'
   if (canReattempt(p) || (byId && reattemptPending(p, byId)) || isPartiallyPicked(p) || hasDiscrepancy(p)
-    || isHeldForReview(p) || isOverduePr(p, now)) return ATTENTION_REQUIRED
+    || isHeldForReview(p) || isOverduePr(p, now) || riskReasons(p, now).length > 0) return ATTENTION_REQUIRED
   if (isOpenPr(p.status)) return 'Active'
   return 'Closed'
 }
