@@ -198,8 +198,8 @@ function PickupRequestsList() {
   /* owner, 2026-09-25: one value per cell, single-line rows — the shared
      pickup grid (prModel.PR_COLUMN_DEFS), same as Grow's Pickup Requests */
   const prGrid = usePrGridColumns({
-    storageKey: 'local-pickup-columns-v3', defaults: PR_DEFAULT_COLUMN_KEYS,
-    ctx: { stores: db.stores, byId },
+    storageKey: 'local-pickup-columns-v4', defaults: PR_DEFAULT_COLUMN_KEYS,
+    ctx: { stores: db.stores, byId, flagsOf: exceptionsOf },
     cells: {
       status: (p) => { const s = statusLabel(p); return <StatusPill label={s.label} tone={s.tone} /> },
       trip: (p) => (p.tripId
@@ -244,7 +244,7 @@ function PickupRequestsList() {
           <IconBtn title="Download filtered rows (CSV)" onClick={exportAll}><Download size={16} /></IconBtn>
         </>}>
         <DateRange start={from} end={to} onStart={(v) => { setFrom(v); setPage(1) }} onEnd={(v) => { setTo(v); setPage(1) }} />
-        <FilterSelect value={status} placeholder="Status" options={STATUS_FILTER_OPTIONS} width={170} onChange={(v) => { setStatus(v); setPage(1) }} />
+        <FilterSelect value={status} placeholder="State" options={STATUS_FILTER_OPTIONS} width={170} onChange={(v) => { setStatus(v); setPage(1) }} />
         <FilterSelect value={merchant} placeholder="Merchant" options={merchants} width={170} onChange={(v) => { setMerchant(v); setPage(1) }} />
         <FunnelFilters defs={moreDefs} values={more} onChange={(k, vals) => { setMore((m) => ({ ...m, [k]: vals })); setPage(1) }} />
         <ClearFilters active={filtersOn} onClick={clearAll} />

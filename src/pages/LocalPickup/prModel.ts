@@ -288,10 +288,11 @@ const cell = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
 
 export function prCsv(prs: GrowPickupRequest[], db: GrowOrdersDb): string {
   const byId = new Map(db.orders.map((o) => [o.id, o]))
-  const head = ['Reference', 'Status', 'Window start', 'Window end', 'Pickup point', 'Pickup address', 'Drops at', 'Merchant',
+  const dup = duplicateIds(db.pickupRequests)
+  const head = ['Reference', 'State', 'Exception', 'Window start', 'Window end', 'Pickup point', 'Pickup address', 'Drops at', 'Merchant',
     'Consignments', 'Weight', 'Type', 'Reserved', 'Source', 'Driver', 'Carrier', 'Trip', 'Attempt', 'Reason']
   const rows = prs.map((p) => [
-    p.number, statusLabel(p).label, p.startAt, p.endAt, pickupPointName(p, db.stores), pickupPointAddress(p, db.stores),
+    p.number, statusLabel(p).label, exceptionOf(p, { dup }).text, p.startAt, p.endAt, pickupPointName(p, db.stores), pickupPointAddress(p, db.stores),
     dropLabel(p, db.stores), merchantOfPr(p, db.stores), consignmentsLabel(p), weightLabel(p, byId),
     p.shipmentType === 'FTL' ? 'FTL' : 'LTL', p.blind ? 'Yes' : 'No', p.source, p.driverName ?? '', p.carrierName ?? '',
     p.tripId ?? '', `${p.attempt}/${p.maxAttempts}`, reasonText(p),
@@ -352,6 +353,11 @@ export const prAttemptLabel = (p: GrowPickupRequest): string =>
 export interface PrColumnCtx {
   stores: StoreLocation[]
   byId: Map<string, GrowOrder>
+  /** the flags beside a request's state (Overdue · Duplicate · Re-attempt …) as THIS page reads them — Grow drops Discrepancy.
+      Absent = `statusTags` with `dup`. Feeds the Exception column. */
+  flagsOf?: (p: GrowPickupRequest) => { label: string; tone: Tone }[]
+  /** the requests that overlap another at one pickup point (`duplicateIds`) */
+  dup?: Set<string>
   /** tags of the contained shipments (optional column) */
   tagsOf?: (p: GrowPickupRequest) => string[]
 }
@@ -378,9 +384,21 @@ export interface PrColumnDef {
  * Reference, Status and Trip. No Exception column (owner, 2026-09-25): the
  * flags live on the outcome-aware Status chip and the detail page.
  */
+/**
+ * The Exception column (owner, 2026-10-07: "show Exception beside State"): WHY a request needs a hand, in words — the failure /
+ * cancel reason, then every flag (Overdue · Discrepancy · Duplicate · Partially picked · Re-attempt …). Empty = nothing wrong.
+ * `danger` is true when one of them is an Overdue / Discrepancy (the cell reads red).
+ */
+export function exceptionOf(p: GrowPickupRequest, c: Pick<PrColumnCtx, 'flagsOf' | 'dup'>): { text: string; danger: boolean } {
+  const flags = c.flagsOf ? c.flagsOf(p) : statusTags(p, c.dup ?? new Set<string>())
+  return { text: [reasonText(p), ...flags.map((f) => f.label)].filter(Boolean).join(' · '), danger: flags.some((f) => f.tone === 'danger') || p.status === 'Pickup Failed' }
+}
+
 export const PR_COLUMN_DEFS: PrColumnDef[] = [
   { key: 'reference', label: 'Reference', width: 110, defaultOn: true, value: (p) => p.number, title: (p) => `${p.number} · request id ${p.id}` },
-  { key: 'status', label: 'Status', width: 150, defaultOn: true, value: (p) => statusLabel(p).label },
+  { key: 'status', label: 'State', width: 150, defaultOn: true, value: (p) => statusLabel(p).label },
+  /* owner, 2026-10-07: beside the state — why it needs a hand (the reason and every flag), empty when nothing is wrong */
+  { key: 'exception', label: 'Exception', width: 200, defaultOn: true, value: (p, c) => exceptionOf(p, c).text },
   { key: 'type', label: 'Type', width: 110, defaultOn: true, value: prTypeLabel },
   { key: 'attempt', label: 'Attempt', width: 76, align: 'right', defaultOn: true, value: prAttemptLabel },
   /* owner, 2026-09-25: start and end are ONE value — the window — not two columns */

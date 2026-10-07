@@ -309,7 +309,7 @@ export default function PickupRequestsPage() {
         </>}>
         <DateRange start={from} end={to} onStart={(v) => reset(() => setFrom(v))} onEnd={(v) => reset(() => setTo(v))} />
         {!eligibleView && (
-          <FilterMultiSelect values={status} placeholder="Status" width={170} options={[...PR_LIST_STATUSES]}
+          <FilterMultiSelect values={status} placeholder="State" width={170} options={[...PR_LIST_STATUSES]}
             onChange={(v) => reset(() => setStatus(v))} />
         )}
         {/* the booking view has only one funnel dimension that applies to shipments */}

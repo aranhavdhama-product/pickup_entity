@@ -16,7 +16,7 @@ import { ColumnChooser } from '../../local/chrome'
 import { useColumnPrefs } from '../../local/columnPrefs'
 import type { GrowPickupRequest } from '../../growOrders/types'
 import {
-  PR_COLUMN_DEFS, PR_COLUMN_KEYS, type PrColumnCtx, type PrColumnDef,
+  PR_COLUMN_DEFS, PR_COLUMN_KEYS, exceptionOf, type PrColumnCtx, type PrColumnDef,
 } from './prModel'
 
 const dash = <span className="text-ink-3">—</span>
@@ -25,6 +25,8 @@ const dash = <span className="text-ink-3">—</span>
 const SHARED_CELLS: Record<string, (p: GrowPickupRequest, c: PrColumnCtx) => ReactNode> = {
   reference: (p) => <span className="font-mono text-[12px] font-bold text-ink">{p.number}</span>,
   trip: (p) => (p.tripId ? <span className="font-mono text-[12px] font-bold text-ink-2">{p.tripId}</span> : dash),
+  /* the Exception column (owner, 2026-10-07): red when it is an Overdue / Discrepancy / failure, else the usual ink */
+  exception: (p, c) => { const e = exceptionOf(p, c); return e.text ? <span className={e.danger ? 'font-bold text-danger-fg' : 'text-ink-2'}>{e.text}</span> : dash },
 }
 
 export type PrCells = Partial<Record<string, (p: GrowPickupRequest, c: PrColumnCtx) => ReactNode>>

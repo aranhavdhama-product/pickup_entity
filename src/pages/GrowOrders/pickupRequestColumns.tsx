@@ -49,10 +49,10 @@ export function usePickupRequestColumns({ allRequests, orders, stores, tagsOf, f
   flagsOf?: (p: GrowPickupRequest) => { label: string; tone: Tone }[]
 }): { columns: Column[]; chooser: ReactNode } {
   const byId = useMemo(() => new Map(orders.map((o) => [o.id, o])), [orders])
-  const ctx: PrColumnCtx = { byId, stores, tagsOf }
+  const ctx: PrColumnCtx = { byId, stores, tagsOf, flagsOf }
   const cells: PrCells = { status: (p) => <PrStatusChip p={p} short flags={flagsOf?.(p)} /> }
   return usePrGridColumns({
-    storageKey: 'grow-pickup-columns-v4', defaults: GROW_DEFAULT_KEYS, ctx, cells, hideEmptyOf: allRequests, defs: MERCHANT_DEFS,
+    storageKey: 'grow-pickup-columns-v5', defaults: GROW_DEFAULT_KEYS, ctx, cells, hideEmptyOf: allRequests, defs: MERCHANT_DEFS,
   })
 }
 
