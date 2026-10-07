@@ -44,7 +44,7 @@ const plusDays = (d: Date, n: number) => {
   return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}`
 }
 
-export function SlotWindowFields({ startAt, endAt, onChange, policy, ok, error, now, calendars, labels, calendarRules = true, minDate, required = true }: {
+export function SlotWindowFields({ startAt, endAt, onChange, policy, ok, error, now, calendars, labels, calendarRules = true, minDate, required = true, timeFields = true }: {
   startAt: string; endAt: string
   onChange: (w: { startAt: string; endAt: string }) => void
   policy: PickupPolicy
@@ -62,6 +62,12 @@ export function SlotWindowFields({ startAt, endAt, onChange, policy, ok, error, 
   minDate?: string
   /** additive (2026-10-06): false = an optional window (the Grow form's manual pickup) — no * on the three fields */
   required?: boolean
+  /**
+   * false (owner, 2026-10-07: "remove Start time and End time from the pickup request form"): only the pickup DATE is asked.
+   * The window is that day's earliest bookable slot of the account's slot definitions — read back on one line under the
+   * date — so every pickup request form (Schedule pickup, Create / blind pickup, Reschedule, Split) is one field.
+   */
+  timeFields?: boolean
 }) {
   const L = { date: labels?.date ?? 'Pickup date', start: labels?.start ?? 'Start time', end: labels?.end ?? 'End time' }
   const cals = calendarRules ? (calendars?.length ? calendars : [policy]) : []
@@ -102,7 +108,7 @@ export function SlotWindowFields({ startAt, endAt, onChange, policy, ok, error, 
     if (!d) return
     setMoved(null)
     /* the same times on the new day when they still pass, else that day's earliest slot */
-    const same = startTime && endTime ? { startAt: `${d}T${startTime}`, endAt: `${d}T${endTime}` } : null
+    const same = timeFields && startTime && endTime ? { startAt: `${d}T${startTime}`, endAt: `${d}T${endTime}` } : null
     if (free) { onChange(same ?? { startAt: `${d}T09:00`, endAt: `${d}T18:00` }); return }
     const next = same && ok(same) ? same : bookableSlotsOn(d, policy, ok)[0]
     if (next) onChange({ startAt: next.startAt, endAt: next.endAt })
@@ -114,19 +120,24 @@ export function SlotWindowFields({ startAt, endAt, onChange, policy, ok, error, 
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="grid grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)] items-end gap-3">
+      <div className={`grid items-end gap-3 ${timeFields ? 'grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)]' : 'grid-cols-1'}`}>
         <Field label={L.date} required={required}>
           <DateInput value={date} onChange={pickDay} placeholder="Select date" clearable={false}
             min={days[0]} max={days[days.length - 1]} isDisabled={(d) => !allowed.has(d)}
             dayTitle={(d) => { const h = holidayName(d); return h ? `Holiday · ${h}` : undefined }} />
         </Field>
-        <Field label={L.start} required={required}>
-          <Input type="time" value={startTime} disabled={!date} onChange={setStartTime} />
-        </Field>
-        <Field label={L.end} required={required}>
-          <Input type="time" value={endTime} disabled={!date} onChange={setEndTime} />
-        </Field>
+        {timeFields && (
+          <Field label={L.start} required={required}>
+            <Input type="time" value={startTime} disabled={!date} onChange={setStartTime} />
+          </Field>
+        )}
+        {timeFields && (
+          <Field label={L.end} required={required}>
+            <Input type="time" value={endTime} disabled={!date} onChange={setEndTime} />
+          </Field>
+        )}
       </div>
+      {!timeFields && date && startTime && endTime && <p className="-mt-1 text-[12px] text-ink-3">Pickup window {startTime}–{endTime}</p>}
       {captions.map((c) => <p key={c} className="-mt-1 text-[12px] text-ink-3">{c}</p>)}
       {moved && <p className="text-[12px] text-warning-fg">{moved}</p>}
       {free && startTime && endTime && endTime <= startTime && <p className="text-[12px] text-danger-fg">End time must be after the start time.</p>}

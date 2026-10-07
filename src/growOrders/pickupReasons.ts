@@ -38,6 +38,8 @@ export const CANCEL_REASONS: readonly ReasonOption[] = [
   { code: 'MERCHANT_REQUEST', label: 'Merchant request' },
   { code: 'DUPLICATE_BOOKING', label: 'Duplicate booking' },
   { code: 'ORDER_CANCELLED', label: 'Order cancelled' },
+  /* closed by the end-of-day job: a roster request nobody assigned (Pickup Schedules) */
+  { code: 'NOT_ASSIGNED', label: 'Not assigned by the end of the day' },
   { code: 'OTHER', label: 'Other' },
 ]
 

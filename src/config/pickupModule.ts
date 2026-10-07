@@ -24,6 +24,12 @@ export interface PickupModuleConfig {
   manualPickup: ManualPickupConfig
   autoCreateOnConsignment: 'off' | 'always'   // derived: mode === 'auto' ? 'always' : 'off'
   scanMode: 'driver' | 'hub' | 'both'    // default 'both'
+  /**
+   * Pickup manifest required (owner, 2026-10-07): ON (default) = a collected request stays open until its parcels
+   * are scanned into the manifest (`scanMode` says who scans) and the handover reconciles; OFF = the request closes
+   * the moment the pickup completes — no scanning, no handover to reconcile.
+   */
+  manifestRequired: boolean              // default true
   maxAttempts: number                    // default 3
   allowAddToExistingUntil: 'Requested' | 'Planned' | 'Assigned'   // default 'Planned'
   rescheduleWindowDays: number           // default 7
@@ -136,6 +142,7 @@ export const DEFAULT_PICKUP_MODULE_CONFIG: PickupModuleConfig = Object.freeze({
   manualPickup: DEFAULT_MANUAL_PICKUP,
   autoCreateOnConsignment: 'off',
   scanMode: 'both',
+  manifestRequired: true,
   maxAttempts: 3,
   allowAddToExistingUntil: 'Planned',
   rescheduleWindowDays: 7,
@@ -245,6 +252,7 @@ function normalize(raw: unknown): PickupModuleConfig {
     },
     autoCreateOnConsignment: mode === 'auto' ? 'always' : 'off',
     scanMode: oneOf(o.scanMode, ['driver', 'hub', 'both'] as const, d.scanMode),
+    manifestRequired: typeof o.manifestRequired === 'boolean' ? o.manifestRequired : d.manifestRequired,
     maxAttempts: int(o.maxAttempts, d.maxAttempts, 1, 5),
     allowAddToExistingUntil: oneOf(o.allowAddToExistingUntil, STAGES, d.allowAddToExistingUntil),
     rescheduleWindowDays: int(o.rescheduleWindowDays, d.rescheduleWindowDays, 0, 365),

@@ -43,6 +43,7 @@ import InboundDamage from './pages/InboundDamage'
 import ComingSoon from './pages/ComingSoon'
 
 import LocalPickup from './pages/LocalPickup'
+import LocalPickupSchedules from './pages/LocalPickup/SchedulesPage'
 import LocalControlTower from './pages/LocalControlTower'
 import LocalTripDetail from './pages/LocalControlTower/TripDetail'
 import LocalInbound from './pages/LocalInbound'
@@ -140,6 +141,7 @@ export default function AppRoutes() {
         <Route path="/local/consignments/:id" element={<LocalConsignments />} />
         {/* first-mile pickup: requests → trips (Control Tower) → handover (Inbound) */}
         <Route path="/local/pickup" element={<LocalPickup />} />
+        <Route path="/local/pickup/schedules" element={<LocalPickupSchedules />} />
         {/* the list with a request's drawer over it (same element — the list stays mounted) */}
         <Route path="/local/pickup/view/:prId" element={<LocalPickup />} />
         {/* the request = a slide-over over the list (owner, 2026-09-25) */}

@@ -167,7 +167,7 @@ export function WindowFields({ startAt, endAt, onChange, policy, rule, startErro
   const span = windowSpan(startAt, endAt)
   return (
     <div className="flex flex-col gap-2">
-      <SlotWindowFields startAt={startAt} endAt={endAt} onChange={onChange} policy={policy} ok={ok}
+      <SlotWindowFields timeFields={false} startAt={startAt} endAt={endAt} onChange={onChange} policy={policy} ok={ok}
         calendars={calendars} error={startAt ? startError : null} />
       {span.duration && (
         <p className="text-[12px] text-ink-3">

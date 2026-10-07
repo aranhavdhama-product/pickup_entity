@@ -1,51 +1,53 @@
 /**
  * LOCAL app → Settings → Pickup module (`/local/settings/pickup`).
  *
- * Owner (2026-10-05, "simplify the pickups setting, current one feels confusing"): the page reads
- * in the order a person decides —
- * 1) the switch in the header (Pickups on / off; off = a one-line summary and nothing else);
- * 2) a live SUMMARY in plain sentences, built from the settings as they stand on the page
- *    (`pickupSummary.ts`); 3) Who books pickups (Manual | Automatic); 4) ONLY that mode's card —
- *    Automatic: Book the pickup when · Shipper chooses the pickup time · More options (Shipper
- *    confirms the time); Manual: Book a pickup before its consignments exist; 5) Booking rules,
- *    shared (Book up to N days ahead · Same-day cut-off · More options: Pickup days + Holiday
- *    master); 6) When a pickup fails → Reason Policy. Every hint is ONE line under 90 characters
- *    that says what happens; a "More options" group opens by itself when one of its settings is
- *    not at its default. Sticky footer: Cancel (revert to saved) · Save + "Unsaved changes".
- * Every stored key and its mapping is unchanged (defaults from `src/config/pickupModule`); keys
- * not on this page (the auto date rule, slot, pickup days …) keep their stored value and stay
- * editable on the console's Base Modules → Pickup Request page on the same mirror — the summary
- * and the "Shipper chooses the pickup time" hint SAY what that stored rule does.
+ * Owner (2026-10-07, "simplify the settings — pickup manifest required, automatic pickup request creation based on
+ * status … all the flows in pickup, end to end, in a simplified form"): the page follows the pickup's own life, in
+ * four numbered cards that match the four steps of the strip at the top —
  *
- * ModuleDetail itself is NOT imported: it pulls settingsApi → the staging proxy, and
- * nothing in the local app may reach the staging proxy or the auth module.
+ *   1 Create    — who creates a request: Manual | Automatic (+ "when the consignment is" Created · Label Generated ·
+ *                 Ready To Ship, + does the shipper choose the time; Manual: may a pickup be booked before its
+ *                 consignments exist). The exact FarEye event stays one line away under More options.
+ *   2 Book      — Book up to N days ahead · Same-day cut-off (+ Pickup days, Holiday master under More).
+ *   3 Pick up   — Pickup manifest required (OFF = a completed pickup closes at once) · who scans · proof of pickup
+ *                 (signature; photo, one-time code and parcels not on the request under More).
+ *   4 If it goes wrong — try again automatically · the Reason Policy (+ until when merchants may change or cancel,
+ *                 until when consignments may be added, under More).
+ *
+ * The strip above the cards is the live summary: each step's caption is built from the settings AS THEY STAND on the
+ * page. Switch in the header (off = the strip and nothing else). Sticky footer: Cancel (revert) · Save. Every stored
+ * key keeps its meaning (`src/config/pickupModule`); keys not on this page (the auto date rule, slots, merchant
+ * overrides …) keep their value and stay editable on the console's Base Modules → Pickup Request twin.
+ *
+ * ModuleDetail itself is NOT imported: it pulls settingsApi → the staging proxy, and nothing in the local app may
+ * reach the staging proxy or the auth module.
  */
 import { useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { CalendarClock, Check, ExternalLink, Hand, Info, RotateCcw, Workflow, Zap } from 'lucide-react'
+import { CalendarClock, ChevronRight, ClipboardCheck, ExternalLink, Play, RotateCcw, Workflow } from 'lucide-react'
 import { Button, Input, MenuSelect, PageHeader, Toggle } from '../../nueva/components'
 import { toast } from '../../nueva/toast'
 import {
-  DEFAULT_PICKUP_MODULE_CONFIG, PICKUP_DAYS_SOURCES, usePickupModuleConfig, writePickupModuleConfig,
-  type PickupDaysSource, type PickupMode, type PickupModuleConfig,
+  AUTO_AFTER_STATES, DEFAULT_PICKUP_MODULE_CONFIG, PICKUP_DAYS_SOURCES, usePickupModuleConfig, writePickupModuleConfig,
+  type AutoPickupAfterState, type PickupDaysSource, type PickupMode, type PickupModuleConfig, type PodLevel,
 } from '../../config/pickupModule'
-import { AUTO_PICKUP_TRIGGER_CODES } from '../../growOrders/fareyeEvents'
+import { AUTO_PICKUP_TRIGGER_CODES, EVENT_AFTER_STATE, LEGACY_AFTER_STATE_EVENT } from '../../growOrders/fareyeEvents'
 import { MoreOptions } from './settingsRows'
-import { DAYS_SOURCE_HINT, askWindowHint, pickupSummary, triggerHint, triggerOptionLabel } from './pickupSummary'
+import { useSchedules } from '../../growOrders/scheduleModel'
+import { DAYS_SOURCE_HINT, askWindowHint, triggerHint, triggerOptionLabel } from './pickupSummary'
 
 /* ---------- layout pieces (ONE row grammar on the whole page) ---------- */
 
-/** A settings section: an icon tile (warm-100 with a brand icon) beside a 15px bold title and its
- *  12px caption (+ an optional action on the right), a divider, then the rows. */
-function Card({ title, caption, icon, action, children }: {
-  title: string; caption?: string; icon?: ReactNode; action?: ReactNode; children?: ReactNode
+/** A numbered step card: a number tile beside a 15px bold title and its 12px caption, a divider, then the rows. */
+function Card({ n, title, caption, icon, action, children }: {
+  n: number; title: string; caption?: string; icon: ReactNode; action?: ReactNode; children?: ReactNode
 }) {
   return (
-    <section className="rounded-xl border border-line bg-surface px-5 shadow-ds-1">
+    <section className="rounded-xl border border-line bg-surface px-5 shadow-ds-1" aria-label={`Step ${n}: ${title}`}>
       <div className="flex items-center gap-3 py-4">
-        {icon && <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-warm-100 text-brand-500">{icon}</span>}
+        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-warm-100 text-brand-500">{icon}</span>
         <div className="min-w-0 flex-1">
-          <div className="text-[15px] font-bold leading-tight text-ink">{title}</div>
+          <div className="text-[15px] font-bold leading-tight text-ink"><span className="mr-1.5 text-ink-3">{n}</span>{title}</div>
           {caption && <p className="mt-0.5 text-[12px] text-ink-3">{caption}</p>}
         </div>
         {action && <div className="shrink-0">{action}</div>}
@@ -80,42 +82,66 @@ function ToggleField({ checked, onChange, label, on = 'On', off = 'Off' }: {
   )
 }
 
-/* which calendar the bookable pickup days follow (growOrders/operatingCalendar.ts) */
+/** A two- or three-way choice at input height — the chosen one border-ink + warm-50 (the form builder's segmented control). */
+function Seg<T extends string>({ value, options, onChange, label }: {
+  value: T; options: { value: T; label: string }[]; onChange: (v: T) => void; label: string
+}) {
+  return (
+    <div role="radiogroup" aria-label={label} className="inline-flex h-8 shrink-0 gap-0.5 rounded-md border border-line bg-surface p-0.5">
+      {options.map((o) => (
+        <button key={o.value} type="button" role="radio" aria-checked={value === o.value} onClick={() => onChange(o.value)}
+          className={`inline-flex h-full items-center whitespace-nowrap rounded border px-3 text-[12px] transition-colors
+            ${value === o.value ? 'border-ink bg-warm-50 font-bold text-ink' : 'border-transparent text-ink-2 hover:bg-warm-50 hover:text-ink'}`}>
+          {o.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/** The pickup's life in four steps — each caption is built from the settings as they stand on the page. */
+function FlowStrip({ steps }: { steps: { title: string; caption: string }[] }) {
+  return (
+    <section className="rounded-xl border border-line bg-surface px-5 py-4 shadow-ds-1" aria-label="How a pickup flows">
+      <ol className="grid grid-cols-1 gap-3 sm:grid-cols-4 sm:gap-0">
+        {steps.map((s, i) => (
+          <li key={s.title} className="flex min-w-0 items-start gap-3 sm:pr-3">
+            <span className="mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ink text-[12px] font-bold text-white">{i + 1}</span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13px] font-bold text-ink">{s.title}</span>
+              <span className="mt-0.5 block text-[12px] leading-snug text-ink-3">{s.caption}</span>
+            </span>
+            {i < steps.length - 1 && <ChevronRight size={16} className="mt-1 hidden shrink-0 text-warm-300 sm:block" aria-hidden />}
+          </li>
+        ))}
+      </ol>
+    </section>
+  )
+}
+
+/* ---------- choices, in plain words ---------- */
+
 const DAYS_SOURCE_LABEL: Record<PickupDaysSource, string> = {
   'merchant-then-hub': 'Pickup address and hub',
   hub: 'Hub only',
 }
-
-/** Who books pickups — two equal cards, one selected. */
-function ModeCards({ value, onChange }: { value: PickupMode; onChange: (m: PickupMode) => void }) {
-  const cards: { code: PickupMode; icon: ReactNode; title: string; desc: string }[] = [
-    { code: 'manual', icon: <Hand size={18} />, title: 'Manual',
-      desc: 'Merchants and ops book each pickup themselves.' },
-    { code: 'auto', icon: <Zap size={18} />, title: 'Automatic',
-      desc: 'A pickup is booked for you as soon as a consignment is ready.' },
-  ]
-  return (
-    <div className="grid grid-cols-1 gap-3 py-5 sm:grid-cols-2" role="radiogroup" aria-label="Who books pickups">
-      {cards.map((c) => {
-        const on = c.code === value
-        return (
-          <button key={c.code} type="button" role="radio" aria-checked={on} onClick={() => onChange(c.code)}
-            className={`flex h-full flex-col gap-2 rounded-md border px-4 py-3.5 text-left transition-colors ${
-              on ? 'border-ink bg-warm-50' : 'border-line bg-surface hover:border-warm-300 hover:shadow-ds-1'}`}>
-            <span className="flex items-center gap-3">
-              <span className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-warm-100 ${on ? 'text-brand-500' : 'text-ink-2'}`}>{c.icon}</span>
-              <span className="min-w-0 flex-1 text-[15px] font-bold text-ink">{c.title}</span>
-              {on
-                ? <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-ink text-white" aria-hidden><Check size={11} strokeWidth={3} /></span>
-                : <span className="h-4 w-4 shrink-0 rounded-full border border-warm-300" aria-hidden />}
-            </span>
-            <span className="text-[12px] text-ink-3">{c.desc}</span>
-          </button>
-        )
-      })}
-    </div>
-  )
+const STATE_HINT: Record<AutoPickupAfterState, string> = {
+  Created: 'As soon as the consignment exists (not a draft, not cancelled).',
+  'Label Generated': 'Once the consignment is paid and its label is generated.',
+  'Ready To Ship': 'Once it is paid, has no errors and is marked Ready To Ship.',
 }
+const SCAN_LABEL: Record<PickupModuleConfig['scanMode'], string> = {
+  driver: 'The driver, at pickup', hub: 'The hub, on arrival', both: 'Both — they must match',
+}
+const SCAN_HINT: Record<PickupModuleConfig['scanMode'], string> = {
+  driver: "The driver's scan is the manifest; the hub does not need to match it.",
+  hub: 'Nothing is scanned at pickup; the hub counts the parcels on arrival.',
+  both: 'The driver scans at pickup, the hub scans on arrival; the request closes when they match.',
+}
+const POD_LABEL: Record<PodLevel, string> = { required: 'Required', optional: 'Optional', off: 'Off' }
+const OVERAGE_LABEL: Record<PickupModuleConfig['overagePolicy'], string> = { hold: 'Hold for review', 'auto-create': 'Create an order', reject: 'Reject' }
+const STAGE_LABEL: Record<PickupModuleConfig['merchantCancelUntil'], string> = { Requested: 'It is requested', Planned: 'It is planned', Assigned: 'A driver is assigned' }
+const STAGES = ['Requested', 'Planned', 'Assigned'] as const
 
 /* ---------- page ---------- */
 
@@ -126,29 +152,42 @@ interface Draft {
   bookingHorizonDays: string
   sameDayCutoff: string
   pickupDaysSource: PickupDaysSource
+  manifestRequired: boolean; scanMode: PickupModuleConfig['scanMode']
+  signature: PodLevel; photo: PodLevel; otp: boolean; overagePolicy: PickupModuleConfig['overagePolicy']
+  autoRescheduleOnFail: boolean
+  merchantCancelUntil: PickupModuleConfig['merchantCancelUntil']; allowAddToExistingUntil: PickupModuleConfig['allowAddToExistingUntil']
 }
-type DraftSource = Pick<PickupModuleConfig, 'enabled' | 'mode' | 'autoPickup' | 'manualPickup' | 'bookingHorizonDays' | 'sameDayCutoff' | 'pickupDaysSource'>
-const draftOf = (c: DraftSource): Draft =>
-  ({ enabled: c.enabled, mode: c.mode, triggerEvent: c.autoPickup.triggerEvent, slotConfirmation: c.autoPickup.slotConfirmation,
-    blindAllowed: c.manualPickup.blindAllowed, userSelectsWindow: c.autoPickup.userSelectsWindow,
-    bookingHorizonDays: String(c.bookingHorizonDays), sameDayCutoff: c.sameDayCutoff, pickupDaysSource: c.pickupDaysSource })
+const draftOf = (c: PickupModuleConfig): Draft => ({
+  enabled: c.enabled, mode: c.mode, triggerEvent: c.autoPickup.triggerEvent, slotConfirmation: c.autoPickup.slotConfirmation,
+  blindAllowed: c.manualPickup.blindAllowed, userSelectsWindow: c.autoPickup.userSelectsWindow,
+  bookingHorizonDays: String(c.bookingHorizonDays), sameDayCutoff: c.sameDayCutoff, pickupDaysSource: c.pickupDaysSource,
+  manifestRequired: c.manifestRequired, scanMode: c.scanMode,
+  signature: c.podRequirements.signature, photo: c.podRequirements.photo, otp: c.podRequirements.otp, overagePolicy: c.overagePolicy,
+  autoRescheduleOnFail: c.autoRescheduleOnFail,
+  merchantCancelUntil: c.merchantCancelUntil, allowAddToExistingUntil: c.allowAddToExistingUntil,
+})
 const horizonOf = (v: string, fallback: number) => {
   const n = Number(v)
   return v.trim() !== '' && Number.isFinite(n) ? Math.min(30, Math.max(1, Math.round(n))) : fallback
 }
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/
 /** the values a Draft would save, for dirty / default comparisons */
-const savedOf = (d: Draft, base: DraftSource) => ({
+const savedOf = (d: Draft, base: PickupModuleConfig) => ({
   ...d, bookingHorizonDays: horizonOf(d.bookingHorizonDays, base.bookingHorizonDays),
   sameDayCutoff: HHMM.test(d.sameDayCutoff) ? d.sameDayCutoff : base.sameDayCutoff,
 })
-const sameDraft = (d: Draft, c: DraftSource) => {
+const sameDraft = (d: Draft, c: PickupModuleConfig) => {
   const a = savedOf(d, c), b = savedOf(draftOf(c), c)
   return (Object.keys(a) as (keyof Draft)[]).every((k) => a[k] === b[k])
 }
+/** the consignment state an event stands for (an event that is not one of the three reads as Ready To Ship) */
+const stateOfEvent = (e: string): AutoPickupAfterState => EVENT_AFTER_STATE[e] ?? 'Ready To Ship'
+const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
+
 export default function PickupSettings() {
   const navigate = useNavigate()
   const stored = usePickupModuleConfig()
+  const schedules = useSchedules().schedules
   const [draft, setDraft] = useState<Draft>(() => draftOf(stored))
 
   const set = (p: Partial<Draft>) => setDraft((d) => ({ ...d, ...p }))
@@ -161,7 +200,10 @@ export default function PickupSettings() {
       autoPickup: { ...stored.autoPickup, triggerEvent: v.triggerEvent, slotConfirmation: v.slotConfirmation, userSelectsWindow: v.userSelectsWindow },
       manualPickup: { ...stored.manualPickup, blindAllowed: v.blindAllowed },
       /* shared by both modes — top-level (autoPickup.maxDaysAhead is derived from it) */
-      bookingHorizonDays: v.bookingHorizonDays, sameDayCutoff: v.sameDayCutoff, pickupDaysSource: v.pickupDaysSource })
+      bookingHorizonDays: v.bookingHorizonDays, sameDayCutoff: v.sameDayCutoff, pickupDaysSource: v.pickupDaysSource,
+      manifestRequired: v.manifestRequired, scanMode: v.scanMode,
+      podRequirements: { signature: v.signature, photo: v.photo, otp: v.otp }, overagePolicy: v.overagePolicy,
+      autoRescheduleOnFail: v.autoRescheduleOnFail, merchantCancelUntil: v.merchantCancelUntil, allowAddToExistingUntil: v.allowAddToExistingUntil })
     set({ bookingHorizonDays: String(v.bookingHorizonDays), sameDayCutoff: v.sameDayCutoff })   // show the clamped values
     toast.success('Pickup settings saved')
   }
@@ -169,67 +211,75 @@ export default function PickupSettings() {
   const cancel = () => setDraft(draftOf(stored))
   const auto = draft.mode === 'auto'
 
-  /* the summary and the window hint read the values this draft WOULD save, plus the stored auto date rule */
   const would = savedOf(draft, stored)
+  const state = stateOfEvent(draft.triggerEvent)
   const facts = { ...would, dateRule: stored.autoPickup.dateRule, daysAfterOrder: stored.autoPickup.daysAfterOrder,
     slot: stored.autoPickup.slot || stored.slotDefinitions[0] || '' }
+  const proof = [draft.signature !== 'off' && `signature ${POD_LABEL[draft.signature].toLowerCase()}`,
+    draft.photo !== 'off' && `photo ${POD_LABEL[draft.photo].toLowerCase()}`, draft.otp && 'code'].filter(Boolean)
+  const flow = [
+    { title: 'Create', caption: auto ? `Automatic — when a consignment is ${state}` : `Manual — merchants and ops book${draft.blindAllowed ? ', even before consignments exist' : ''}` },
+    { title: 'Book', caption: `Up to ${plural(would.bookingHorizonDays, 'day')} ahead; same-day until ${would.sameDayCutoff}` },
+    { title: 'Pick up', caption: draft.manifestRequired
+      ? `Manifest: ${SCAN_LABEL[draft.scanMode].toLowerCase()}${proof.length ? ` · proof: ${proof.join(', ')}` : ''}`
+      : `No manifest — it closes when picked up${proof.length ? ` · proof: ${proof.join(', ')}` : ''}` },
+    { title: 'If it goes wrong', caption: `${draft.autoRescheduleOnFail ? 'Tries again automatically; ' : ''}the Reason Policy decides` },
+  ]
 
   return (
     <div className="flex min-h-full flex-col">
       <div className="flex-1 p-6">
-        {/* 1 — the switch lives in the page header; off shows the summary and nothing else */}
         <div className="max-w-[880px]">
-          <PageHeader title="Pickup module" subtitle="Choose who books pickups and the rules they follow"
+          <PageHeader title="Pickup module" subtitle="From the first request to a closed pickup — each step in order"
             onBack={() => navigate('/local/settings')}
             right={<ToggleField checked={draft.enabled} onChange={(on) => set({ enabled: on })}
               label="Turn pickups on" on="Pickups on" off="Pickups off" />} />
         </div>
         <div className="flex max-w-[880px] flex-col gap-6">
-          {/* 2 — what the settings below add up to, in plain sentences (live: follows the draft) */}
-          <section className="flex items-start gap-3 rounded-xl border border-line bg-surface px-5 py-4 shadow-ds-1">
-            <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-warm-100 text-brand-500"><Info size={16} /></span>
-            <div className="min-w-0">
-              <div className="text-[15px] font-bold leading-9 text-ink">Summary</div>
-              <p className="text-[13px] leading-relaxed text-ink-2" role="status" aria-live="polite">{pickupSummary(facts).join(' ')}</p>
-            </div>
-          </section>
+          {draft.enabled ? (<>
+            <FlowStrip steps={flow} />
 
-          {draft.enabled && (<>
-            {/* 3 — who books pickups */}
-            <Card icon={<Workflow size={16} />} title="Who books pickups" caption="Choose one for the whole account.">
-              <ModeCards value={draft.mode} onChange={(m) => set({ mode: m })} />
-            </Card>
-
-            {/* 4 — the chosen mode's own options (nothing from the other mode) */}
-            {auto ? (
-              <Card icon={<Zap size={16} />} title="Automatic pickups"
-                caption="Schedule Pickup and the Pickup page are hidden; requests appear in Pending for Planning.">
-                <Row label="Book the pickup when" hint={triggerHint(draft.triggerEvent)}>
+            {/* 1 — who creates a request */}
+            <Card n={1} icon={<Workflow size={16} />} title="Create the pickup request"
+              caption={auto ? 'Schedule Pickup and the Pickup page are hidden; requests appear in Pending for Planning.'
+                : 'Merchants book from Grow, ops from Consignments and the Pickup page.'}>
+              <Row label="Who creates it" hint={auto ? 'A request is created for you as soon as a consignment is ready.' : 'Merchants and ops book each pickup themselves.'}>
+                <Seg<PickupMode> label="Who creates pickup requests" value={draft.mode} onChange={(m) => set({ mode: m })}
+                  options={[{ value: 'manual', label: 'Manual' }, { value: 'auto', label: 'Automatic' }]} />
+              </Row>
+              <Row label="Scheduled pickups (rosters)" hint={`A merchant location collected on set days, with or without orders — ${schedules.filter((s) => s.status === 'Active').length} active.`}>
+                <Button variant="outline" icon={<CalendarClock size={13} />} onClick={() => navigate('/local/pickup/schedules')}>Schedules ({schedules.length})</Button>
+              </Row>
+              {auto ? (<>
+                <Row label="Create it when the consignment is" hint={STATE_HINT[state]}>
                   <div className="w-full">
-                    <MenuSelect value={draft.triggerEvent} options={AUTO_PICKUP_TRIGGER_CODES} labels={triggerOptionLabel}
-                      onChange={(e) => set({ triggerEvent: e })} />
+                    <MenuSelect value={state} options={[...AUTO_AFTER_STATES]}
+                      onChange={(s) => set({ triggerEvent: LEGACY_AFTER_STATE_EVENT[s] })} />
                   </div>
                 </Row>
                 <Row label="Shipper chooses the pickup time" hint={askWindowHint(facts)}>
                   <ToggleField checked={draft.userSelectsWindow} onChange={(on) => set({ userSelectsWindow: on })} label="Shipper chooses the pickup time" />
                 </Row>
-                <MoreOptions defaultOpen={draft.slotConfirmation}>
+                <MoreOptions defaultOpen={draft.slotConfirmation || !EVENT_AFTER_STATE[draft.triggerEvent]}>
                   <Row label="Shipper confirms the time" hint="Ops can plan the pickup only after the shipper confirms its time.">
                     <ToggleField checked={draft.slotConfirmation} onChange={(on) => set({ slotConfirmation: on })} label="Shipper confirms the time" />
                   </Row>
+                  <Row label="Exact event" hint={triggerHint(draft.triggerEvent)}>
+                    <div className="w-full">
+                      <MenuSelect value={draft.triggerEvent} options={AUTO_PICKUP_TRIGGER_CODES} labels={triggerOptionLabel}
+                        onChange={(e) => set({ triggerEvent: e })} />
+                    </div>
+                  </Row>
                 </MoreOptions>
-              </Card>
-            ) : (
-              <Card icon={<Hand size={16} />} title="Manual pickups"
-                caption="Merchants book from Grow, ops from Consignments and the Pickup page.">
-                <Row label="Book a pickup before its consignments exist" hint="Adds Create Pickup (Add in Grow). These show as LTL blind / FTL blind.">
-                  <ToggleField checked={draft.blindAllowed} onChange={(on) => set({ blindAllowed: on })} label="Book a pickup before its consignments exist" />
+              </>) : (
+                <Row label="Book before its consignments exist" hint="Adds Create Pickup (Add in Grow). These show as LTL blind / FTL blind.">
+                  <ToggleField checked={draft.blindAllowed} onChange={(on) => set({ blindAllowed: on })} label="Book before its consignments exist" />
                 </Row>
-              </Card>
-            )}
+              )}
+            </Card>
 
-            {/* 5 — booking rules, shared by both modes (each row once) */}
-            <Card icon={<CalendarClock size={16} />} title="Booking rules"
+            {/* 2 — booking rules, shared by both ways of creating (each row once) */}
+            <Card n={2} icon={<CalendarClock size={16} />} title="Book the time"
               caption={auto ? 'Apply when a shipper picks a time or ops change one.' : 'Apply whenever someone books, reschedules or splits a pickup.'}>
               <Row label="Book up to" hint="Counted from today. Choose 1 to 30 days.">
                 <div className="flex items-center gap-2">
@@ -256,16 +306,87 @@ export default function PickupSettings() {
               </MoreOptions>
             </Card>
 
-            {/* 6 — after a failed pickup: the Reason Policy decides; `maxAttempts` stays the fallback */}
-            <Card icon={<RotateCcw size={16} />} title="When a pickup fails"
-              caption="Each failure reason decides: re-attempt, hold for review or cancel."
+            {/* 3 — the pickup itself: the manifest and the proof */}
+            <Card n={3} icon={<ClipboardCheck size={16} />} title="Pick up and hand over"
+              caption="What the driver collects, and what must match before the request closes.">
+              <Row label="Pickup manifest required" hint={draft.manifestRequired
+                ? 'Parcels are scanned into a manifest; the request closes when it matches.'
+                : 'No manifest — the request closes the moment the pickup is completed.'}>
+                <ToggleField checked={draft.manifestRequired} onChange={(on) => set({ manifestRequired: on })} label="Pickup manifest required" on="Required" off="Not required" />
+              </Row>
+              {draft.manifestRequired && (
+                <Row label="Who scans the parcels" hint={SCAN_HINT[draft.scanMode]}>
+                  <div className="w-full">
+                    <MenuSelect value={draft.scanMode} options={['both', 'driver', 'hub']}
+                      labels={(m) => SCAN_LABEL[m as PickupModuleConfig['scanMode']] ?? m}
+                      onChange={(m) => set({ scanMode: m as PickupModuleConfig['scanMode'] })} />
+                  </div>
+                </Row>
+              )}
+              <Row label="Proof of pickup — signature" hint="The shipper signs on the driver's phone.">
+                <div className="w-full">
+                  <MenuSelect value={draft.signature} options={['required', 'optional', 'off']} labels={(p) => POD_LABEL[p as PodLevel] ?? p}
+                    onChange={(p) => set({ signature: p as PodLevel })} />
+                </div>
+              </Row>
+              <MoreOptions defaultOpen={draft.photo !== 'optional' || draft.otp || draft.overagePolicy !== 'hold'}>
+                <Row label="Proof of pickup — photo" hint="A photo of the collected parcels.">
+                  <div className="w-full">
+                    <MenuSelect value={draft.photo} options={['required', 'optional', 'off']} labels={(p) => POD_LABEL[p as PodLevel] ?? p}
+                      onChange={(p) => set({ photo: p as PodLevel })} />
+                  </div>
+                </Row>
+                <Row label="Proof of pickup — one-time code" hint="The shipper confirms the pickup with a code.">
+                  <ToggleField checked={draft.otp} onChange={(on) => set({ otp: on })} label="One-time code" />
+                </Row>
+                <Row label="Parcels not on the request" hint="What happens to a parcel the driver scans that was never booked.">
+                  <div className="w-full">
+                    <MenuSelect value={draft.overagePolicy} options={['hold', 'auto-create', 'reject']}
+                      labels={(p) => OVERAGE_LABEL[p as PickupModuleConfig['overagePolicy']] ?? p}
+                      onChange={(p) => set({ overagePolicy: p as PickupModuleConfig['overagePolicy'] })} />
+                  </div>
+                </Row>
+              </MoreOptions>
+            </Card>
+
+            {/* 4 — after a failed pickup: the Reason Policy decides; `maxAttempts` stays the fallback */}
+            <Card n={4} icon={<RotateCcw size={16} />} title="If a pickup goes wrong"
+              caption="Each failure reason decides: try again, hold for review or cancel."
               action={
                 <Button variant="outline" icon={<ExternalLink size={13} />}
                   onClick={() => navigate('/local/settings/masters/service_order/reason-master?tab=reason-policy')}>
                   Reason Policy
                 </Button>
-              } />
-          </>)}
+              }>
+              <Row label="Try again automatically" hint="After a failed pickup, a new request is made for the next pickup day.">
+                <ToggleField checked={draft.autoRescheduleOnFail} onChange={(on) => set({ autoRescheduleOnFail: on })} label="Try again automatically" />
+              </Row>
+              <MoreOptions defaultOpen={draft.merchantCancelUntil !== DEFAULT_PICKUP_MODULE_CONFIG.merchantCancelUntil || draft.allowAddToExistingUntil !== DEFAULT_PICKUP_MODULE_CONFIG.allowAddToExistingUntil}>
+                <Row label="Merchants can change or cancel until" hint="After this, only ops can reschedule, cancel or split the pickup.">
+                  <div className="w-full">
+                    <MenuSelect value={draft.merchantCancelUntil} options={[...STAGES]} labels={(s) => STAGE_LABEL[s as typeof STAGES[number]] ?? s}
+                      onChange={(s) => set({ merchantCancelUntil: s as typeof STAGES[number] })} />
+                  </div>
+                </Row>
+                <Row label="Consignments can be added until" hint="After this, a new consignment needs a new pickup request.">
+                  <div className="w-full">
+                    <MenuSelect value={draft.allowAddToExistingUntil} options={[...STAGES]} labels={(s) => STAGE_LABEL[s as typeof STAGES[number]] ?? s}
+                      onChange={(s) => set({ allowAddToExistingUntil: s as typeof STAGES[number] })} />
+                  </div>
+                </Row>
+              </MoreOptions>
+            </Card>
+          </>) : (
+            <section className="flex items-start gap-3 rounded-xl border border-line bg-surface px-5 py-4 shadow-ds-1">
+              <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-warm-100 text-brand-500"><Play size={16} /></span>
+              <div className="min-w-0">
+                <div className="text-[15px] font-bold leading-9 text-ink">Pickups are off</div>
+                <p className="text-[13px] leading-relaxed text-ink-2">
+                  The Pickup page and every Schedule Pickup button are hidden; existing requests can still be opened from their links.
+                </p>
+              </div>
+            </section>
+          )}
         </div>
       </div>
 

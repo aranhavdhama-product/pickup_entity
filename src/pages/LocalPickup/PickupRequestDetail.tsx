@@ -328,7 +328,7 @@ function Detail({ pr, back }: { pr: GrowPickupRequest; back: () => void }) {
             : pr.blind ? [['Expected', `${pr.expectedPieces ?? '?'} shipments${pr.sizeClass ? ` · ${pr.sizeClass}` : ''}`] as [string, ReactNode]] : []),
           ['Shipments', consignmentsLabel(pr)],
           ['Weight', weightLabel(pr, byId)],
-          ['Source', pr.source],
+          ['Source', pr.schedule ? `Schedule · ${pr.schedule.code} · run ${pr.schedule.runLabel}` : pr.source],
           ['Attempt', <>{pr.attempt} of {pr.maxAttempts}{policyLine && <span className="text-ink-3"> · Reason policy: <span className="font-bold text-ink-2">{policyLine}</span></span>}</>],
           ['Carrier', pr.carrierName ? `${pr.carrierName}${pr.carrierMode === 'CARRIER' ? ' (3PL)' : ' (own fleet)'}` : ''],
           ...(reason ? [[pr.status === 'Cancelled' ? 'Cancel reason' : 'Failure reason', reason] as [string, ReactNode]] : []),

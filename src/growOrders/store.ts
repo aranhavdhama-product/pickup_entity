@@ -5,7 +5,7 @@
  */
 import { useSyncExternalStore } from 'react'
 import type {
-  CarrierMode, GrowOrder, GrowOrdersDb, GrowPickupRequest, HandoverScan, HubOverage, Party, PickupHandover, PickupPod,
+  CarrierMode, GrowOrder, GrowOrdersDb, GrowPickupRequest, HandoverScan, PickupScheduleRef, HubOverage, Party, PickupHandover, PickupPod,
   PickupOverage, PickupRequestStatus, PickupSource, ShipmentType, SizeClass, StoreLocation,
 } from './types'
 import { canonicalService, type OrderDraft } from './draft'
@@ -21,6 +21,7 @@ import { pickupOutcomeFor } from './reasonPolicy'
 import { pickupPointKey } from './prActions'
 import { nextBusinessDay, pickupPolicy, autoPickupWindowFor, autoPickupEligible } from './pickupSlots'
 import { blindPickupsAllowed, readPickupModuleConfig } from '../config/pickupModule'
+import { hasActiveSchedule, pickRunPr, staleScheduleRequests } from './scheduleModel'
 
 /** -v9: `Created` and `Requested` MERGED into the single entry status `Requested`. The key bump is
  *  what re-seeds an existing browser so its rows are retagged; a hand-restored v8 blob still loads,
@@ -173,6 +174,7 @@ function normalizePr(p: Partial<GrowPickupRequest>): GrowPickupRequest {
     contactName: p.contactName ?? '',
     contactNumber: p.contactNumber ?? '',
     note: p.note ?? '',
+    schedule: p.schedule && typeof p.schedule === 'object' && p.schedule.id && p.schedule.runId && p.schedule.date ? p.schedule : null,
     /* first-mile execution (v12) — a pre-v12 row was never routed or retried */
     tripId: strOrNull(p.tripId),
     driverName: strOrNull(p.driverName),
@@ -349,7 +351,15 @@ function orderFromDraft(d: OrderDraft, base?: GrowOrder): GrowOrder {
 
 /** Set a request's status and append the matching audit entry — one owner per transition. */
 function stamp(p: GrowPickupRequest, status: PickupRequestStatus, note?: string): GrowPickupRequest {
-  return { ...p, status, statusHistory: [...p.statusHistory, { status, at: new Date().toISOString(), note }] }
+  const at = new Date().toISOString()
+  const moved = { ...p, status, statusHistory: [...p.statusHistory, { status, at, note }] }
+  /* "Pickup manifest required" OFF (Settings → Pickup module): a completed pickup has no manifest to reconcile —
+     its handover closes with it (the driver's word is the record) */
+  if (status === 'Completed' && !readPickupModuleConfig().manifestRequired && !p.handover.closedAt) {
+    return { ...moved, handover: { ...p.handover, closedAt: at, arrivedAtHubAt: p.handover.arrivedAtHubAt ?? at },
+      statusHistory: [...moved.statusHistory, { status, at, note: 'Closed — no pickup manifest required' }] }
+  }
+  return moved
 }
 
 /** An audit entry that records WHY without changing the state. */
@@ -434,7 +444,12 @@ function releaseOrders(prId: string) {
 }
 
 export const growOrderActions = {
-  create(o: GrowOrder) { db.orders = [o, ...db.orders]; commit(); return o },
+  create(o: GrowOrder) {
+    db.orders = [o, ...db.orders]; commit()
+    /* a location on a roster: its consignment goes to the run it falls in, nobody books it */
+    growOrderActions.joinScheduledRun(o.id)
+    return o
+  },
   /** One commit for a whole batch — a bulk upload of 200 rows must not write
    *  localStorage 200 times or wake every subscriber 200 times. */
   createMany(orders: GrowOrder[]) {
@@ -476,6 +491,8 @@ export const growOrderActions = {
       && !autoPickupEligible(before, cfg.autoPickup.triggerEvent) && autoPickupEligible(after, cfg.autoPickup.triggerEvent)) {
       growOrderActions.autoBookOnConsignment(id)
     }
+    /* a consignment that only NOW became ready for pickup, at a location on a roster, joins its run */
+    if (after && !after.pickupRequestId) growOrderActions.joinScheduledRun(id)
     /* an emptied request that was routed leaves its trip, like a cancel */
     if (pr && emptied && pr.tripId) {
       emitDetached({ prId: pr.id, number: pr.number, tripId: pr.tripId, cause: 'cancelled', note: `${pr.number} has no orders left` })
@@ -680,6 +697,59 @@ export const growOrderActions = {
     db.pickupRequests = [pr, ...db.pickupRequests]
     commit()
     return pr
+  },
+
+  /**
+   * A roster-made request (Pickup Schedules, Skynet 2026-10-07): a collection slot born from a schedule's run, empty until
+   * waybills join it. Same shape as a reserved booking, source `Schedule`, carrying its schedule + run + date (the unique
+   * key). Written whatever the Reserved-pickup switch says — it is not a person booking one.
+   */
+  createSchedulePickup({ storeCode, destinationCode, startAt, endAt, schedule, instructions }: {
+    storeCode: string; destinationCode: string | null; startAt: string; endAt: string
+    schedule: PickupScheduleRef; instructions?: string
+  }): GrowPickupRequest {
+    const createdAt = new Date().toISOString()
+    const { startAt: s, endAt: e, date, slot } = pickupWindow({ startAt, endAt })
+    const pr: GrowPickupRequest = {
+      id: newPrId(), number: nextPrNumber(), storeCode, destinationCode, startAt: s, endAt: e, date, slot,
+      orderIds: [], pickedOrderIds: [], overages: [], status: PR_ENTRY_STATUS, createdAt, instructions: instructions?.trim() || undefined,
+      statusHistory: [{ status: PR_ENTRY_STATUS, at: createdAt, note: `Schedule ${schedule.code} · run ${schedule.runLabel} · ${schedule.date}` }],
+      blind: true, shipmentType: 'Parcel', expectedPieces: null, expectedWeightKg: null, sizeClass: null,
+      vehicleType: null, vehicleUnit: null, ftlServiceType: null, shipFrom: null, shipTo: null,
+      contactName: '', contactNumber: '', note: '', schedule,
+      ...freshExecution('Schedule'),
+    }
+    db.pickupRequests = [pr, ...db.pickupRequests]
+    commit()
+    return pr
+  },
+
+  /**
+   * A consignment ready for pickup at a location that has an ACTIVE roster joins the run its ready time falls in
+   * (`pickRunPr`: the run holding the time, else the earliest run still ahead, else the next day's first). Nobody books it.
+   * The roster's servicing hub is where the first mile drops, so the consignment's inbound hub follows it.
+   * Returns the request it joined, or null (not ready, no roster, no open run — it then waits for the next generation).
+   */
+  joinScheduledRun(orderId: string): GrowPickupRequest | null {
+    const o = db.orders.find((x) => x.id === orderId)
+    if (!o || o.pickupRequestId || o.isDraft || o.shipmentType === 'FTL' || tabOf(o) !== 'Ready for Pickup') return null
+    if (!hasActiveSchedule(o.storeCode)) return null
+    const pr = pickRunPr(db.pickupRequests, o.storeCode, new Date())
+    if (!pr) return null
+    if (!growOrderActions.attachOrdersToPickup(pr.id, [o.id]).length) return null
+    if (pr.destinationCode) db.orders = db.orders.map((x) => (x.id === o.id ? { ...x, inboundHubCode: pr.destinationCode ?? x.inboundHubCode } : x))
+    commit()
+    return db.pickupRequests.find((p) => p.id === pr.id) ?? null
+  },
+
+  /**
+   * End of day: a roster request nobody assigned (still Requested, on no trip) is closed — its waybills go back to Ready for
+   * Pickup, and the next generation / the next run takes them in (FR-08.4). Returns what it closed.
+   */
+  closeUnassignedScheduleRequests(today: string): GrowPickupRequest[] {
+    const stale = staleScheduleRequests(db.pickupRequests, today)
+    for (const p of stale) growOrderActions.cancelPickupRequest(p.id, 'NOT_ASSIGNED')
+    return stale
   },
 
   /**

@@ -128,7 +128,7 @@ export function SplitPickupDialog({ pr, merchantCode, onClose, onDone }: {
           <Toggle checked={otherWindow} onChange={setOtherWindow} /> Different date / slot for the new request
         </label>
         {otherWindow
-          ? <SlotWindowFields startAt={w.startAt} endAt={w.endAt} onChange={setW} policy={policy} ok={ok} error={winErr} />
+          ? <SlotWindowFields timeFields={false} startAt={w.startAt} endAt={w.endAt} onChange={setW} policy={policy} ok={ok} error={winErr} />
           : <p className="-mt-2 text-[12.5px] text-ink-3">Same window as {pr.number}.</p>}
       </div>
     </Modal>

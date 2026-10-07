@@ -81,7 +81,7 @@ type Win = ReturnType<typeof useWindow>
  */
 function WindowFields({ win }: { win: Win }) {
   return (
-    <SlotWindowFields startAt={win.w.startAt} endAt={win.w.endAt} onChange={win.setW}
+    <SlotWindowFields timeFields={false} startAt={win.w.startAt} endAt={win.w.endAt} onChange={win.setW}
       policy={win.policy} calendars={win.policies} ok={win.ok} error={win.touched ? win.error : null} />
   )
 }
@@ -168,7 +168,8 @@ export function CreatePickupDialog({ onClose, onDone }: { onClose: () => void; o
   /* the type is the form's first FIELD — one form, whose load section changes with it */
   const [kind, setKind] = useState<'LTL' | 'FTL'>('LTL')
   const [merchant, setMerchant] = useState(merchants.length === 1 ? merchants[0].name : '')
-  const stores = merchants.find((m) => m.name === merchant)?.stores ?? []
+  /* the merchant is OPTIONAL (an ad-hoc request a zone controller makes by hand): none = every pickup address */
+  const stores = merchant ? merchants.find((m) => m.name === merchant)?.stores ?? [] : db.stores
   const [storeCode, setStoreCode] = useState(stores.length === 1 ? stores[0].code : '')
   const [pieces, setPieces] = useState('')
   const [weight, setWeight] = useState('')
@@ -190,7 +191,7 @@ export function CreatePickupDialog({ onClose, onDone }: { onClose: () => void; o
     setLines((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)))
 
   const missing = [
-    !merchant && 'Merchant', !storeCode && 'Ship From',
+    !storeCode && 'Pickup address',
     !ftl && !(Number(pieces) > 0) && 'Shipments',
     ftl && !service && 'Service type',
     ftl && lines.some((l) => !lineType(l)) && 'Vehicle type',
@@ -263,12 +264,12 @@ export function CreatePickupDialog({ onClose, onDone }: { onClose: () => void; o
           { value: 'FTL', label: 'Full vehicle (FTL)', icon: <Truck size={17} /> },
         ]} />
         <div className="grid grid-cols-2 items-end gap-3">
-          <Field label="Merchant" required>
-            <MenuSelect value={merchant} placeholder="Select merchant" options={merchants.map((m) => m.name)} searchable
+          <Field label="Merchant">
+            <MenuSelect value={merchant} placeholder="Any merchant (optional)" options={merchants.map((m) => m.name)} searchable
               onChange={(v) => { setMerchant(v); const s = merchants.find((m) => m.name === v)?.stores ?? []; setStoreCode(s.length === 1 ? s[0].code : ''); setShipTos([]) }} />
           </Field>
           <Field label="Pickup address" required>
-            <MenuSelect value={storeCode} placeholder={merchant ? 'Select pickup address' : 'Pick a merchant first'}
+            <MenuSelect value={storeCode} placeholder="Select pickup address" searchable
               options={stores.map((s) => s.code)} labels={(c) => { const s = storeOf(c, stores); return s ? storeLabel(s) : c }}
               onChange={setStoreCode} />
           </Field>

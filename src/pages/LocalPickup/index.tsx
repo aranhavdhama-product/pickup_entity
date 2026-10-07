@@ -16,7 +16,7 @@ import {
   Printer, RotateCcw, Route as RouteIcon, Settings, Split, Truck, Layers, XCircle, Zap
 } from 'lucide-react'
 import {
-  DataTable, EmptyState, PageHeader,
+  Button, DataTable, EmptyState, PageHeader,
   PageSize, Pagination, Panel, StatusPill, type SelectionAction,
 } from '../../nueva/components'
 import {
@@ -24,6 +24,7 @@ import {
 } from '../../local/chrome'
 import { toast } from '../../nueva/toast'
 import { pickupRequestById, useGrowOrders } from '../../growOrders/store'
+import { useSchedules } from '../../growOrders/scheduleModel'
 import type { GrowPickupRequest } from '../../growOrders/types'
 import {
   ATTENTION_REQUIRED, CONSIGNMENTS_TO_BOOK, LOCAL_PR_TAB_SLUG, inLocalPrTab, localPrTabCounts,
@@ -106,6 +107,7 @@ export default function LocalPickup() {
 function PickupRequestsList() {
   const nav = useNavigate()
   const db = useGrowOrders()
+  const schedules = useSchedules()
   const cfg = usePickupModuleConfig()
   const [params, setParams] = useSearchParams()
   /* `/local/pickup/view/:prId` = the list with the request's drawer over it —
@@ -226,6 +228,7 @@ function PickupRequestsList() {
         tabs={TAB_ORDER.map((t, i) => ({ id: t, label: t, count: counts[t], icon: TAB_ICONS[i] }))}
         active={tab} onChange={(id) => setTab(TAB_ORDER.indexOf(id as LocalPrTab))}
         right={<>
+          <Button variant="outline" icon={<CalendarClock size={14} />} onClick={() => nav('/local/pickup/schedules')}>Schedules ({schedules.schedules.length})</Button>
           <IconBtn title="Pickup settings" onClick={() => nav('/local/settings/pickup')}><Settings size={16} /></IconBtn>
           {cfg.mode === 'auto'
             ? <span className="inline-flex h-8 items-center gap-1.5 rounded-md border border-info-bg bg-info-bg px-2.5 text-[12px] text-ink" title="Pickup requests are raised automatically when a consignment is created — Settings → Pickup Request.">

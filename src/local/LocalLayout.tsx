@@ -8,6 +8,7 @@
  *
  * This file, and everything it renders, must import nothing from `src/auth`.
  */
+import { useEffect } from 'react'
 import { Outlet } from 'react-router-dom'
 import LocalSidebar from './LocalSidebar'
 import LocalHeader from './LocalHeader'
@@ -16,8 +17,17 @@ import { ToastHost } from '../nueva/toast'
    ONCE, here; its colours read the `--pfp-*` tokens set on the root below */
 import './chrome.css'
 import { cssVars } from '../pages/LocalPFP/stagingTokens'
+import { ensureDailyRun } from '../growOrders/pickupSchedules'
+import { toast } from '../nueva/toast'
 
 export default function LocalLayout() {
+  /* the daily roster job (Pickup Schedules): once a day, when the console opens — idempotent, a failed run is retried on the next load */
+  useEffect(() => {
+    const r = ensureDailyRun()
+    /* the hub manager's notice (FR-03.6): the run time and its outcome, on screen */
+    if (r?.status === 'Success') toast.success(`Daily pickup schedules ran — ${r.message}`)
+    else if (r) toast.error(`Daily pickup schedules failed — ${r.message}. Tried again on the next load; or press Generate now on the Schedules tab.`)
+  }, [])
   return (
     <div className="fe-nueva flex h-screen overflow-hidden bg-canvas" style={cssVars}>
       <LocalSidebar />

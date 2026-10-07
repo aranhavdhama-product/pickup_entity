@@ -199,7 +199,7 @@ export function NewPickupRequestDialog({ onClose, onDone }: { onClose: () => voi
             )}
           </div>
 
-          <SlotWindowFields startAt={w.startAt} endAt={w.endAt} onChange={setW} policy={policies[0]} calendars={policies}
+          <SlotWindowFields timeFields={false} startAt={w.startAt} endAt={w.endAt} onChange={setW} policy={policies[0]} calendars={policies}
             ok={(x) => !ruleError(x.startAt, x.endAt) && x.endAt > x.startAt} error={chosen.length ? winError : null} />
 
           <Field label="Note for the driver"><Input value={note} onChange={setNote} placeholder="Optional — gate code, dock, contact" /></Field>

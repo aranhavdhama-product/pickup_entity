@@ -266,7 +266,7 @@ export function SchedulePickupDialog({ orderIds, onClose, onDone, prefer = 'choo
             {/* the window applies to every NEW request; an existing one keeps its own */}
             <div className={needsWindow ? '' : 'opacity-60'}>
               <div className={needsWindow ? '' : 'pointer-events-none'}>
-                <SlotWindowFields startAt={startAt} endAt={endAt} policy={policy} ok={slotOk} calendars={policies}
+                <SlotWindowFields timeFields={false} startAt={startAt} endAt={endAt} policy={policy} ok={slotOk} calendars={policies}
                   onChange={(w) => { setStartAt(w.startAt); setEndAt(w.endAt) }}
                   error={needsWindow ? windowError : null} />
               </div>

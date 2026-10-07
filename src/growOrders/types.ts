@@ -186,6 +186,9 @@ export type SizeClass = (typeof SIZE_CLASSES)[number]
  * the merchant declares roughly what will be handed over and attaches the
  * orders later.
  */
+/** Where a roster-made pickup request comes from. */
+export interface PickupScheduleRef { id: string; code: string; runId: string; runLabel: string; date: string }
+
 export interface GrowPickupRequest {
   id: string
   number: string               // PR-000123
@@ -237,6 +240,9 @@ export interface GrowPickupRequest {
   contactNumber: string
   /** Internal — never shown to the driver (`instructions` is). */
   note: string
+  /** Created by a Pickup Schedule (a roster, owner/Skynet 2026-10-07): which schedule, which run of its day, which date.
+   *  schedule + run + date is the PR's unique key — the generator never makes a second one. null = booked by a person. */
+  schedule?: PickupScheduleRef | null
   /* ---- execution (console side: route, carrier, attempts) ---- */
   /** The LocalTrip (planningStore) this collection is a stop on; null = not routed. */
   tripId: string | null
@@ -279,7 +285,7 @@ export interface GrowPickupRequest {
 }
 
 export type CarrierMode = 'FLEET' | 'CARRIER'
-export type PickupSource = 'Merchant' | 'Console' | 'API' | 'Auto'
+export type PickupSource = 'Merchant' | 'Console' | 'API' | 'Auto' | 'Schedule'
 export type HandoverMode = 'driver' | 'hub' | 'both'
 
 /** One scan event behind the handover buckets — who scanned, when, and where.
