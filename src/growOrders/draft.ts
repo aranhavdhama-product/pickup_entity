@@ -79,8 +79,8 @@ export interface Parcel {
    *  Absent = metric. */
   unitSystem?: UnitSystem
 }
-/** kg + cm, or lb + in */
-export type UnitSystem = 'metric' | 'imperial'
+/** kg + cm · g + cm · lb + in · oz + in (owner, 2026-10-07: a Units dropdown with the four) */
+export type UnitSystem = 'metric' | 'gram' | 'imperial' | 'ounce'
 
 /**
  * One Value Added Service line — the console's VAS row

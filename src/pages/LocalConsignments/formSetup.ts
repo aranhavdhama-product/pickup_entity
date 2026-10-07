@@ -88,8 +88,20 @@ const asFormat = (raw: unknown): FieldFormat | undefined => {
 
 /* ------------------------------------------------------------------- rules ---- */
 
+/** How much of its row a field takes (owner, 2026-10-07: "S / M / L / Full" in the builder): S = one column (the normal
+    size) · M = half the row · L = three quarters · Full = the whole row. In a package's line the same four mean widths. */
+export type FieldWidth = 's' | 'm' | 'l' | 'full'
+export const FIELD_WIDTHS: { value: FieldWidth; label: string; tip: string }[] = [
+  { value: 's', label: 'S', tip: 'Small — one column, the normal size' },
+  { value: 'm', label: 'M', tip: 'Medium — half the row' },
+  { value: 'l', label: 'L', tip: 'Large — three quarters of the row' },
+  { value: 'full', label: 'Full', tip: 'Full — the whole row' },
+]
+export const asWidth = (v: unknown): FieldWidth | undefined => (v === 's' || v === 'm' || v === 'l' || v === 'full' ? v : undefined)
 export interface FieldRuleV2 {
   hidden?: boolean; required?: boolean; label?: string
+  /** how wide the field is on its row (absent = S, the normal size) */
+  width?: FieldWidth
   /** true = in its section's "More information" fold, false = in the main grid (absent = the default) */
   more?: boolean
   /** what may be typed (text fields) */
@@ -114,6 +126,7 @@ export function asRules(raw: unknown): FormRulesV2 {
       ...(typeof r.required === 'boolean' ? { required: r.required } : {}),
       ...(typeof r.label === 'string' && r.label.trim() ? { label: r.label } : {}),
       ...(typeof r.more === 'boolean' ? { more: r.more } : {}),
+      ...(asWidth(r.width) && r.width !== 's' ? { width: asWidth(r.width) } : {}),
       ...(format ? { format } : {}),
       ...(typeof r.defaultValue === 'string' && r.defaultValue.trim() ? { defaultValue: r.defaultValue.trim() } : {}),
     }
@@ -194,6 +207,8 @@ export const FORM_TIER_KEY = 'console-consignment-form-v2-tier'
  *             'inline' = the fields on the form itself, under a search of the saved addresses
  *   services  (Grow) 'menu' = ONE compact dropdown with the carrier and the rate on each line (default since 2026-10-07) ·
  *             'grid' = the lane's services as compact cards, two per row · 'list' = one full-width card each
+ *   skuList   'under' = each package with its SKUs under it (default) · 'separate' = the SKU list first, then the packages,
+ *             each package picking the SKUs packed in it (owner, 2026-10-07: back as a builder choice)
  *   addresses  'side' = Ship From | Ship To side by side (default; they still stack when the card is narrow) ·
  *              'stack' = one under the other (owner, 2026-10-06)
  * A stored layout from before the per-address split (`address`) applies to all three addresses.
@@ -201,10 +216,11 @@ export const FORM_TIER_KEY = 'console-consignment-form-v2-tier'
 export type AddressEntry = 'cards' | 'inline'
 export type ServiceLayout = 'menu' | 'grid' | 'list'
 export type AddressArrangement = 'side' | 'stack'
+export type SkuListLayout = 'under' | 'separate'
 export type AddressRole = 'shipFrom' | 'shipTo' | 'rto'
 export const ADDRESS_ROLES: AddressRole[] = ['shipFrom', 'shipTo', 'rto']
-export interface FormLayout { shipFrom: AddressEntry; shipTo: AddressEntry; rto: AddressEntry; services: ServiceLayout; addresses: AddressArrangement }
-export const DEFAULT_LAYOUT: FormLayout = { shipFrom: 'cards', shipTo: 'cards', rto: 'cards', services: 'menu', addresses: 'side' }
+export interface FormLayout { shipFrom: AddressEntry; shipTo: AddressEntry; rto: AddressEntry; services: ServiceLayout; addresses: AddressArrangement; skuList: SkuListLayout }
+export const DEFAULT_LAYOUT: FormLayout = { shipFrom: 'cards', shipTo: 'cards', rto: 'cards', services: 'menu', addresses: 'side', skuList: 'under' }
 export const LAYOUT_KEY = 'fe-consignment-form-v2-layout'
 export const LAYOUT_GROW_KEY = 'fe-consignment-form-v2-layout-grow'
 const isEntry = (v: unknown): v is AddressEntry => v === 'cards' || v === 'inline'
@@ -217,6 +233,7 @@ const asLayout = (raw: unknown): Partial<FormLayout> => {
   for (const k of ADDRESS_ROLES) if (isEntry(r[k])) out[k] = r[k] as AddressEntry
   if (r.services === 'menu' || r.services === 'grid' || r.services === 'list') out.services = r.services
   if (r.addresses === 'side' || r.addresses === 'stack') out.addresses = r.addresses
+  if (r.skuList === 'under' || r.skuList === 'separate') out.skuList = r.skuList
   return out
 }
 const readLayout = (key: string): Partial<FormLayout> => {
@@ -232,7 +249,7 @@ export function saveLayout(p: FormPortal, l: FormLayout) {
     if (p === 'console') { localStorage.setItem(LAYOUT_KEY, JSON.stringify(asLayout(l))); return }
     const base = loadLayout('console')
     const diff: Partial<FormLayout> = {}
-    for (const k of [...ADDRESS_ROLES, 'services', 'addresses'] as const) if (l[k] !== base[k]) Object.assign(diff, { [k]: l[k] })
+    for (const k of [...ADDRESS_ROLES, 'services', 'addresses', 'skuList'] as const) if (l[k] !== base[k]) Object.assign(diff, { [k]: l[k] })
     if (Object.keys(diff).length) localStorage.setItem(LAYOUT_GROW_KEY, JSON.stringify(diff))
     else localStorage.removeItem(LAYOUT_GROW_KEY)
   } catch { /* private mode */ }

@@ -20,7 +20,7 @@
  * or across several days.
  */
 import { useMemo, useState, type ReactNode } from 'react'
-import { CalendarDays, ChevronDown, Plus, Search, Truck, X } from 'lucide-react'
+import { Boxes, CalendarDays, ChevronDown, Plus, Search, Truck, X } from 'lucide-react'
 import { blankParty } from '../../growOrders/seed'
 import { findOpenPickupConflict, growOrderActions, useGrowOrders } from '../../growOrders/store'
 import type { GrowOrder, GrowPickupRequest, Party, ShipmentType, StoreLocation } from '../../growOrders/types'
@@ -28,12 +28,13 @@ import { isOpenPr } from '../../growOrders/tabs'
 import { INBOUND_HUBS, inboundHubFor } from '../../growOrders/hubs'
 import { useMasters, vehicleTypeOf, vehicleTypesFor } from '../../growOrders/masters'
 import {
-  DEFAULT_FTL_SERVICE, FTL_SERVICE_CODES, SERVICE_TYPES, VEHICLE_UNITS, servicesForLoad, vehicleSpec, vehiclesFor,
+  DEFAULT_FTL_SERVICE, FTL_SERVICE_CODES, SERVICE_TYPES, servicesForLoad, vehicleSpec, vehiclesFor,
 } from '../../growOrders/draft'
 import { toast } from '../../nueva/toast'
 import { earliestWindow, pickupPolicy, violatesCutoff, type PickupPolicy, type PickupWhere } from '../../growOrders/pickupSlots'
 import { cutoffRuleLine, merchantMayChange, rescheduleError, usePortalMerchant } from './pickupGate'
-import { Button, Field, Input, MenuSelect, Modal, MultiSelectDropdown, StatusPill } from '../../nueva/components'
+import { Button, Field, Input, MenuSelect, Modal, StatusPill } from '../../nueva/components'
+import { Segment } from './merchantFormBits'
 import { SlotWindowFields } from '../LocalPickup/slotFields'
 import { BookingChoiceControl } from '../LocalPickup/bookingCards'
 import { bookGroup, joinCandidates, pickupCountOf, type BookingChoice } from '../LocalPickup/bookingPlan'
@@ -277,14 +278,6 @@ export function ReschedulePickupDialog({ requests, onClose, onDone }: {
 
 /* ------------------------------------------------------- reserve a pickup ---- */
 
-/** The same two tabs as Create Order, so the vocabulary never changes shape. */
-/* the shipment type is the form's first FIELD, not a tab strip: one form,
-   whose load section below changes with it */
-const SHIP_TYPE_OPTIONS: { value: ShipmentType; label: string }[] = [
-  { value: 'Parcel', label: 'LTL \u00b7 Parcel handover' },
-  { value: 'FTL', label: 'FTL \u00b7 Full vehicle' },
-]
-
 /** One vehicle line of an FTL reservation; `deliverTo` holds ship-to ids. */
 /* owner, 2026-09-25: no per-vehicle load estimate; the Service Type is asked ONCE per request */
 interface VehicleLine { id: number; vehicleType: string; units: string; deliverTo: number[] }
@@ -356,7 +349,6 @@ export function PickupDialog({ stores, merchants, onClose, onDone }: {
   const [lines, setLines] = useState<VehicleLine[]>(() => [newLine()])
   const setLine = (id: number, patch: Partial<VehicleLine>) =>
     setLines((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)))
-  const totalVehicles = lines.reduce((n, l) => n + (Number(l.units) || 0), 0)
 
   const storeParty = scoped.find((s) => s.code === store)?.party
   /* Vehicles are configured PER HUB: the Ship From hub's fleet (a hub-code
@@ -377,7 +369,6 @@ export function PickupDialog({ stores, merchants, onClose, onDone }: {
   const [contactName, setContactName] = useState(storeParty?.name ?? '')
   const [contactNumber, setContactNumber] = useState(storeParty?.contactNumber ?? '')
   const [instructions, setInstructions] = useState('')
-  const [more, setMore] = useState(false)
 
   /* the contacts and the default destination follow the store the merchant
      picks, but never overwrite a typed value */
@@ -400,7 +391,7 @@ export function PickupDialog({ stores, merchants, onClose, onDone }: {
   /* a vehicle booking needs a vehicle, a collection point and a window —
      load estimates and Ship To are deliberately NOT part of that */
   /* FTL (owner, 2026-09-25): no shipment / weight estimate is asked — stored as null */
-  const valid = shipFromOk && win && (ftl ? !!ftlService && lines.every((l) => !!lineType(l)) : piecesOk && weightOk)
+  const valid = shipFromOk && win && (ftl ? !!ftlService && lines.every((l) => !!lineType(l)) : piecesOk)
 
   /* the same van turning up twice: an OPEN booking at this very collection point
      whose window OVERLAPS the one being typed. A warning, never a block —
@@ -428,33 +419,20 @@ export function PickupDialog({ stores, merchants, onClose, onDone }: {
     }
     /* only addresses actually typed in count; an empty block is no address */
     const filled = shipTos.filter((a) => partyOk(a.party))
-    const labelOf = (id: number) => `Address ${shipTos.findIndex((a) => a.id === id) + 1}`
-    const mapped = (l: VehicleLine) => l.deliverTo.filter((id) => filled.some((a) => a.id === id))
-    const mapping = filled.length
-      ? lines.map((l, i) => `Vehicle ${i + 1} → ${mapped(l).map(labelOf).join(', ') || 'unassigned'}`).join('; ')
-      : ''
-    const one = lines.length === 1
-    const reservation = one ? ''
-      : `Part of one FTL reservation — ${totalVehicles} vehicle${totalVehicles === 1 ? '' : 's'} across ${lines.length} vehicle lines`
-    /* the store keeps ONE shipTo per request: the line's first mapped address
-       (else Address 1); the full vehicle → address map rides in the note */
+    /* ONE vehicle serves the one optional Ship To — nothing to map */
     const prs = lines.flatMap((l) => growOrderActions.createBlindPickup({
       ...common, destinationCode: null, shipmentType: 'FTL',
       expectedPieces: null, expectedWeightKg: null,
       vehicleType: lineType(l), vehicleUnit: Number(l.units) || 1, ftlServiceType: ftlService,
-      shipTo: (filled.find((a) => a.id === mapped(l)[0]) ?? filled[0])?.party ?? null,
-      note: [reservation, mapping && `Deliver to: ${mapping}`].filter(Boolean).join(' · '),
+      shipTo: filled[0]?.party ?? null,
+      note: '',
     }) ?? [])
     if (!prs.length) { toast.error(BLIND_OFF); onClose(); return }
-    toast.success(prs.length === 1
-      ? `Pickup Request ${prs[0].number} created · ${ftlService} · ${lines[0].units} × ${lineType(lines[0])}`
-      : `Pickup Requests ${prs.map((p) => p.number).join(', ')} created · ${ftlService}`)
+    toast.success(`Pickup Request ${prs[0].number} created · ${ftlService} · ${lineType(lines[0])}`)
     onDone(prs[0])
   }
 
-  const addressLabels = shipTos.map((_, i) => `Address ${i + 1}`)
   const withAddresses = shipTos.length > 0
-  const vehicleCols = withAddresses ? 'grid-cols-[1.5fr_120px_1.2fr_32px]' : 'grid-cols-[1.5fr_130px_32px]'
 
   /* the window (and a same-dock clash under it); LTL shows it right after Ship
      From as before, FTL after its vehicles */
@@ -467,8 +445,8 @@ export function PickupDialog({ stores, merchants, onClose, onDone }: {
   /* the estimates: LTL only (a parcel handover) — FTL never asks them */
   const estimates = (
     <>
-      <Field label="Estimated number of shipments" required={!ftl}><Input type="number" value={pieces} onChange={setPieces} placeholder={ftl ? 'Optional' : 'e.g. 12'} /></Field>
-      <Field label="Estimated weight (kg)" required={!ftl}><Input type="number" value={weight} onChange={setWeight} placeholder={ftl ? 'Optional' : 'e.g. 40'} /></Field>
+      <Field label="How many consignments" required={!ftl}><Input type="number" value={pieces} onChange={setPieces} placeholder="e.g. 12" /></Field>
+      <Field label="Weight (kg)"><Input type="number" value={weight} onChange={setWeight} placeholder="Optional" /></Field>
     </>
   )
 
@@ -480,20 +458,16 @@ export function PickupDialog({ stores, merchants, onClose, onDone }: {
   ]
 
   return (
-    <Modal open wide title="Create Pickup Request" onClose={onClose}
+    <Modal open wide title="Blind pickup request" subtitle="Book a pickup before the consignments exist." onClose={onClose}
       footer={<Footer onClose={onClose} onConfirm={submit} disabled={!valid} icon={<Truck size={14} />}
-        label={ftl && lines.length > 1 ? `Create ${lines.length} Pickup Requests` : 'Create Pickup Request'} />}>
-      <div className="flex flex-col gap-4 pb-3">
-        <Hint>Reserved pickup — book a courier slot now and add the shipments later.</Hint>
+        label="Create blind pickup" />}>
+      <div className="flex flex-col gap-5 pb-3">
+        {/* the SAME dialog as the console's (owner, 2026-10-07: "same pickup request things in Grow, without selecting a merchant") */}
+        <Segment<ShipmentType> value={shipType} onChange={setShipType} options={[
+          { value: 'Parcel', label: 'Parcels (LTL)', icon: <Boxes size={17} /> },
+          { value: 'FTL', label: 'Full vehicle (FTL)', icon: <Truck size={17} /> },
+        ]} />
         <div className="grid grid-cols-2 items-start gap-3">
-          <Field label="Type" required>
-            <MenuSelect value={shipType} options={SHIP_TYPE_OPTIONS.map((o) => o.value)}
-              labels={(v) => SHIP_TYPE_OPTIONS.find((o) => o.value === v)?.label ?? v}
-              onChange={(v) => setShipType(v as ShipmentType)} />
-            <p className="mt-1 text-[12px] text-ink-3">
-              {ftl ? 'Reserve whole vehicles; the shipments are attached later.' : 'A parcel handover into the network.'}
-            </p>
-          </Field>
           {/* console only — who the collection is for, ahead of where it is from */}
           {merchants && (
             <Field label="Select Merchant" required>
@@ -510,7 +484,7 @@ export function PickupDialog({ stores, merchants, onClose, onDone }: {
 
         {/* both types open on where the driver goes. Nothing is rendered under
             the select: the option label already carries the address. */}
-        <Field label="Ship From" required>
+        <Field label="Pickup address" required>
           {merchants && !merchantName
             ? <Input value="" placeholder="Pick a merchant first" disabled />
             : <MenuSelect value={otherPickup ? OTHER_ADDRESS : store} placeholder="Select a pickup address" searchable
@@ -536,7 +510,7 @@ export function PickupDialog({ stores, merchants, onClose, onDone }: {
                 hidden until asked for; the address book offers the merchant's locations */}
             {withAddresses ? (
               <div>
-                <GroupLabel>Ship To</GroupLabel>
+                <GroupLabel>Drop address</GroupLabel>
                 <div className="flex flex-col gap-3">
                   {shipTos.map((a, i) => (
                     <div key={a.id} className="rounded-md border border-line px-4 py-3">
@@ -557,71 +531,30 @@ export function PickupDialog({ stores, merchants, onClose, onDone }: {
               </div>
             ) : (
               <div>
-                <Button size="sm" variant="text" icon={<Plus size={13} />} onClick={() => setShipTos([newShipTo()])}>Add ship-to address</Button>
+                <Button size="sm" variant="text" icon={<Plus size={13} />} onClick={() => setShipTos([newShipTo()])}>Add drop address (optional)</Button>
               </div>
             )}
 
-            {/* ONE service for the whole request — it narrows the hub's vehicles;
-                owner, 2026-09-25: it sits just ABOVE the pickup window */}
+            {/* a vehicle booking, simply (owner, 2026-10-07: "when a vehicle is selected simplify it", "only one vehicle"): the
+                service and THE vehicle side by side, then the window. One vehicle serves the optional Ship To above. */}
             <div className="grid grid-cols-2 items-start gap-3">
               <Field label="Service Type" required>
                 <MenuSelect value={ftlService} options={ftlServiceOptions()} searchable onChange={setFtlService} />
+              </Field>
+              <Field label="Vehicle" required>
+                <MenuSelect value={lineType(lines[0])} options={vehicleOpts} searchable labels={vehicleLabel}
+                  onChange={(v) => setLine(lines[0].id, { vehicleType: v })} />
                 <p className="mt-1 text-[12px] text-ink-3">
-                  {hub ? `${vehicleOpts.length} vehicle type${vehicleOpts.length === 1 ? '' : 's'} at the Ship From hub for this service` : 'Pick a Ship From — its hub decides the vehicles'}
+                  {hub ? `${vehicleOpts.length} at the Ship From hub for this service` : 'Pick a Ship From — its hub decides the vehicles'}
                 </p>
               </Field>
             </div>
 
             {windowBlock}
-
-            {/* the vehicles: a table, one line per vehicle type */}
-            <div>
-              <GroupLabel required right={`${totalVehicles} vehicle${totalVehicles === 1 ? '' : 's'}`}>Vehicles</GroupLabel>
-              <div className="rounded-md border border-line">
-                <div className={`grid ${vehicleCols} gap-3 border-b border-line bg-warm-50 px-3 py-2 text-[12px] font-bold text-ink-3`}>
-                  <span>Vehicle type<span className="text-brand-500">*</span></span><span>No. of vehicles</span>
-                  {withAddresses && <span>Deliver to</span>}<span />
-                </div>
-                {lines.map((l, i) => (
-                  <div key={l.id} className={`grid ${vehicleCols} items-center gap-3 border-b border-line px-3 py-2 last:border-0`}>
-                    <MenuSelect value={lineType(l)} options={vehicleOpts} searchable labels={vehicleLabel}
-                      onChange={(v) => setLine(l.id, { vehicleType: v })} />
-                    <MenuSelect value={l.units} options={VEHICLE_UNITS} onChange={(v) => setLine(l.id, { units: v })} />
-                    {withAddresses && (
-                      <MultiSelectDropdown options={addressLabels} noun="addresses" placeholder="Select"
-                        values={l.deliverTo.map((id) => shipTos.findIndex((a) => a.id === id)).filter((k) => k >= 0).map((k) => addressLabels[k])}
-                        onChange={(vals) => setLine(l.id, { deliverTo: vals.map((v) => shipTos[addressLabels.indexOf(v)]?.id).filter((x): x is number => x !== undefined) })} />
-                    )}
-                    <button type="button" aria-label={`Remove vehicle ${i + 1}`} disabled={lines.length === 1}
-                      onClick={() => setLines((ls) => ls.filter((x) => x.id !== l.id))}
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-md text-ink-3 hover:bg-warm-100 hover:text-ink disabled:cursor-not-allowed disabled:opacity-40">
-                      <X size={14} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-2">
-                <Button size="sm" variant="text" icon={<Plus size={13} />} onClick={() => setLines((ls) => [...ls, newLine(ls.length ? lineType(ls[ls.length - 1]) : '')])}>Add vehicle</Button>
-              </div>
-            </div>
           </>
         )}
 
-        <div>
-          <button type="button" onClick={() => setMore((v) => !v)} aria-expanded={more}
-            className="flex items-center gap-1.5 text-[13px] font-bold text-ink-2 hover:text-ink">
-            <ChevronDown size={14} className={`text-warm-400 transition-transform ${more ? '' : '-rotate-90'}`} />
-            More details
-          </button>
-          {more && (
-            <div className="mt-3">
-              <Field label="Instructions for the driver">
-                <TextArea value={instructions} onChange={setInstructions} placeholder="Optional" />
-                <p className="mt-1 text-[12px] text-ink-3">Shared with the pickup driver.</p>
-              </Field>
-            </div>
-          )}
-        </div>
+        <Field label="Note for the driver"><Input value={instructions} onChange={setInstructions} placeholder="Optional — gate code, dock, contact" /></Field>
       </div>
     </Modal>
   )

@@ -147,7 +147,9 @@ export function ShellSidebar({ items, activeId, homeTo = '/', footer, defaultCol
       onMouseLeave={() => setHovering(false)}
       className={`flex flex-shrink-0 flex-col border-r border-line bg-surface transition-all duration-200
         ${collapsed ? 'w-14' : 'w-[256px]'}`}
-      style={{ height: '100vh', position: 'sticky', top: 0 }}
+      /* a sticky rail is its OWN stacking layer, so the overlay's z-[60] only counts inside it: while the overlay shows, the
+         rail itself must sit above the page's positioned cards (a form's sticky footer, its cards) — below the modals (z-70) */
+      style={{ height: '100vh', position: 'sticky', top: 0, zIndex: floating ? 55 : undefined }}
     >
       {railBody(!collapsed)}
       {/* the hover preview — a separate overlay, not a resize, so the page underneath

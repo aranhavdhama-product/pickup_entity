@@ -6,7 +6,7 @@
  */
 import { useMemo, useState, type ReactNode } from 'react'
 import {
-  Button, Checkbox, Field, Input, MenuSelect, Modal, MultiSelectDropdown, StatusPill,
+  Button, Checkbox, Field, Input, MenuSelect, Modal, StatusPill,
 } from '../../nueva/components'
 import { toast } from '../../nueva/toast'
 import { growOrderActions, pickupRequestById, useGrowOrders } from '../../growOrders/store'
@@ -23,7 +23,7 @@ import { SlotWindowFields } from './slotFields'
 import { BookingChoiceControl } from './bookingCards'
 import { bookGroup, pickupCountOf, type BookingChoice } from './bookingPlan'
 import {
-  DEFAULT_FTL_SERVICE, FTL_SERVICE_CODES, SERVICE_TYPES, VEHICLE_UNITS, ftlServiceType, servicesForLoad, vehicleSpec, vehiclesFor,
+  DEFAULT_FTL_SERVICE, FTL_SERVICE_CODES, SERVICE_TYPES, ftlServiceType, servicesForLoad, vehicleSpec, vehiclesFor,
 } from '../../growOrders/draft'
 import { merchantsOf } from '../LocalPFP/merchants'
 import {
@@ -159,7 +159,7 @@ const hubOfStore = (s: StoreLocation | undefined): string | null =>
  * A pickup request carries ONE vehicle type, so an FTL reservation with n
  * vehicle lines creates n reserved requests sharing the window. The store has
  * ONE shipTo per request, so each request stores its line's first mapped
- * address (else Address 1) and the full vehicle → address map rides in `note`.
+ * address. 2026-10-07: ONE vehicle only (no Add vehicle, no count) — the service and the vehicle sit side by side.
  */
 export function CreatePickupDialog({ onClose, onDone }: { onClose: () => void; onDone: (prs: GrowPickupRequest[]) => void }) {
   const db = useGrowOrders()
@@ -189,7 +189,6 @@ export function CreatePickupDialog({ onClose, onDone }: { onClose: () => void; o
   const setLine = (id: number, patch: Partial<VehicleLine>) =>
     setLines((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)))
 
-  const totalVehicles = lines.reduce((n, l) => n + (Number(l.units) || 0), 0)
   const missing = [
     !merchant && 'Merchant', !storeCode && 'Ship From',
     !ftl && !(Number(pieces) > 0) && 'Shipments',
@@ -220,25 +219,18 @@ export function CreatePickupDialog({ onClose, onDone }: { onClose: () => void; o
     }
     /* only addresses actually typed in count; an empty block is no address */
     const filled = shipTos.filter((a) => a.name.trim() || a.line1.trim())
-    const labelOf = (id: number) => `Address ${shipTos.findIndex((a) => a.id === id) + 1}`
     const party = (a: ShipToDraft | undefined): Party | null => {
       if (!a) return null
       const loc = storeOf(a.locationCode, stores)?.party
       const { name, line1, city, postalCode, contactNumber } = a
       return { ...EMPTY_PARTY, ...(loc ?? {}), name, line1, city, postalCode, contactNumber, country: loc?.country || 'Philippines' }
     }
-    const mapped = (l: VehicleLine) => l.deliverTo.filter((id) => filled.some((a) => a.id === id))
-    const mapping = filled.length
-      ? lines.map((l, i) => `Vehicle ${i + 1} → ${mapped(l).map(labelOf).join(', ') || 'unassigned'}`).join('; ')
-      : ''
-    const one = lines.length === 1
-    const reservation = one ? '' : `Part of one FTL reservation — ${plural(totalVehicles, 'vehicle')} across ${lines.length} vehicle lines`
     done(lines.map((l) => growOrderActions.createBlindPickup({
       ...common, destinationCode: null, shipmentType: 'FTL',
       expectedPieces: null, expectedWeightKg: null,
-      vehicleType: lineType(l), vehicleUnit: Number(l.units) || 1, ftlServiceType: service,
-      shipTo: party(filled.find((a) => a.id === mapped(l)[0]) ?? filled[0]),
-      note: [reservation, mapping && `Deliver to: ${mapping}`].filter(Boolean).join(' · '),
+      vehicleType: lineType(l), vehicleUnit: 1, ftlServiceType: service,
+      shipTo: party(filled[0]),
+      note: '',
     })))
   }
 
@@ -251,9 +243,7 @@ export function CreatePickupDialog({ onClose, onDone }: { onClose: () => void; o
       ? { ...a, locationCode: s.code, name: s.party.name || s.name, line1: s.party.line1, city: s.party.city, postalCode: s.party.postalCode, contactNumber: s.party.contactNumber }
       : { ...a, locationCode: '' })))
   }
-  const addressLabels = shipTos.map((_, i) => `Address ${i + 1}`)
   const withAddresses = shipTos.length > 0
-  const cols = withAddresses ? 'grid-cols-[1.6fr_120px_1.2fr_32px]' : 'grid-cols-[1.6fr_130px_32px]'
 
   /* owner, 2026-10-05 ("so much text — simplify"): two short number fields, no explanation paragraph */
   const estimates = (
@@ -266,7 +256,7 @@ export function CreatePickupDialog({ onClose, onDone }: { onClose: () => void; o
   return (
     <Modal open wide title="Blind pickup request" subtitle="Book a pickup before the consignments exist." onClose={onClose}
       footer={<Footer onClose={onClose} onConfirm={submit}
-        label={ftl && lines.length > 1 ? `Create ${lines.length} blind pickups` : 'Create blind pickup'} />}>
+        label="Create blind pickup" />}>
       <div className="flex flex-col gap-5 pb-3">
         <Segment<'LTL' | 'FTL'> value={kind} onChange={setKind} options={[
           { value: 'LTL', label: 'Parcels (LTL)', icon: <Boxes size={17} /> },
@@ -328,50 +318,19 @@ export function CreatePickupDialog({ onClose, onDone }: { onClose: () => void; o
               </div>
             )}
 
-            {/* ONE service for the whole request — it narrows the hub's vehicles;
-                owner, 2026-09-25: it sits just ABOVE the pickup window */}
+            {/* a vehicle booking, simply (owner, 2026-10-07: "when a vehicle is selected simplify it", "only one vehicle"): the
+                service and THE vehicle side by side — the service narrows the hub's vehicles — then the window */}
             <div className="grid grid-cols-2 items-end gap-3">
               <Field label="Service Type" required>
                 <MenuSelect value={service} options={ftlServiceOptions()} searchable onChange={setService} />
               </Field>
+              <Field label="Vehicle" required>
+                <MenuSelect value={lineType(lines[0])} options={vehicleOpts} searchable labels={vehicleLabel}
+                  onChange={(v) => setLine(lines[0].id, { vehicleType: v })} />
+              </Field>
             </div>
 
             <WindowFields win={win} />
-
-            {/* the vehicles: a table, one line per vehicle type */}
-            <div>
-              <p className="mb-1.5 text-[13px] font-bold text-ink" title={hub ? `${hubName(hub)} fleet` : undefined}>
-                Vehicles<span className="text-brand-500">*</span>
-                <span className="ml-2 text-[12px] font-normal text-ink-3">{plural(totalVehicles, 'vehicle')}</span>
-              </p>
-              <div className="rounded-md border border-line">
-                <div className={`grid ${cols} gap-3 border-b border-line bg-warm-50 px-3 py-2 text-[12px] font-bold text-ink-3`}>
-                  <span>Vehicle type</span><span>No. of vehicles</span>
-                  {withAddresses && <span>Deliver to</span>}<span />
-                </div>
-                {lines.map((l) => (
-                  <div key={l.id} className={`grid ${cols} items-center gap-3 border-b border-line px-3 py-2 last:border-0`}>
-                    <MenuSelect value={lineType(l)} options={vehicleOpts} searchable
-                      labels={vehicleLabel}
-                      onChange={(v) => setLine(l.id, { vehicleType: v })} />
-                    <MenuSelect value={l.units} options={VEHICLE_UNITS} onChange={(v) => setLine(l.id, { units: v })} />
-                    {withAddresses && (
-                      <MultiSelectDropdown options={addressLabels} noun="addresses" placeholder="Select"
-                        values={l.deliverTo.map((id) => shipTos.findIndex((a) => a.id === id)).filter((i) => i >= 0).map((i) => addressLabels[i])}
-                        onChange={(vals) => setLine(l.id, { deliverTo: vals.map((v) => shipTos[addressLabels.indexOf(v)]?.id).filter((x): x is number => x !== undefined) })} />
-                    )}
-                    <button type="button" aria-label="Remove vehicle" disabled={lines.length === 1}
-                      onClick={() => setLines((ls) => ls.filter((x) => x.id !== l.id))}
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-md text-ink-3 hover:bg-warm-100 hover:text-ink disabled:cursor-not-allowed disabled:opacity-40">
-                      <X size={14} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-2">
-                <Button size="sm" variant="text" icon={<Plus size={13} />} onClick={() => setLines((ls) => [...ls, newLine(lineType(ls[ls.length - 1] ?? newLine()))])}>Add vehicle</Button>
-              </div>
-            </div>
           </>
         )}
 
