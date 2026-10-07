@@ -206,8 +206,8 @@ export function SchedulePickupDialog({ orderIds, onClose, onDone, prefer = 'choo
           </p>
         ) : (
           <>
-            <p className="-mb-2 text-[12px] text-ink-3">
-              {plural(total, 'consignment')} → <span className="font-bold text-ink-2">{plural(pickupCount, 'pickup')}</span>
+            <p className="text-[13px] text-ink-2">
+              <span className="font-bold text-ink">{plural(total, 'consignment')}</span> → <span className="font-bold text-ink">{plural(pickupCount, 'pickup')}</span>
               {allSplit ? ' (one each)' : ''}
             </p>
             <div className="flex flex-col gap-2">
@@ -216,15 +216,15 @@ export function SchedulePickupDialog({ orderIds, onClose, onDone, prefer = 'choo
                 const setChoice = (c: Choice) => setChoices((m) => ({ ...m, [g.key]: c }))
                 return (
                   <div key={g.key} className="rounded-md border border-line bg-surface">
-                    <div className="flex items-start gap-3 px-4 py-3">
+                    <div className="flex items-center gap-4 px-4 py-3">
                       <div className="min-w-0 flex-1">
-                        <p className="truncate text-[13px] font-bold text-ink">
-                          {storeName(g.storeCode, db.stores)} <span className="text-ink-3">→</span> {g.destinationLabel || 'To be confirmed'}
+                        <p className="truncate text-[14px] font-bold text-ink" title={storeAddress(g.storeCode, db.stores)}>
+                          {storeName(g.storeCode, db.stores)} <span className="font-normal text-ink-3">→</span> {g.destinationLabel || 'To be confirmed'}
                           {g.vehicle && <span className="ml-2 text-[12px] font-bold text-ink-3">FTL · {g.vehicle.vehicleType || 'Vehicle'}</span>}
                         </p>
-                        <p className="mt-0.5 truncate text-[12.5px] text-ink-3">{storeAddress(g.storeCode, db.stores)}</p>
+                        {/* one meta line: how much, and which shipments (address on hover) */}
                         <button type="button" onClick={() => setOpen((m) => ({ ...m, [g.key]: !expanded }))}
-                          className="mt-1 inline-flex items-center gap-1 text-[12.5px] font-bold text-ink-2 hover:text-ink">
+                          className="mt-1 inline-flex items-center gap-1 text-[12.5px] text-ink-2 hover:text-ink">
                           {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
                           {plural(g.orders.length, 'shipment')} · {weight} kg
                         </button>
@@ -263,7 +263,8 @@ export function SchedulePickupDialog({ orderIds, onClose, onDone, prefer = 'choo
               })}
             </div>
 
-            {/* the window applies to every NEW request; an existing one keeps its own */}
+            {/* the window applies to every NEW request; an existing one keeps its own — the date and the driver's note side by side */}
+            <div className="grid grid-cols-1 items-start gap-5 sm:grid-cols-2">
             <div className={needsWindow ? '' : 'opacity-60'}>
               <div className={needsWindow ? '' : 'pointer-events-none'}>
                 <SlotWindowFields timeFields={false} startAt={startAt} endAt={endAt} policy={policy} ok={slotOk} calendars={policies}
@@ -278,6 +279,7 @@ export function SchedulePickupDialog({ orderIds, onClose, onDone, prefer = 'choo
             </div>
 
             <Field label="Note for the driver"><Input value={instructions} onChange={setInstructions} placeholder="Optional — gate code, dock, contact" /></Field>
+            </div>
           </>
         )}
       </div>

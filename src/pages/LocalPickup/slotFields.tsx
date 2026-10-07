@@ -32,6 +32,7 @@
  * the move is explained on one line under the fields.
  */
 import { useEffect, useState, type ReactNode } from 'react'
+import { Info } from 'lucide-react'
 import { DateInput, Field, Input } from '../../nueva/components'
 import { bookableDays, bookableSlotsOn, violatesCutoff, type PickupPolicy, type SlotCheck } from '../../growOrders/pickupSlots'
 
@@ -138,7 +139,13 @@ export function SlotWindowFields({ startAt, endAt, onChange, policy, ok, error, 
         )}
       </div>
       {!timeFields && date && startTime && endTime && <p className="-mt-1 text-[12px] text-ink-3">Pickup window {startTime}–{endTime}</p>}
-      {captions.map((c) => <p key={c} className="-mt-1 text-[12px] text-ink-3">{c}</p>)}
+      {/* ONE quiet line (owner, 2026-10-07: "it still looks bad"): the calendars of every card in a tooltip, not a paragraph each */}
+      {captions.length === 1 && <p className="-mt-1 text-[12px] text-ink-3">{captions[0]}</p>}
+      {captions.length > 1 && (
+        <p className="-mt-1 flex items-center gap-1.5 text-[12px] text-ink-3" title={captions.join('\n')}>
+          <Info size={12} className="shrink-0 text-warm-400" />Pickup days follow each pickup location's calendar — hover for the days and holidays
+        </p>
+      )}
       {moved && <p className="text-[12px] text-warning-fg">{moved}</p>}
       {free && startTime && endTime && endTime <= startTime && <p className="text-[12px] text-danger-fg">End time must be after the start time.</p>}
       {!free && !days.length && <p className="text-[12px] text-danger-fg">No bookable pickup day in the configured horizon — check Settings → Pickup module.</p>}

@@ -19,7 +19,7 @@
  * `PR_COLUMN_DEFS` width (those columns are not staging's, so staging has no
  * measurement for them).
  */
-import { PR_COLUMN_DEFS, prTypeLabel, type PrColumnCtx } from '../LocalPickup/prModel'
+import { PR_COLUMN_DEFS, exceptionOf, prTypeLabel, type PrColumnCtx } from '../LocalPickup/prModel'
 import type { GrowPickupRequest } from '../../growOrders/types'
 import { isPickupRow, type UnifiedRow } from './adapter'
 import { COLUMNS, T, type StagingColumn } from './stagingTokens'
@@ -146,9 +146,12 @@ export const COMMON_COLUMNS: StagingColumn[] = [
   LEG,
   onPage('state'),
   onPage('secondaryState'),
+  /* owner, 2026-10-07 ("a better view when pickups and consignments are both present"): WHY a row needs a hand sits beside its
+     state — a pickup's reason and risk flags, a consignment's exception — and Due is the ONE time both kinds are planned by */
+  { key: 'c:exception', label: 'Exception', width: 190 },
   onPage('merchant'),
   { key: 'c:weight', label: 'Weight', width: onPage('weight').width },
-  { key: 'c:date', label: 'Ship By / Pickup Start', width: onPage('shipByDate').width },
+  { key: 'c:date', label: 'Due', width: onPage('shipByDate').width },
   { key: 'c:dest', label: 'Destination', width: prWidth('hub') },
   { key: 'c:collector', label: 'Carrier / Driver', width: onPage('carrier').width },
   { key: 'c:trip', label: 'Trip', width: prWidth('trip') },
@@ -193,6 +196,9 @@ export function extraCells(r: UnifiedRow, base: Record<string, string>, ctx: Ext
     }
     cells['c:ref'] = r.reference
     cells['c:type'] = 'Pickup request'
+    /* due = the pickup WINDOW (day and slot), not just a date */
+    cells['c:date'] = `${p.date.slice(5).replace('-', '/')} · ${p.slot}`
+    cells['c:exception'] = exceptionOf(p, ctx).text || '-'
     cells['c:dest'] = r.shipToName
     cells['c:collector'] = p.driverName || p.carrierName || '-'
     cells['c:trip'] = p.tripId || '-'
@@ -200,6 +206,7 @@ export function extraCells(r: UnifiedRow, base: Record<string, string>, ctx: Ext
     const pr = r.order.pickupRequestId ? ctx.prById.get(r.order.pickupRequestId) : undefined
     cells['c:ref'] = r.referenceNumber
     cells['c:type'] = 'Consignment'
+    cells['c:exception'] = r.exception ? String(r.exception) : '-'
     cells['c:dest'] = r.destination || '-'
     cells['c:collector'] = r.assignedDriver || r.carrier || '-'
     /* a queued consignment is never on a delivery trip (a routed one leaves the

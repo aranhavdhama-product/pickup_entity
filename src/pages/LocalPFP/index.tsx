@@ -501,7 +501,13 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
   /** what the table actually renders — the fixture short-circuits every filter */
   const display = useMemo<DisplayRow[]>(() => {
     if (fixture) return STAGING_FIXTURE_ROWS.map(fixtureToDisplay)
-    const rows = filtered.map((r) => toDisplay(r, cellCtx))
+    /* no sort chosen: what is due first comes first (First Mile Ops 2026-10-07) — a pickup by its window start, a consignment by its
+       ship-by day, a pickup ahead of a consignment due the same day; the Last Mile tab keeps its own order */
+    const due = (r: UnifiedRow) => (isPickupRow(r) ? r.pickupWindow.start : `${r.shipByDate}T23:59`)
+    const ordered = !sort && tab !== 'last-mile'
+      ? [...filtered].sort((a, b) => (due(a) === due(b) ? Number(isPickupRow(b)) - Number(isPickupRow(a)) : due(a) < due(b) ? -1 : 1))
+      : filtered
+    const rows = ordered.map((r) => toDisplay(r, cellCtx))
     if (!sort) return rows
     const { key, dir } = sort
     return [...rows].sort((a, b) => {
@@ -511,7 +517,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
         ? n - m : x.localeCompare(y)
       return dir === 'asc' ? cmp : -cmp
     })
-  }, [fixture, filtered, sort, cellCtx])
+  }, [fixture, filtered, sort, cellCtx, tab])
 
   /* The fixture is ONE page of staging's 101 rows, so its pager must be
      staging's — five numbered buttons and an enabled next arrow. Deriving the

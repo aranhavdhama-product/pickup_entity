@@ -755,6 +755,17 @@ effects (a cancelled/rescheduled PR leaving its trip) flow through `onPickupRequ
   trip-not-started / driver-never-opened-trip reading, an append-only attention list with acknowledgement, proof of pickup enforced in
   the store, hub scan integrity (wrong-hub scans counted, unresolved overage ignored), "who" on every history entry, the Pending For
   Planning default sort by window, one shared dialog per action, merchant outbox, dead `cutoffTime` / `sendToCarrier` keys.
+- **Form + builder audit fixes (2026-10-07, 7-lens read-only workflow, 13 findings)**: "Fields on the form" addresses STAY fields when a saved
+  address is picked (no fold into a card — that is the "Saved card" choice); Tags sits on the Handling switches row on both portals (the
+  console's layout) and Grow keeps Tags + Order Category in the draft (they were dropped before); Vehicle Details rows start on the vehicle
+  that FITS the load (`fitVehicle`), follow the hub's fleet, and the card shows in the Grow builder while editing; the checkout reads the
+  builder's Dropdown / Grid / List choice (it ignored Dropdown); the builder's Width reaches every package field and a Grow override back
+  to S persists. Checkout (Grow step 2) = Service Type on the left (one-line options, "Lowest" tag, carrier said once) and, on the right,
+  the order summary + ONE Payment card holding the totals, **How you pay** and the Place order button. The Schedule pickup dialog is one
+  meta line per booking, calendars in one line, the date beside the driver note. Pending For Planning (All / First Mile): rows are ordered
+  by what is DUE first (a pickup's window start, a consignment's ship-by) unless a column sort is chosen, with an **Exception** column
+  and **Due** (a pickup's day + slot). Open from the audit: form-setup sync starts only after a successful first pull, SKU-based goods
+  still read the package-weight rule, Tags error text eager, saveTyped keyed by drop index.
 - **SKU line = ONE line on both portals** (2026-10-07): every SKU detail the builder shows and does NOT put under More (Grow: HSN Code ·
   Origin Country · Unit Cost) is a column of the line (`skuInline`); the rest wait behind the chevron. **Units**: weight (kg · g · lb ·
   oz) and size (cm · in · mm · m) are set independently per package (`Parcel.weightUnit` / `dimUnit`, over the older `unitSystem` pairs).

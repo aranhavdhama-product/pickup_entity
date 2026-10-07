@@ -128,7 +128,7 @@ export function asRules(raw: unknown): FormRulesV2 {
       ...(typeof r.required === 'boolean' ? { required: r.required } : {}),
       ...(typeof r.label === 'string' && r.label.trim() ? { label: r.label } : {}),
       ...(typeof r.more === 'boolean' ? { more: r.more } : {}),
-      ...(asWidth(r.width) && r.width !== 's' ? { width: asWidth(r.width) } : {}),
+      ...(asWidth(r.width) ? { width: asWidth(r.width) } : {}),
       ...(format ? { format } : {}),
       ...(typeof r.defaultValue === 'string' && r.defaultValue.trim() ? { defaultValue: r.defaultValue.trim() } : {}),
     }

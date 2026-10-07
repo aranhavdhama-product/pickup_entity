@@ -131,6 +131,9 @@ const CARGO_TYPES = ['Parcel', 'Document', 'Fragile', 'Perishable', 'Bulky']
 const CUSTOM_PACKAGE = '__custom__'
 const CUSTOM_PACKAGE_NAME = 'Custom'
 const opts = (xs: readonly string[]) => xs.map((value) => ({ value }))
+/** the vehicle that FITS a load: the smallest whose payload carries it, else the biggest (a whole fleet too small is still the best choice) */
+const fitVehicle = <T extends { payloadKg: number }>(fleet: T[], loadKg: number): T | undefined =>
+  [...fleet].filter((v) => v.payloadKg >= loadKg).sort((a, b) => a.payloadKg - b.payloadKg)[0] ?? [...fleet].sort((a, b) => b.payloadKg - a.payloadKg)[0]
 const SERVICES = PARCEL_SERVICES
 
 const today = () => {
@@ -696,7 +699,8 @@ const V2_KEYS = new Set(V2_FIELDS.map((f) => f.key))
 /** the two goods sections: shown / hidden only — not renamed, not under More, not moved */
 const GOODS_SECTIONS = new Set([PKG_SECTION, SKU_SECTION])
 /** controls that are not a field in a grid cell — no Width */
-const NO_WIDTH = new Set([PKG_SECTION, SKU_SECTION, 'vas', 'dedicateTruck', 'vehicleDetails', 'serviceType', 'scannable', 'schedulingConfirmation', 'clearanceRequired', 'splittable'])
+const NO_WIDTH = new Set([PKG_SECTION, SKU_SECTION, 'vas', 'dedicateTruck', 'vehicleDetails', 'serviceType', 'scannable', 'schedulingConfirmation', 'clearanceRequired', 'splittable',
+  'tags', 'addrLift', 'remarks', 'skuWeight', 'skuDimensions', 'skuCategory', 'skuDescription', 'skuHsn', 'skuOrigin', 'skuUnitCost', 'skuImage'])
 const FIELD_DEF = new Map([...CONSIGNMENT_FIELDS, ...V2_FIELDS].map((f) => [f.key, f]))
 /* 2026-10-05 (owner: "in Service Type I can't hide that field"): Service Type is no longer locked — hidden, every
    consignment gets the builder's DEFAULT service (its rule's `defaultValue`); a draft / Modify keeps its own */
@@ -1998,8 +2002,11 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   /* one eligible service = preselected; a service the lane / mode no longer offers is dropped */
   const selected = !ready ? '' : quotes.some((q) => q.code === growService) ? growService : quotes.length === 1 ? quotes[0].code : ''
   const quote = quotes.find((q) => q.code === selected) ?? null
-  const ftlOk = mode !== 'ftl' || vehiclesAuto || (mVehicles.length > 0 && rows.every((r) => !!r.vehicleType && r.count >= 1 && r.loadKg > 0 && r.addressIdx.length > 0)
-    && allDrops.every((_, i) => mVehicles.some((v) => v.addressIdx.includes(i))))
+  /* a vehicle the Ship From hub's fleet does not offer (the hub or the service changed under it) is never "ready" — and a hidden
+     Vehicle Details with no fleet at all has nothing to book */
+  const inFleet = (code: string) => !merchantMode || fleet.some((f) => f.code === code)
+  const ftlOk = mode !== 'ftl' || (vehiclesAuto ? !merchantMode || fleet.length > 0 : (mVehicles.length > 0 && rows.every((r) => !!r.vehicleType && inFleet(r.vehicleType) && r.count >= 1 && r.loadKg > 0 && r.addressIdx.length > 0)
+    && allDrops.every((_, i) => mVehicles.some((v) => v.addressIdx.includes(i)))))
   /* Grow step 1: the service is picked at checkout — until then the form shows the lowest rate for this route */
   const cheapest = merchantMode && ready && ftlOk && quotes.length ? Math.min(...quotes.map((q) => q.net)) : null
   /* a new load type keeps the chosen service — every service is offered in both modes (2026-09-29), and `selected`
@@ -2007,10 +2014,19 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
      vehicle carrying the whole load to every Ship To address */
   const changeMode = (m: BookingMode) => {
     if (merchantMode && m === 'ftl' && mode !== 'ftl') {
-      setRows([{ vehicleType: fleet[0]?.code ?? '', count: 1, loadKg: Math.round(weights.chargeable) || 0, addressIdx: allDrops.map((_, i) => i) }])
+      setRows([{ vehicleType: fitVehicle(fleet, weights.chargeable)?.code ?? '', count: 1, loadKg: Math.round(weights.chargeable) || 0, addressIdx: allDrops.map((_, i) => i) }])
     }
     setMode(m); setC({ dedicateTruck: m === 'ftl' })
   }
+  /* the fleet moved (Ship From, the service): rows on a vehicle it no longer offers take the one that FITS the load */
+  const fleetKey = fleet.map((f) => f.code).join('|')
+  useEffect(() => {
+    if (!merchantMode || mode !== 'ftl' || !fleet.length) return
+    if (rows.every((r) => fleet.some((f) => f.code === r.vehicleType))) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- re-seeding the rows to the new fleet
+    setRows((rs) => rs.map((r) => (fleet.some((f) => f.code === r.vehicleType) ? r : { ...r, vehicleType: fitVehicle(fleet, Math.max(r.loadKg, weights.chargeable))?.code ?? fleet[0].code })))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fleetKey, mode, merchantMode])
   /* Grow, Dedicate Truck hidden: the builder's default load type — unless the order is a full vehicle by where it came
      from (an FTL pickup request, a draft, /add/vehicle) or it answers an overage scan */
   const forcedMode: BookingMode | null = merchantMode && truckHidden && !fromOverage && !ftlFirst ? (truckDefault ? 'ftl' : 'ltl') : null
@@ -2494,7 +2510,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
         /* hidden on Grow (owner, 2026-10-06): Forward and today, unless the order already had its own */
         consignmentType: c.consignmentType || 'Forward', shipByDate: c.shipByDate || today(),
         scannable: !!c.scannable,
-        dedicateTruck: ftl, carrier: '', category: [], tags: [], totalLoadingTime: null,
+        dedicateTruck: ftl, carrier: '', totalLoadingTime: null,
         orderNumber: effectiveOrder.trim(), referenceNumber: effectiveRef.trim(),
         consignmentNumber: c.consignmentNumber?.trim() || effectiveRef.trim(),
         merchantCode: merchant?.code ?? null, merchantName: merchant?.name ?? '',
@@ -2552,8 +2568,8 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
      header) — on, every package line is one box with its own barcode (`barcodeEach`, quantity 1) */
   const barcodeEach = !isFtl && !useItems && !!c.scannable
   const handlingTogglesVisible = !hid('scannable') || !hid('splittable') || !hid('clearanceRequired') || !hid('tags')
-  /* the switches row — on Grow Tags moves to the line below, beside the load type */
-  const switchesRow = merchantMode ? (!hid('scannable') || !hid('splittable') || !hid('clearanceRequired')) : handlingTogglesVisible
+  /* the switches row — Barcode · In parts · Clearance · Tags, the SAME on both portals (owner, 2026-10-07: "like the CFT side") */
+  const switchesRow = handlingTogglesVisible
   const handlingCustom = arrange(sortApi, 'handling-fields', customEntries('sec-handling'), inMore, secOpen('sec-handling'))
   /* while editing the card always shows — its "+ Add field" lives in it */
   const handlingVisible = handlingChipsVisible || handlingTogglesVisible || handlingCustom.nodes.length > 0 || handlingCustom.waiting > 0 || editing
@@ -2570,7 +2586,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
      the flow — it is the vertical card beside the form (see the layout at the bottom), so it takes no place here */
   const sumSec: string[] = []
   /* Grow: no Service Type card on step 1 — it is chosen at checkout; the builder previews it after the cards, unmovable */
-  const sections = merchantMode ? ['sec-consignment', 'sec-parties', 'sec-packages', 'sec-handling', ...(mode === 'ftl' && vehicleCard ? ['sec-vehicle'] : []),
+  const sections = merchantMode ? ['sec-consignment', 'sec-parties', 'sec-packages', 'sec-handling', ...((mode === 'ftl' || editing) && vehicleCard ? ['sec-vehicle'] : []),
     'sec-extras', 'sec-payment', ...sumSec]
     : simple ? ['sec-consignment', 'sec-parties', isFtl ? 'sec-vehicle' : 'sec-packages', 'sec-carrier'] : isFtl
     ? ['sec-consignment', 'sec-parties', ...svcSec, ...(vehicleCard ? ['sec-vehicle'] : []), ...(handlingVisible ? ['sec-handling'] : []), 'sec-carrier', ...sumSec]
@@ -3269,7 +3285,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
                 checked={!!c.clearanceRequired} onChange={(v) => setC({ clearanceRequired: v })} />
             </Configurable>
           )],
-          !hid('tags') && !merchantMode && [null, (
+          !hid('tags') && [null, (
             <Configurable key="tags" fieldKey="tags">
               <div className="flex items-center gap-2.5">
                 <span className="text-[13px] text-ink">{lbl('tags')}{need('tags') && <span className="text-danger-fg">&nbsp;*</span>}</span>
@@ -3283,13 +3299,8 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
       </div>}
       {/* Grow (owner, 2026-10-06: "Tags and Dedicate Truck in one line"): the two as fields side by side, labels on top,
           the field grid's widths — Load type = the Dedicate Truck switch (on = a full vehicle, picked in Vehicle Details) */}
-      {merchantMode && (!hid('tags') || !hid('dedicateTruck')) && (
+      {merchantMode && !hid('dedicateTruck') && (
         <div className={`${handlingChipsVisible || switchesRow ? 'mt-6' : ''} grid grid-cols-1 ${FIELD_GAPS} sm:grid-cols-[repeat(auto-fill,minmax(220px,1fr))]`}>
-          {!hid('tags') && (
-            <SFld fieldKey="tags" label={lbl('tags')} required={need('tags')}>
-              <MultiSelectDropdown size="sm" options={TAG_OPTIONS} values={c.tags ?? []} noun="tags" placeholder="Add tags" onChange={(v) => setC({ tags: v })} />
-            </SFld>
-          )}
           {/* 2026-10-07: a builder field on Grow too — hidden, every order books the builder's default (shared unless set) */}
           {!hid('dedicateTruck') && (
             <SFld fieldKey="dedicateTruck" label={custom('dedicateTruck', 'Dedicate Truck', 'Load type')}>
@@ -3300,7 +3311,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
           )}
         </div>
       )}
-      {need('tags') && !(c.tags ?? []).length && <ErrLine className="mt-2">Add at least one tag.</ErrLine>}
+      {need('tags') && !(c.tags ?? []).length && showErrors && <ErrLine className="mt-2">Add at least one tag.</ErrLine>}
     </div>
     {handlingCustom.nodes.length > 0 && <SGrid className={handlingChipsVisible || handlingTogglesVisible ? 'mt-6' : ''}>{handlingCustom.nodes}</SGrid>}
     <RevealToggle open={secOpen('sec-handling')} onToggle={() => toggleSec('sec-handling')} waiting={handlingCustom.waiting} waitingFilled={handlingCustom.waitingFilled} className="mt-6" />
@@ -3560,7 +3571,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     const u = unitsOf(p)
     /* owner, 2026-10-06 ("reduce quantity and weight width; Package Id in the line without expanding"): one wrapping row,
        each field its own width — Quantity and Weight narrow */
-    const PKG_KEY: Record<string, string> = { type: 'pkgType', qty: 'pkgQty', dims: 'pkgDimensions', weight: 'pkgWeight' }
+    const PKG_KEY: Record<string, string> = { type: 'pkgType', qty: 'pkgQty', dims: 'pkgDimensions', weight: 'pkgWeight', tr: 'pkgTracking', pid: 'pkgId', de: 'pkgDescription', ps: 'pkgPalletSpace' }
     /* the builder's Width in the package's line: S = the field's own size · M / L = wider · Full = the whole line */
     const PKG_WIDE = { m: 'flex-[1_1_200px] max-w-[320px]', l: 'flex-[1.6_1_280px] max-w-[460px]', full: 'flex-[1_1_100%] max-w-none' }
     const cell = (id: string) => {
@@ -3931,7 +3942,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   /* Grow, Dedicate Truck on: the same table on the Ship From hub's fleet */
   const growVehicleSection = (
     <FormCard id="sec-vehicle" title={lbl('vehicleDetails')}
-      caption={`A full vehicle just for this order — book the vehicles that fit the load, and the Ship To addresses each one serves.${fleetNote ? ` ${fleetNote}` : ''}`}>
+      caption={`${mode !== 'ftl' ? 'Shown when Dedicate Truck is on. ' : ''}A full vehicle just for this order — book the vehicles that fit the load, and the Ship To addresses each one serves.${fleetNote ? ` ${fleetNote}` : ''}`}>
       <Configurable fieldKey="vehicleDetails">
         {vehicleTable(fleet, (code) => fleet.find((v) => v.code === code)?.payloadKg ?? 0)}
       </Configurable>
