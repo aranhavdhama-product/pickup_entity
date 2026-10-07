@@ -48,6 +48,12 @@ export interface HubVehicle {
   carrierCode: string
   /** staging's primary-vehicle star */
   primary?: boolean
+  /**
+   * Dedicated fleet (Skynet FR-07, 2026-10-07, NEW — not in staging): merchant NAMES this vehicle is contracted to. Empty / absent =
+   * shared. Set, it can carry ONLY these merchants' pickups — a hard block with the reason, in every assignment path
+   * (`dedicationBlock`, read by planningStore).
+   */
+  dedicatedTo?: string[]
   /** every other field of staging's vehicle editor (Power Source, cut-offs, costs, …), by label */
   extra?: Record<string, string>
 }
@@ -121,6 +127,7 @@ function normalizeVehicle(raw: unknown, i: number): HubVehicle | null {
     tags: Array.isArray(r.tags) ? r.tags.filter((t): t is string => typeof t === 'string' && !!t.trim()) : [],
     carrierCode: str(r.carrierCode),
     primary: r.primary === true,
+    dedicatedTo: Array.isArray(r.dedicatedTo) ? r.dedicatedTo.filter((t): t is string => typeof t === 'string' && !!t.trim()) : [],
     extra: Object.fromEntries(Object.entries(asRecord(r.extra)).filter((e): e is [string, string] => typeof e[1] === 'string')),
   }
 }
@@ -158,6 +165,21 @@ export function vehicleTypesFor(hubCode: string | null | undefined): VehicleType
     .map((v) => ({ code: v.name, name: v.name, payloadKg: v.weightCapacityKg, capacity: vehicleCapacityLine(v) }))
 }
 export const hubVehicleTypes = vehicleTypesFor
+
+/**
+ * Dedicated fleet — may `merchant`'s work go on the vehicle a trip is labelled with, at `hubCode`? Returns the reason it may NOT
+ * (hard block, no override), or null. The trip stores the vehicle as a label, so it is matched by name at the trip's hub; a
+ * label that matches no configured vehicle, or a shared vehicle, never blocks.
+ */
+export function dedicationBlock(vehicleLabel: string | null | undefined, hubCode: string | null | undefined, merchant: string): string | null {
+  const label = (vehicleLabel ?? '').trim().toLowerCase()
+  if (!label || !merchant) return null
+  const v = vehiclesForHub(hubCode).find((x) => x.name.trim().toLowerCase() === label)
+    ?? allVehicles().find((x) => x.name.trim().toLowerCase() === label && (x.dedicatedTo?.length ?? 0) > 0)
+  const owners = v?.dedicatedTo ?? []
+  if (!v || !owners.length || owners.includes(merchant)) return null
+  return `${v.name} is dedicated to ${owners.join(', ')} — it cannot carry ${merchant}'s pickup.`
+}
 
 /* --------------------------------------------------------------- actions ---- */
 

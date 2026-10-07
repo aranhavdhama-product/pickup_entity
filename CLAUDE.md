@@ -703,6 +703,42 @@ effects (a cancelled/rescheduled PR leaving its trip) flow through `onPickupRequ
   attempts left carries its auto re-attempt (129→140, 136→137). LOCAL sidebar → Demos →
   **Reset demo data** reseeds both stores.
 
+## Pickup module, simplified (owner, 2026-10-07) — supersedes the older wording above where they differ
+
+**One rule: nothing needs configuring, and every pickup flows the same way** — create → book → pick up → hand over → close.
+
+- **Settings (`/local/settings/pickup`, `LocalSettings/PickupSettings.tsx`)** = a flow strip (4 steps, live captions) + four numbered
+  cards in lifecycle order: **1 Create** (Manual | Automatic; Automatic = "create it when the consignment is Created · Label
+  Generated · Ready To Ship" — the exact FarEye event stays under More options; Shipper chooses the time; Manual = book before
+  consignments exist; a link to Schedules) · **2 Book the time** (Book up to N days ahead · Same-day cut-off · More: pickup days,
+  Holiday master) · **3 Pick up and hand over** (**Pickup manifest required** `manifestRequired`, default ON; Who scans
+  Driver | Hub | Both; proof signature; More: photo, one-time code, parcels not on the request) · **4 If a pickup goes wrong** (try
+  again automatically, Reason Policy; More: merchants change/cancel until, consignments added until). `manifestRequired` OFF =
+  `store.ts stamp()` closes the handover the moment a request completes (no scan to reconcile).
+- **No Start time / End time on any pickup request form** (`SlotWindowFields timeFields={false}`: Schedule pickup, Create / Blind
+  pickup, Reschedule, Split, Grow Create): only the pickup DATE is asked; the window is that day's earliest bookable slot of the
+  account's `slotDefinitions`, read back on one line. The consignment form's own optional pickup window keeps its times.
+- **ONE blind-pickup dialog on both portals** — "Blind pickup request": Parcels (LTL) | Full vehicle (FTL), Pickup address, window,
+  note. Console adds a Merchant (OPTIONAL — an ad-hoc request); Grow has none (it is inside one merchant). A full vehicle books ONE
+  vehicle: Service Type | Vehicle side by side (no Add vehicle, no count, no per-vehicle address map; one optional Drop address).
+- **Pickup Schedules (rosters, Skynet First Mile)** — `/local/pickup/schedules` (button "Schedules (n)" on the Pickup page and a row
+  in the settings). `growOrders/scheduleModel.ts` (pure: shape, `validateSchedule`, `scheduleKey` = schedule + run + date,
+  `pickRunPr`, `staleScheduleRequests`; store `pickup-schedules-v1`, seeded PAUSED so the demo does not move), `pickupSchedules.ts`
+  (save/pause/delete with a change log, `runGenerator`, `ensureDailyRun` called once a day from `LocalLayout`). A schedule = a
+  merchant location + days + runs (windows) + servicing hub + dates + Active | Paused. The generator makes ONE request per active
+  run per operating day for the horizon (source **Schedule**, `GrowPickupRequest.schedule` = { id, code, runId, runLabel, date },
+  never twice), closes the previous days' requests nobody assigned (`NOT_ASSIGNED`, 23:59 rule), then links waiting consignments.
+  `store.ts joinScheduledRun` (called from `create` / `update`): a consignment ready at a location with an ACTIVE roster joins the run
+  its ready time falls in (else the earliest run still ahead, else the next day's first; never a request already at pickup) and
+  takes the roster hub as its inbound hub. An empty roster request is a normal blind request (an empty one fails "No orders to
+  collect" like any other).
+- **Dedicated fleet (FR-07)** — `HubVehicle.dedicatedTo` (merchant names; editor field "Dedicated to (new)", tagged NEW — not in
+  staging) and `vehicleConfig.dedicationBlock(vehicleLabel, hubCode, merchant)`: a dedicated vehicle cannot carry another merchant's
+  pickup — a hard block with its reason wherever a stop is put on a trip.
+- **Form builder → View / Modify Consignment**: `formSetup.loadViewSetup(portal)` + `viewPairs` — the console View Consignment tabs and
+  Grow's merchant sections hide the fields the builder hides and carry its renames; Modify opens the same form on both portals.
+- **Grow's rail** is the console's: always expanded (button collapses it) — no auto-collapse, no hover overlay.
+
 ## Engineering rules
 
 **Performance** (why staging felt faster than us on the same APIs):

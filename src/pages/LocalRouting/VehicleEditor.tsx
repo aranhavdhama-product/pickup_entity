@@ -11,6 +11,8 @@ import { ArrowLeft, Star, Trash2 } from 'lucide-react'
 import { Checkbox, ConfirmDialog, Input, MenuSelect, MultiSelect } from '../../nueva/components'
 import { LocalPage } from '../../local/chrome'
 import { toast } from '../../nueva/toast'
+import { useGrowOrders } from '../../growOrders/store'
+import { merchantsOf } from '../LocalPFP/merchants'
 import {
   HUB_CITIES, VEHICLE_MODES, cityOfHub, useVehicleConfig, vehicleConfigActions, type HubVehicle, type VehicleMode,
 } from '../../config/vehicleConfig'
@@ -41,6 +43,7 @@ export default function VehicleEditor() {
   const [params] = useSearchParams()
   const nav = useNavigate()
   const { vehicles } = useVehicleConfig()
+  const merchants = merchantsOf(useGrowOrders().stores).map((m) => m.name)
   const existing = vehicles.find((v) => v.id === vehicleId)
   const [v, setV] = useState<HubVehicle>(() => existing ?? {
     id: '', name: '', hubCode: params.get('hub') || HUBS[0], mode: 'truck', shiftStart: '07:00', shiftEnd: '19:00',
@@ -81,6 +84,8 @@ export default function VehicleEditor() {
         <F label="Power Source">{pick('Power Source', ['Diesel', 'Petrol', 'Electric', 'CNG', 'Hybrid'])}</F>
         <F label="Name" required><Input value={v.name} placeholder="Type here..." onChange={(name) => set({ name })} /></F>
         <F label="Tags"><MultiSelect value={v.tags} options={[...new Set(vehicles.flatMap((x) => x.tags))]} creatable placeholder="Type here..." onChange={(tags) => set({ tags })} /></F>
+        {/* NEW (Skynet FR-07 — a ticket addition, not in staging): a vehicle contracted to merchants carries only their pickups */}
+        <F label="Dedicated to (new)"><MultiSelect value={v.dedicatedTo ?? []} options={merchants} placeholder="Shared — any merchant" onChange={(dedicatedTo) => set({ dedicatedTo })} /></F>
         <F label="Max Range (miles)">{text('Max Range (miles)')}</F>
         <F label="User Type">{pick('User Type', ['Field Executive', 'Driver', 'Rider'])}</F>
         <F label="Origin Location">{text('Origin Location', 'lat,lng')}</F>
