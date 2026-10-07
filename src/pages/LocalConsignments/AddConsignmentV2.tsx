@@ -3999,11 +3999,12 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
       count={layout.services === 'grid' && quotes.length > 1 ? quotes.length : undefined}
       action={editing ? (
         <LayoutSeg label="Show as" value={layout.services} onChange={(v) => setDraftLayout((l) => ({ ...l, services: v }))} options={[
+          { value: 'menu', label: 'Dropdown', tip: 'One compact dropdown — the shortest step' },
           { value: 'grid', label: 'Grid', tip: 'Two services per row — less scrolling' },
           { value: 'list', label: 'List', tip: 'One full-width card per service' },
         ]} />
       ) : undefined}
-      caption={`Merchants pick it on the next step (Service & payment), with the estimated rate for this route. ${layout.services === 'grid' ? 'Two per row.' : 'One per row.'} Dedicate Truck is in Handling.`}>
+      caption={`Merchants pick it on the next step (Service & payment), with the estimated rate for this route. ${layout.services === 'menu' ? 'One dropdown.' : layout.services === 'grid' ? 'Two per row.' : 'One per row.'} Dedicate Truck is in Handling.`}>
       {editing ? <Configurable fieldKey="serviceType">{serviceChooser}</Configurable> : serviceChooser}
       {showErrors && !ready && (
         <ErrLine className="mt-3">Add {[!laneReady(sender) && 'a Ship From address', !allDrops.every(laneReady) && 'a Ship To address',

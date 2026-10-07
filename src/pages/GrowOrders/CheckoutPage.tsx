@@ -250,44 +250,38 @@ export default function CheckoutPage() {
         right={<Button variant="outline" onClick={backToForm}>Back to order details</Button>} />
       <WizardSteps steps={ORDER_STEPS} active={1} done={[0]} onSelect={(i) => { if (i === 0) backToForm() }} />
       <div className="grid gap-4 lg:grid-cols-[1fr_380px]">
+        {/* left: the two choices — which service, how you pay (owner, 2026-10-07: "How you pay sits on the left") */}
         <div className="flex min-w-0 flex-col gap-4">
-          <CheckoutSummary draft={draft} onEdit={backToForm} linked={linked}
-            service={locked && chosen ? `${chosen.name} · ${carrier}` : undefined} />
           {!locked && (
             <Panel title={side?.label ?? 'Service Type'}>
               <div className="px-5 pb-5 pt-2">
                 {quotes.length ? (
                   <ServiceTypeChooser hideMode vehiclesElsewhere ready mode={ftl ? 'ftl' : 'ltl'} onMode={() => undefined}
                     quotes={quotes} selected={chosen?.code ?? ''} onSelect={setPicked} currency={rc} fleet={[]} counts={{}}
-                    onCount={() => undefined} fleetNote="" showErrors={false} layout={side?.layout ?? 'grid'} carrier={carrier} />
+                    onCount={() => undefined} fleetNote="" showErrors={false} layout={side?.layout ?? 'menu'} carrier={carrier} />
                 ) : <p className="text-[13px] text-ink-3">No service can be booked on this route — please contact support.</p>}
               </div>
             </Panel>
           )}
-          <Panel title="Payment">
+          <Panel title="How you pay">
             <div className="px-5 pb-5 pt-2">
-              {/* Payment Mode / COD amount / remarks were asked on step 1 (the form's Payment card) */}
-              <p className="text-[12px] text-ink-3">
-                {payment === 'COD' ? `Cash on delivery${cod ? ` · ${money(cod, cur)} collected from the receiver` : ''}` : 'Prepaid'}
-                {remarks ? ` · Remarks: ${remarks}` : ''}
-              </p>
-              <div className="mt-4 border-t border-line pt-4">
-                <p className="text-[13px] font-bold text-ink">How you pay</p>
-                {chosen ? (
-                  <>
-                    <p className="mb-3 mt-0.5 text-[12px] text-ink-3">Choose one or more ways to pay the {money(payable, cur)}.</p>
-                    <SplitPaymentSheet split={split} />
-                  </>
-                ) : <p className="mt-0.5 text-[12px] text-ink-3">Choose a service to see what you pay.</p>}
-              </div>
+              {chosen ? (
+                <>
+                  <p className="mb-3 text-[12px] text-ink-3">Choose one or more ways to pay the {money(payable, cur)}.</p>
+                  <SplitPaymentSheet split={split} />
+                </>
+              ) : <p className="text-[12px] text-ink-3">Choose a service to see what you pay.</p>}
             </div>
           </Panel>
         </div>
         <div>
-          <div className="lg:sticky lg:top-4">
+          <div className="flex flex-col gap-4 lg:sticky lg:top-4">
+            <CheckoutSummary rail draft={draft} onEdit={backToForm} linked={linked}
+              service={chosen ? `${chosen.name} · ${carrier}` : undefined}
+              payment={payment === 'COD' ? `Cash on delivery${cod ? ` · ${money(cod, cur)} collected from the receiver` : ''}` : 'Prepaid'}
+              remarks={remarks} />
             <Panel title="Payment Summary">
               <div className="px-5 pb-5">
-                <p className="mb-4 text-[12px] text-ink-3">{chosen ? `${chosen.name} · ${carrier}` : 'Complete the payment for your order'}</p>
                 <div className="space-y-2 text-[13px] text-ink">
                   <div className="flex justify-between"><span className="text-ink-3">Total Shipments</span><span>1</span></div>
                   <div className="flex justify-between"><span className="text-ink-3">Shipping charges</span><span>{dash(rate)}</span></div>

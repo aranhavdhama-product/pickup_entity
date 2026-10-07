@@ -4,6 +4,10 @@
  * packages or vehicles · value-added services · what the order is for (a pickup request / an overage scan), and
  * the service only when the form hides Service Type (nothing to choose on this screen then). A value that is
  * empty is not shown. Edit goes back to step 1 (the form restores the session draft). Nothing here writes anything.
+ *
+ * `rail` (owner, 2026-10-07: "a richer order summary on the right"): the same card as one vertical list in the page's
+ * right rail, above the Payment Summary — it also reads back the chosen service, the payment mode (+ COD amount) and
+ * the remarks that step 1 collected.
  */
 import type { ReactNode } from 'react'
 import { Pencil } from 'lucide-react'
@@ -44,9 +48,14 @@ const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
 /** "Anuj Bhartia · San Pablo" — who and which city */
 const who = (p: Party) => [p.name || p.businessName, p.city || p.state].filter(Boolean).join(' · ')
 
+/** the page's three columns, or one vertical list in the right rail */
+function Grid({ rail, children }: { rail: boolean; children: ReactNode }) {
+  return rail ? <div className="grid gap-4">{children}</div> : <MGrid cols={3}>{children}</MGrid>
+}
+
 /* ------------------------------------------------------------------- card --- */
 
-export function CheckoutSummary({ draft, onEdit, service, linked }: {
+export function CheckoutSummary({ draft, onEdit, service, linked, rail = false, payment, remarks }: {
   draft: OrderDraft
   /** back to step 1 (the form) */
   onEdit: () => void
@@ -54,6 +63,12 @@ export function CheckoutSummary({ draft, onEdit, service, linked }: {
   service?: string
   /** what the order is for: "Pickup request PR-000104" · "Overage scan 2GO-OV-88213 · PR-000107" */
   linked?: string
+  /** a vertical list for the right rail (default: three columns under the page header) */
+  rail?: boolean
+  /** "Prepaid" · "Cash on delivery · ₱ 500.00 collected" — what step 1 asked (rail only) */
+  payment?: string
+  /** the remarks typed on step 1 (rail only) */
+  remarks?: string
 }) {
   const cf = draft.consignment
   const ftl = draft.shipmentType === 'FTL'
@@ -70,7 +85,7 @@ export function CheckoutSummary({ draft, onEdit, service, linked }: {
 
   return (
     <Card title="Order summary" onEdit={onEdit}>
-      <MGrid cols={3}>
+      <Grid rail={rail}>
         <Item label="Order number">{cf?.orderNumber?.trim() || <span className="text-ink-3">Given when you place the order</span>}</Item>
         <Item label="Ship From">
           {who(draft.sender) || '—'}
@@ -85,8 +100,10 @@ export function CheckoutSummary({ draft, onEdit, service, linked }: {
           : <Item label="Packages">{goods}</Item>}
         <Item label="Service">{service}</Item>
         <Item label="Value-added services">{vas.join(', ')}</Item>
+        {rail && <Item label="Payment mode">{payment}</Item>}
+        {rail && <Item label="Remarks">{remarks}</Item>}
         <Item label="For">{linked}</Item>
-      </MGrid>
+      </Grid>
     </Card>
   )
 }

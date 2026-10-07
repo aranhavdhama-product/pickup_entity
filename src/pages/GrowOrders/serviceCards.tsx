@@ -10,6 +10,9 @@
  * the same grammar (type · capacity · rate per vehicle · count stepper) from the Ship From hub's
  * fleet. Every rate is ESTIMATED (growOrders/rates).
  *
+ * `layout="menu"` (owner, 2026-10-07: "Service Type a compact dropdown", the default): ONE dropdown — each line the service
+ * name, the carrier and the rate; the chosen one is read back under it. No cards, so the second step stays short.
+ *
  * `layout="grid"` (owner, 2026-10-05, the form builder's Services choice, the default): the live portal's compact
  * "Services" block — the cards two per row (inside one quiet frame only when the chooser shows its own load-type
  * segment; with `hideMode` they sit on the host's card): a radio, the name + the carrier, the rate (no transit days since
@@ -20,6 +23,7 @@ import { useState, type ReactNode } from 'react'
 import { Banknote, Boxes, Pencil, Truck } from 'lucide-react'
 import type { ServiceQuote } from '../../growOrders/rates'
 import { money } from './utils'
+import { MenuSelect } from '../../nueva/components'
 import { CountStepper, Segment } from './merchantFormBits'
 
 export type BookingMode = 'ltl' | 'ftl'
@@ -95,7 +99,7 @@ export function ServiceTypeChooser({
   /** the load type is asked elsewhere (the form's Handling card) — no segment here */
   hideMode?: boolean
   /** 'grid' = two compact cards per row (the builder's default for Grow), 'list' = one full-width card each */
-  layout?: 'grid' | 'list'
+  layout?: 'menu' | 'grid' | 'list'
   /** who carries it — the line under each service's name in the grid */
   carrier?: string
   /** OD pair + a weight exist — until then the cards show without rates and cannot be picked */
@@ -122,14 +126,15 @@ export function ServiceTypeChooser({
 }) {
   const [editing, setEditing] = useState(false)
   const grid = layout === 'grid'
+  const menu = layout === 'menu'
   const chosen = quotes.find((q) => q.code === selected)
-  const collapsed = !grid && !!chosen && !editing
+  const collapsed = !grid && !menu && !!chosen && !editing
   const shown = collapsed ? [chosen] : quotes
   const vehicles = Object.values(counts).reduce((n, c) => n + c, 0)
   const pick = (code: string) => { onSelect(code); setEditing(false) }
   return (
     <>
-      {!grid && !servicesHidden && ready && chosen && !serviceLocked && quotes.length > 1 && (
+      {!grid && !menu && !servicesHidden && ready && chosen && !serviceLocked && quotes.length > 1 && (
         <div className="-mt-2 mb-3 flex justify-end">
           <button type="button" onClick={() => setEditing((v) => !v)}
             className="inline-flex items-center gap-1.5 text-[13px] font-bold text-brand-500 hover:text-brand-600">
@@ -149,7 +154,29 @@ export function ServiceTypeChooser({
           </p>
         ) : servicesHidden ? null : (
           <>
-            {grid ? (
+            {menu ? (
+              <div className={hideMode ? '' : 'mt-4'}>
+                <div className="max-w-[460px]">
+                  <MenuSelect value={chosen?.code ?? ''} placeholder={ready ? 'Choose a service' : 'Add the route and packages first'} disabled={!ready}
+                    options={quotes.map((q) => q.code)} labels={(c) => quotes.find((q) => q.code === c)?.name ?? c} onChange={pick}
+                    renderOption={(c) => {
+                      const q = quotes.find((x) => x.code === c)
+                      return q ? (
+                        <span className="flex w-full items-center justify-between gap-4">
+                          <span className="min-w-0"><span className="block truncate font-bold text-ink">{q.name}</span>
+                            <span className="block truncate text-[12px] text-ink-3">{carrier || 'Carrier assigned at booking'}</span></span>
+                          <span className="shrink-0 font-bold text-ink">{money(q.net, currency)}</span>
+                        </span>
+                      ) : c
+                    }}
+                    renderValue={(c) => {
+                      const q = quotes.find((x) => x.code === c)
+                      return q ? <span className="flex w-full items-center justify-between gap-3"><span className="truncate">{q.name}</span><span className="shrink-0 font-bold">{money(q.net, currency)}</span></span> : c
+                    }} />
+                </div>
+                {chosen && <p className="mt-2 text-[12px] text-ink-3">Carried by {carrier || 'the carrier assigned at booking'}.</p>}
+              </div>
+            ) : grid ? (
               /* inside the form's own card (hideMode) the cards sit on it directly — no second frame */
               <div className={hideMode ? '' : 'mt-4 rounded-xl border border-line p-5'}>
                 <div className="grid gap-4 lg:grid-cols-2" role="radiogroup" aria-label="Service Type">

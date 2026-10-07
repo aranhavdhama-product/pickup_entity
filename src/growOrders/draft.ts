@@ -241,7 +241,7 @@ export function readOverageSidecar(): OverageSidecar | null {
  * Session only, rewritten on every Continue.
  */
 export const DRAFT_CHECKOUT_KEY = 'grow-order-draft-checkout'
-export interface CheckoutSidecar { services: string[]; locked: boolean; layout: 'grid' | 'list'; label: string; back: string }
+export interface CheckoutSidecar { services: string[]; locked: boolean; layout: 'menu' | 'grid' | 'list'; label: string; back: string }
 export function setCheckoutSidecar(x: CheckoutSidecar) {
   try { sessionStorage.setItem(DRAFT_CHECKOUT_KEY, JSON.stringify(x)) } catch { /* private mode */ }
 }

@@ -192,18 +192,19 @@ export const FORM_TIER_KEY = 'console-consignment-form-v2-tier'
  *   shipFrom · shipTo · rto   each address on its own:
  *             'cards'  = a saved-address picker read back as a card, Add / Edit in a popup (the form until now)
  *             'inline' = the fields on the form itself, under a search of the saved addresses
- *   services  (Grow) 'grid' = the lane's services as compact cards, two per row · 'list' = one full-width card each
+ *   services  (Grow) 'menu' = ONE compact dropdown with the carrier and the rate on each line (default since 2026-10-07) ·
+ *             'grid' = the lane's services as compact cards, two per row · 'list' = one full-width card each
  *   addresses  'side' = Ship From | Ship To side by side (default; they still stack when the card is narrow) ·
  *              'stack' = one under the other (owner, 2026-10-06)
  * A stored layout from before the per-address split (`address`) applies to all three addresses.
  */
 export type AddressEntry = 'cards' | 'inline'
-export type ServiceLayout = 'grid' | 'list'
+export type ServiceLayout = 'menu' | 'grid' | 'list'
 export type AddressArrangement = 'side' | 'stack'
 export type AddressRole = 'shipFrom' | 'shipTo' | 'rto'
 export const ADDRESS_ROLES: AddressRole[] = ['shipFrom', 'shipTo', 'rto']
 export interface FormLayout { shipFrom: AddressEntry; shipTo: AddressEntry; rto: AddressEntry; services: ServiceLayout; addresses: AddressArrangement }
-export const DEFAULT_LAYOUT: FormLayout = { shipFrom: 'cards', shipTo: 'cards', rto: 'cards', services: 'grid', addresses: 'side' }
+export const DEFAULT_LAYOUT: FormLayout = { shipFrom: 'cards', shipTo: 'cards', rto: 'cards', services: 'menu', addresses: 'side' }
 export const LAYOUT_KEY = 'fe-consignment-form-v2-layout'
 export const LAYOUT_GROW_KEY = 'fe-consignment-form-v2-layout-grow'
 const isEntry = (v: unknown): v is AddressEntry => v === 'cards' || v === 'inline'
@@ -214,7 +215,7 @@ const asLayout = (raw: unknown): Partial<FormLayout> => {
   /* the first version stored one choice for every address */
   if (isEntry(r.address)) for (const k of ADDRESS_ROLES) out[k] = r.address
   for (const k of ADDRESS_ROLES) if (isEntry(r[k])) out[k] = r[k] as AddressEntry
-  if (r.services === 'grid' || r.services === 'list') out.services = r.services
+  if (r.services === 'menu' || r.services === 'grid' || r.services === 'list') out.services = r.services
   if (r.addresses === 'side' || r.addresses === 'stack') out.addresses = r.addresses
   return out
 }
