@@ -334,7 +334,7 @@ function CompleteStopModal({ trip, stop, onClose }: { trip: LocalTrip; stop: Pla
       footer={<><Button variant="outline" onClick={onClose}>Cancel</Button><Button onClick={confirm}>Complete pickup</Button></>}>
       <p className="pb-3 text-[13px] text-ink-2">
         Tick what the driver scanned. Unticked consignments are released back to Ready for Pickup.
-        {reserved && ' This is a Reserved booking with no expected list — enter the pieces the driver counted (and any scans below); completing with none fails the stop.'}
+        {reserved && ' This is a blind booking with no expected list — enter the pieces the driver counted (and any scans below); completing with none fails the stop.'}
       </p>
       {reserved && (
         <div className="w-40 pb-3">

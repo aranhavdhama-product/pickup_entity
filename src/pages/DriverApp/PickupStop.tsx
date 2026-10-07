@@ -107,10 +107,10 @@ export default function PickupStopScreen({ trip, stop, work, setWork, onBack, on
     closeSheet()
   }
 
-  const doComplete = () => {
-    const captured = w.signed || w.photo || w.otp.length >= 4
-    completePickup(trip.id, pr.id, w, captured
-      ? { signature: w.signed, photo: w.photo, otp: w.otp.length >= 4, at: new Date().toISOString() }
+  const doComplete = (work: PickupWork = w) => {
+    const captured = work.signed || work.photo || work.otp.length >= 4
+    completePickup(trip.id, pr.id, work, captured
+      ? { signature: work.signed, photo: work.photo, otp: work.otp.length >= 4, at: new Date().toISOString() }
       : null)
     setSheet({ kind: 'outcome' })
   }
@@ -435,7 +435,9 @@ export default function PickupStopScreen({ trip, stop, work, setWork, onBack, on
         <Sheet title="Complete with parcels left?" onClose={closeSheet}
           footer={<div className="grid grid-cols-2 gap-3">
             <Btn tone="secondary" onClick={closeSheet}>Keep scanning</Btn>
-            <Btn onClick={doComplete}>Complete</Btn>
+            {/* a short pick is never silent (First Mile Ops 2026-10-07): the driver says WHY the parcels left behind were not taken */}
+            <Btn disabled={mode !== 'hub' && !reason}
+              onClick={() => doComplete(mode === 'hub' ? w : { ...w, notPicked: { ...w.notPicked, ...Object.fromEntries(toPick.map((id) => [id, reason])) } })}>Complete</Btn>
           </div>}>
           <div className="text-[15px] text-[#1B2A41]">
             {mode === 'hub'
@@ -445,6 +447,12 @@ export default function PickupStopScreen({ trip, stop, work, setWork, onBack, on
           <ul className="mt-3 flex flex-col gap-1 text-[13px] text-[#5B6B82]">
             {toPick.map((id) => <li key={id}>• {orderLabel(id)}</li>)}
           </ul>
+          {mode !== 'hub' && (
+            <div className="mt-4">
+              <div className="mb-1.5 text-[13px] font-bold text-[#1B2A41]">Why were they not picked up?</div>
+              <ReasonList options={MERCHANT_SIDE_REASONS} value={reason} onChange={setReason} />
+            </div>
+          )}
         </Sheet>
       )}
 

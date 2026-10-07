@@ -738,6 +738,26 @@ effects (a cancelled/rescheduled PR leaving its trip) flow through `onPickupRequ
 - **Form builder → View / Modify Consignment**: `formSetup.loadViewSetup(portal)` + `viewPairs` — the console View Consignment tabs and
   Grow's merchant sections hide the fields the builder hides and carry its renames; Modify opens the same form on both portals.
 - **Grow's rail** is the console's: always expanded (button collapses it) — no auto-collapse, no hover overlay.
+- **First Mile Ops — missed-pickup and dispatcher-error prevention (2026-10-07; audit by a 7-lens read-only workflow, 26 findings).**
+  Rules: ONE derived function per reading (`tabs.riskReasons`), no new settings (constants: `AT_RISK_LEAD_MINS` 120, `LATE_GRACE_MINS` 15,
+  `STUCK_IN_TRANSIT_HOURS` 6), a block always names its reason and is enforced in the STORE (a menu alone can be bypassed).
+  Missed pickups: `riskReasons(p, now)` → late (window opened, nobody on the way) · not planned · no driver · slot unconfirmed · not
+  received at the hub; any of them (and a hub scan Discrepancy on a Completed request, and a stuck-in-transit one) lands the
+  request in **Exception** (a deliberate narrowing of the 2026-09-25 "a Completed request is never Exception" rule — a partial pick
+  still stays under Closed) and shows in the **Exception** column beside **State** (`prModel.exceptionOf`; Grow drops Discrepancy). A
+  one-minute clock (`local/useNow`) re-derives the tabs, counts and flags with no reload; the daily schedule job failing, or not having
+  run today, is a red chip on the Pickup page. Dispatcher errors (`planningStore.pickupTripBlock` / `driverTripBlock`, reasons shown in
+  Add to route and Assign driver): a request cannot go on a trip of another day or hub, nor while held for review / awaiting the
+  shipper's slot / with a 3PL; a vehicle dedicated to another merchant cannot carry it; a driver cannot be on two trips with
+  overlapping pickup windows; a stop the driver has reached or finished cannot be removed; trip attention notes accumulate. The driver
+  must give a reason for parcels left behind on a short pick. Roster requests of a paused / re-timed / deleted schedule are cancelled
+  while unassigned (`SCHEDULE_CHANGED`); `runGenerator` honours the pickup module switch. NOT done (still open in the audit): the
+  trip-not-started / driver-never-opened-trip reading, an append-only attention list with acknowledgement, proof of pickup enforced in
+  the store, hub scan integrity (wrong-hub scans counted, unresolved overage ignored), "who" on every history entry, the Pending For
+  Planning default sort by window, one shared dialog per action, merchant outbox, dead `cutoffTime` / `sendToCarrier` keys.
+- **SKU line = ONE line on both portals** (2026-10-07): every SKU detail the builder shows and does NOT put under More (Grow: HSN Code ·
+  Origin Country · Unit Cost) is a column of the line (`skuInline`); the rest wait behind the chevron. **Units**: weight (kg · g · lb ·
+  oz) and size (cm · in · mm · m) are set independently per package (`Parcel.weightUnit` / `dimUnit`, over the older `unitSystem` pairs).
 
 ## Engineering rules
 
