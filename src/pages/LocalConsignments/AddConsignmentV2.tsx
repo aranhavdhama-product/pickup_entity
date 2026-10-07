@@ -3338,31 +3338,55 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   /* a SKU line's columns — Unit Weight and Dimensions leave when the builder hides them (2026-10-07) */
   const skuWHid = hid('skuWeight')
   const skuDHid = hid('skuDimensions')
+  /* a SKU line is ONE line (owner, 2026-10-07: "in SKU it should be in one line, in both Grow and the console"): every detail
+     the builder shows and does NOT put under "More" (Grow: HSN Code · Origin Country · Unit Cost; any the console moves out
+     of More) is a column of the line itself, headed like Unit Weight; the rest wait behind the chevron */
+  const SKU_INLINE_ORDER = ['skuCategory', 'skuDescription', 'skuHsn', 'skuOrigin', 'skuUnitCost', 'skuImage'] as const
+  const SKU_INLINE_W: Record<string, string> = { skuCategory: 'minmax(0,1fr)', skuDescription: 'minmax(0,1.2fr)', skuHsn: '112px', skuOrigin: 'minmax(0,1.1fr)', skuUnitCost: '112px', skuImage: 'minmax(0,1fr)' }
+  const skuInline: string[] = SKU_INLINE_ORDER.filter((k) => !hid(k) && !inMore(k))
+  const skuInlineLabel = (k: string) => (k === 'skuUnitCost' ? `${lbl(k)} (${currency})` : lbl(k))
   const SKU_COLS = 'grid items-start gap-x-3'
   const skuColsStyle = { gridTemplateColumns: ['28px', 'minmax(0,1.3fr)', 'minmax(0,1.4fr)', '84px', ...(skuWHid ? [] : ['104px']),
-    ...(skuDHid ? [] : ['minmax(0,1.5fr)']), '80px', '96px'].join(' ') }
+    ...(skuDHid ? [] : ['minmax(0,1.5fr)']), ...skuInline.map((k) => SKU_INLINE_W[k]), '80px', '96px'].join(' ') }
+  const skuMinWidth = 860 + skuInline.length * 130
   /** picked from the SKU master (its name / size / weight came with it) vs typed by hand */
   const isMasterSku = (it: ParcelItem) => !!it.skuCode && masters.skus.some((sk) => sk.code === it.skuCode)
   /** a SKU line's details (owner, 2026-10-06: "Grow — HSN Code, Origin Country and Cost in the default view"): the ones not
       under "More" sit on the line's second row (Grow: HSN · Origin · Cost; the console: none); the rest wait behind the
       chevron at the line's end and open IN PLACE. `open` = the chevron is open (or the form is edited). */
-  const skuDetails = (it: ParcelItem, patch: (p: Partial<ParcelItem>) => void, open: boolean) => {
+  const skuDetails = (it: ParcelItem, patch: (p: Partial<ParcelItem>) => void, open: boolean, skipInline = false) => {
+    const off = (k: string) => hid(k) || (skipInline && skuInline.includes(k))
     const r = arrange(sortApi, 'sku-details', [
-      !hid('skuCategory') && ['skuCategory', <F key="category" fieldKey="skuCategory" label={lbl('skuCategory')} value={it.category ?? ''}
+      !off('skuCategory') && ['skuCategory', <F key="category" fieldKey="skuCategory" label={lbl('skuCategory')} value={it.category ?? ''}
         options={opts([...new Set([...masters.skus.map((sk) => sk.category).filter(Boolean), ...(it.category ? [it.category] : [])])])}
         onChange={(v) => patch({ category: v })} />, filled(it.category)],
-      !hid('skuDescription') && ['skuDescription', <F key="description" fieldKey="skuDescription" label={lbl('skuDescription')} value={it.description ?? ''}
+      !off('skuDescription') && ['skuDescription', <F key="description" fieldKey="skuDescription" label={lbl('skuDescription')} value={it.description ?? ''}
         placeholder="eg, Water Bottle" onChange={(v) => patch({ description: v })} />, filled(it.description)],
-      !hid('skuHsn') && ['skuHsn', <F key="hsn" fieldKey="skuHsn" label={lbl('skuHsn')} value={it.hsnCode ?? ''} placeholder="eg, 851713"
+      !off('skuHsn') && ['skuHsn', <F key="hsn" fieldKey="skuHsn" label={lbl('skuHsn')} value={it.hsnCode ?? ''} placeholder="eg, 851713"
         onChange={(v) => patch({ hsnCode: v })} />, filled(it.hsnCode)],
-      !hid('skuOrigin') && ['skuOrigin', <F key="origin" fieldKey="skuOrigin" label={lbl('skuOrigin')} value={it.originCountry ?? ''} placeholder="eg, Philippines" searchable
+      !off('skuOrigin') && ['skuOrigin', <F key="origin" fieldKey="skuOrigin" label={lbl('skuOrigin')} value={it.originCountry ?? ''} placeholder="eg, Philippines" searchable
         options={opts([...new Set([...COUNTRIES, ...(it.originCountry ? [it.originCountry] : [])])])} onChange={(v) => patch({ originCountry: v })} />, filled(it.originCountry)],
-      !hid('skuUnitCost') && ['skuUnitCost', <FNum key="cost" fieldKey="skuUnitCost" label={`${lbl('skuUnitCost')} (${currency})`} blankZero placeholder="eg, 12.34"
+      !off('skuUnitCost') && ['skuUnitCost', <FNum key="cost" fieldKey="skuUnitCost" label={`${lbl('skuUnitCost')} (${currency})`} blankZero placeholder="eg, 12.34"
         value={it.unitCost ?? 0} onChange={(n) => patch({ unitCost: n })} />, (it.unitCost ?? 0) > 0],
-      !hid('skuImage') && ['skuImage', <F key="image" fieldKey="skuImage" label={lbl('skuImage')} value={it.imageUrl ?? ''}
+      !off('skuImage') && ['skuImage', <F key="image" fieldKey="skuImage" label={lbl('skuImage')} value={it.imageUrl ?? ''}
         onChange={(v) => patch({ imageUrl: v })} />, filled(it.imageUrl)],
     ], inMore, open)
     return { node: r.nodes.length ? <SGrid className="mt-5 pl-10">{r.nodes}</SGrid> : null, waiting: r.waiting, waitingFilled: r.waitingFilled }
+  }
+  /** one inline detail as a bare control (its header names it) — same inputs as the details grid */
+  const skuInlineCell = (k: string, it: ParcelItem, patch: (p: Partial<ParcelItem>) => void): ReactNode => {
+    switch (k) {
+      case 'skuCategory': {
+        const list = [...new Set([...masters.skus.map((sk) => sk.category).filter(Boolean), ...(it.category ? [it.category] : [])])]
+        return <MenuSelect value={it.category ?? ''} placeholder="Select" options={list} onChange={(v) => patch({ category: v })} />
+      }
+      case 'skuDescription': return <Input value={it.description ?? ''} placeholder="eg, Water Bottle" onChange={(v) => patch({ description: v })} />
+      case 'skuHsn': return <Input value={it.hsnCode ?? ''} placeholder="eg, 851713" onChange={(v) => patch({ hsnCode: v })} />
+      case 'skuOrigin': return <MenuSelect value={it.originCountry ?? ''} placeholder="eg, Philippines" searchable
+        options={[...new Set([...COUNTRIES, ...(it.originCountry ? [it.originCountry] : [])])]} onChange={(v) => patch({ originCountry: v })} />
+      case 'skuUnitCost': return <NumBox blankZero placeholder="eg, 12.34" value={it.unitCost ?? 0} onChange={(n) => patch({ unitCost: n })} />
+      default: return <Input value={it.imageUrl ?? ''} placeholder="https://" onChange={(v) => patch({ imageUrl: v })} />
+    }
   }
   /** the chevron at a SKU line's end — what waits under its "More" */
   const skuMoreButton = (open: boolean, waiting: number, waitingFilled: number, label: string, onClick: () => void) => {
@@ -3380,19 +3404,21 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   /* Items (the Packages section hidden — SKU-based): one line per SKU — search, how many, done. Size and weight come from
      the SKU master and are asked only when the master has none; shown and typed in the list's units. */
   const iu = unitsOf(itemUnit)
-  const ITEM_COLS = 'grid grid-cols-[28px_minmax(0,2.2fr)_112px_minmax(0,1.9fr)_96px_104px] items-start gap-x-4'
+  const ITEM_COLS = 'grid items-start gap-x-4'
+  const itemColsStyle = { gridTemplateColumns: ['28px', 'minmax(0,2.2fr)', '112px', 'minmax(0,1.9fr)', ...skuInline.map((k) => SKU_INLINE_W[k]), '96px', '104px'].join(' ') }
   const itemTotals = itemParcels.reduce((t, p) => ({
     pieces: t.pieces + p.quantity, kg: t.kg + p.weight * p.quantity, cm3: t.cm3 + p.l * p.w * p.h * p.quantity,
   }), { pieces: 0, kg: 0, cm3: 0 })
   const itemsBlock = (
     <div>
       <div className="overflow-x-auto">
-        <div className="min-w-[760px]">
-          <div className={`${ITEM_COLS} border-b border-warm-200 pb-2 text-[13px] text-ink-2`}>
+        <div style={{ minWidth: 760 + skuInline.length * 130 }}>
+          <div className={`${ITEM_COLS} border-b border-warm-200 pb-2 text-[13px] text-ink-2`} style={itemColsStyle}>
             <span>#</span>
             <span>SKU<span className="text-danger-fg"> *</span></span>
             <span>Quantity<span className="text-danger-fg"> *</span></span>
             <span>Each unit</span>
+            {skuInline.map((k) => <Configurable key={k} fieldKey={k}><span className="block truncate" title={skuInlineLabel(k)}>{skuInlineLabel(k)}</span></Configurable>)}
             <span className="text-right">Total</span>
             <span />
           </div>
@@ -3406,10 +3432,10 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
             const askD = !skuDHid && !dimsOk
             /* a typed SKU has nothing from the master — its details start open */
             const open = itemMore.has(l.id) !== (picked && !isMasterSku(it))
-            const det = picked ? skuDetails(it, (patch) => setLine(l.id, patch), open || editing) : null
+            const det = picked ? skuDetails(it, (patch) => setLine(l.id, patch), open || editing, true) : null
             return (
               <div key={l.id} className="border-b border-warm-200 py-3 last:border-0">
-              <div className={ITEM_COLS}>
+              <div className={ITEM_COLS} style={itemColsStyle}>
                 <span className="flex h-8 items-center text-[13px] text-ink-3">{n + 1}</span>
                 <div className="min-w-0">
                   <SkuCode item={it} skus={masters.skus} onPick={(sk) => pickLineSku(l.id, sk)} autoFocus={focusItem === l.id}
@@ -3439,6 +3465,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
                         </div>
                       )}
                 </div>
+                {skuInline.map((k) => <div key={k} className="min-w-0">{picked ? skuInlineCell(k, it, (patch) => setLine(l.id, patch)) : null}</div>)}
                 <span className="flex h-8 items-center justify-end text-[13px] tabular-nums text-ink">
                   {picked && weightOk && it.quantity ? `${round2(iu.toW(it.weightKg * it.quantity))} ${iu.w}` : '-'}
                 </span>
@@ -3472,7 +3499,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
      Add Package under all the packages. A package's units (kg + cm or lb + in) sit in its header; its SKUs follow. */
   const skuTable = (rows: ReactNode, u: Units) => (
     <div className="overflow-x-auto">
-      <div className="min-w-[860px]">
+      <div style={{ minWidth: skuMinWidth }}>
         <div className={`${SKU_COLS} border-b border-warm-200 pb-2 text-[13px] text-ink-2`} style={skuColsStyle}>
           <span>#</span>
           <span>SKU Code<span className="text-danger-fg"> *</span></span>
@@ -3480,6 +3507,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
           <span>Quantity<span className="text-danger-fg"> *</span></span>
           {!skuWHid && <Configurable fieldKey="skuWeight"><span>{ownLbl('skuWeight', 'Unit Weight')}{need('skuWeight') && <span className="text-danger-fg"> *</span>}</span></Configurable>}
           {!skuDHid && <Configurable fieldKey="skuDimensions"><span>{ownLbl('skuDimensions', 'Dimensions')} ({u.d}){need('skuDimensions') && <span className="text-danger-fg"> *</span>}</span></Configurable>}
+          {skuInline.map((k) => <Configurable key={k} fieldKey={k}><span className="block truncate" title={skuInlineLabel(k)}>{skuInlineLabel(k)}</span></Configurable>)}
           <span className="text-right">Total</span>
           <span />
         </div>
@@ -3495,7 +3523,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     const u = unitsOf(parcels[i]?.unitSystem)
     const upd = (patch: Partial<ParcelItem>) => { if (!preview) setItem(i, k, patch) }
     const open = skuMore.has(key) !== (!!it.skuCode && !isMasterSku(it))
-    const det = skuDetails(it, upd, open || editing)
+    const det = skuDetails(it, upd, open || editing, true)
     const missing = [!it.skuCode && 'SKU code', !filled(it.name) && 'name', !(it.quantity >= 1) && 'quantity',
       need('skuWeight') && !(it.weightKg > 0) && 'weight',
       need('skuDimensions') && !((it.lengthCm ?? 0) > 0 && (it.widthCm ?? 0) > 0 && (it.heightCm ?? 0) > 0) && 'dimensions']
@@ -3519,6 +3547,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
             onChange={(w) => upd({ weightKg: u.fromW(w) })} />}
           {!skuDHid && <DimsBox units={u} l={it.lengthCm ?? 0} w={it.widthCm ?? 0} h={it.heightCm ?? 0} error={need('skuDimensions')}
             onChange={(d) => upd({ ...(d.l !== undefined ? { lengthCm: d.l } : {}), ...(d.w !== undefined ? { widthCm: d.w } : {}), ...(d.h !== undefined ? { heightCm: d.h } : {}) })} />}
+          {skuInline.map((k) => <div key={k} className="min-w-0">{skuInlineCell(k, it, upd)}</div>)}
           <span className="flex min-h-8 flex-col items-end justify-center text-[13px] tabular-nums text-ink-2">
             <span>{it.weightKg && it.quantity ? `${round2(u.toW(it.weightKg * it.quantity))} ${u.w}` : '-'}</span>
             {vol * it.quantity > 0 && <span className="text-[12px] text-ink-3">{u.vol(vol * it.quantity)}</span>}
