@@ -63,7 +63,7 @@ export interface ScheduleAudit { at: string; by: string; scheduleCode: string; c
 /** What the last generator run did (FR-03.6) — shown to the hub manager on the Schedules tab. */
 export interface GeneratorRun {
   at: string
-  by: 'Daily job' | 'Generate now'
+  by: 'Daily job' | 'Generate now' | 'Schedule change'
   /** the dates it covered */
   from: string
   to: string

@@ -24,7 +24,7 @@ import {
 } from '../../local/chrome'
 import { toast } from '../../nueva/toast'
 import { pickupRequestById, useGrowOrders } from '../../growOrders/store'
-import { useSchedules } from '../../growOrders/scheduleModel'
+import { useSchedules, ymd } from '../../growOrders/scheduleModel'
 import { useNow } from '../../local/useNow'
 import type { GrowPickupRequest } from '../../growOrders/types'
 import {
@@ -229,6 +229,13 @@ function PickupRequestsList() {
         tabs={TAB_ORDER.map((t, i) => ({ id: t, label: t, count: counts[t], icon: TAB_ICONS[i] }))}
         active={tab} onChange={(id) => setTab(TAB_ORDER.indexOf(id as LocalPrTab))}
         right={<>
+          {/* the daily roster job failed, or has not run today (FR-03.4) — red, where dispatchers work */}
+          {(schedules.lastRun?.status === 'Failed' || (schedules.schedules.some((x) => x.status === 'Active') && schedules.lastDailyDate !== ymd(now))) && (
+            <button type="button" onClick={() => nav('/local/pickup/schedules')} title={schedules.lastRun?.status === 'Failed' ? schedules.lastRun.message : 'Pickup requests for today have not been made yet'}
+              className="inline-flex h-8 items-center gap-1.5 rounded-md bg-danger-bg px-2.5 text-[12px] font-bold text-danger-fg">
+              <CircleAlert size={13} />{schedules.lastRun?.status === 'Failed' ? 'Schedule run failed' : "Today's schedules not run"}
+            </button>
+          )}
           <Button variant="outline" icon={<CalendarClock size={14} />} onClick={() => nav('/local/pickup/schedules')}>Schedules ({schedules.schedules.length})</Button>
           <IconBtn title="Pickup settings" onClick={() => nav('/local/settings/pickup')}><Settings size={16} /></IconBtn>
           {cfg.mode === 'auto'

@@ -24,7 +24,7 @@ import { Button, DateInput, EmptyState, Field, Input, MenuSelect, Modal, StatusP
 import { toast } from '../../nueva/toast'
 import { useGrowOrders } from '../../growOrders/store'
 import { isOpenPr } from '../../growOrders/tabs'
-import { planningActions, tripOf, usePlanning, type LocalTrip } from '../LocalPFP/planningStore'
+import { pickupTripBlock, planningActions, tripOf, usePlanning, type LocalTrip } from '../LocalPFP/planningStore'
 import { HUB_CODES, TRIP_TONE, fmtDay, hubLabel, knownDrivers, vehicleOf } from './tripUtils'
 
 const WAYS = ['Add to best route', 'Manual', 'Plan pickup request for routing']
@@ -56,11 +56,13 @@ export function AddToRouteDialog({ prIds, initialWay, onClose, onDone }: {
   const ridingTrip = open.length > 0 && open.every((p) => p.tripId === open[0].tripId) ? open[0].tripId : null
   const candidates = useMemo<LocalTrip[]>(() => plan.trips
     .filter((t) => (t.status === 'Un-assigned' || t.status === 'Yet to start') && t.hubCode === prHub && t.id !== ridingTrip)
+    /* only trips the selection may ride — another day, a vehicle dedicated to another merchant … are not offered (their reason shows if forced) */
+    .filter((t) => open.every((p) => !pickupTripBlock(t.id, p.id)))
     /* same day first, then nearest date */
     .sort((a, b) => {
       const da = a.date === first?.date ? 0 : 1; const dbb = b.date === first?.date ? 0 : 1
       return da !== dbb ? da - dbb : a.date.localeCompare(b.date)
-    }), [plan.trips, prHub, first?.date, ridingTrip])
+    }), [plan.trips, prHub, first?.date, ridingTrip, open])
 
   /* the best fit: same day, then nearest date, then the lightest route */
   const best = useMemo(() => [...candidates].sort((a, b) => {
@@ -98,10 +100,13 @@ export function AddToRouteDialog({ prIds, initialWay, onClose, onDone }: {
       const t = planningActions.createTrip({ hubCode: hub, name: name.trim() || undefined, date, driverName: driver.trim() || null, vehicle: vehicle.trim() || null })
       target = t.id
     }
-    const added = open.filter((p) => planningActions.addPickupToTrip(target, p.id))
-    if (!added.length) { toast.error('Nothing could be added to that trip.'); return }
+    /* every refusal carries its reason (First Mile Ops 2026-10-07): wrong day, wrong hub, held, unconfirmed, a vehicle dedicated to another merchant */
+    const results = open.map((p) => ({ p, why: planningActions.addPickupToTripOrReason(target, p.id) }))
+    const added = results.filter((r) => !r.why).map((r) => r.p)
+    const refused = results.filter((r) => r.why)
+    if (!added.length) { toast.error(refused[0]?.why ?? 'Nothing could be added to that trip.'); return }
     const label = added.length === 1 ? added[0].number : `${added.length} pickup requests`
-    toast.success(`${label} added to ${target} — see Control Tower → Trips.`)
+    toast.success(`${label} added to ${target} — see Control Tower → Trips.${refused.length ? ` ${refused.length} not added: ${refused.map((r) => r.why).join(' ')}` : ''}`)
     onDone?.(target)
     onClose()
   }

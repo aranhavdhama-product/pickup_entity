@@ -17,7 +17,7 @@ import { Button, DataTable, EmptyState, Field, Input, MenuSelect, Modal, Panel, 
 import { IconBtn, LocalPage, LocalTabs, SearchBox } from '../../local/chrome'
 import { toast } from '../../nueva/toast'
 import { useGrowOrders } from '../../growOrders/store'
-import { INBOUND_HUBS, hubName } from '../../growOrders/hubs'
+import { INBOUND_HUBS, hubName, inboundHubFor } from '../../growOrders/hubs'
 import { hubVehicleTypes, useVehicleConfig } from '../../config/vehicleConfig'
 import { merchantsOf } from '../LocalPFP/merchants'
 import { merchantOfStore, storeLabel, storeOf } from './prModel'
@@ -49,8 +49,9 @@ function ScheduleForm({ initial, isNew, onClose }: { initial: PickupSchedule; is
   const set = (p: Partial<PickupSchedule>) => setS((x) => ({ ...x, ...p }))
   const setRun = (id: string, p: Partial<ScheduleRun>) => set({ runs: s.runs.map((r) => (r.id === id ? { ...r, ...p } : r)) })
   const pickStore = (code: string) => {
-    const hub = INBOUND_HUBS.find((h) => h.code === storeOf(code, db.stores)?.code)?.code
-    set({ storeCode: code, hubCode: hub ?? s.hubCode })
+    /* the servicing hub follows the location (where its parcels are dropped) until it is set by hand */
+    const st = storeOf(code, db.stores)
+    set({ storeCode: code, hubCode: st ? inboundHubFor(st.party) : s.hubCode })
   }
   const save = () => {
     setTried(true)

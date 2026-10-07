@@ -87,7 +87,9 @@ export function AssignDriverModal({ trip, trips, title = 'Assign driver', onClos
   const drivers = knownDrivers(trips)
   const save = () => {
     if (!driver.trim()) return
-    planningActions.assignDriver(trip.id, driver.trim(), vehicle.trim() || null)
+    /* a vehicle dedicated to another merchant, or a driver already on an overlapping trip, is refused with its reason */
+    const why = planningActions.assignDriver(trip.id, driver.trim(), vehicle.trim() || null)
+    if (why) { toast.error(why); return }
     toast.success(`${driver.trim()} assigned to ${trip.id}.`)
     onClose()
   }

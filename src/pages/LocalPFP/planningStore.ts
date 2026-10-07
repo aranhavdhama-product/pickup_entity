@@ -17,7 +17,8 @@ import {
   type HubScanResult,
 } from '../../growOrders/store'
 import { SEED_TRIP_BASE, SEED_TRIPS, STORES } from '../../growOrders/seed'
-import { daysFromNow, isOpenPr } from '../../growOrders/tabs'
+import { daysFromNow, isHeldForReview, isOpenPr } from '../../growOrders/tabs'
+import { dedicationBlock } from '../../config/vehicleConfig'
 import type { CarrierMode, GrowPickupRequest, PickupOverage, PickupPod } from '../../growOrders/types'
 
 /* -v2: trips became Control Tower trips (status, hub, per-stop progress, the
@@ -302,6 +303,9 @@ const setSecondary = (ids: string[], state: string) => {
 }
 
 const tripById = (id: string) => db.trips.find((t) => t.id === id)
+/** attention notes accumulate (de-duplicated, "; "-joined) — the trip says everything that happened to it until it is cleared */
+const addAttention = (cur: string | null, note: string): string =>
+  [...new Set([...(cur ?? '').split('; ').filter(Boolean), note])].join('; ')
 function mapTrip(id: string, fn: (t: LocalTrip) => LocalTrip) {
   db.trips = db.trips.map((t) => (t.id === id ? fn(t) : t))
 }
@@ -314,7 +318,8 @@ onPickupRequestDetached((e) => {
   mapTrip(e.tripId, (t) => ({
     ...t,
     stops: resequence(t.stops.filter((x) => !(x.kind === 'pickup' && x.prId === e.prId))),
-    attention: e.note,
+    /* every stop that leaves is kept — a second one never erases the first (First Mile Ops, 2026-10-07) */
+    attention: addAttention(t.attention, e.note),
   }))
   commit()
 })
@@ -325,6 +330,53 @@ const arrived = (trip: LocalTrip) =>
 
 export const tripOf = (prId: string): LocalTrip | undefined =>
   db.trips.find((t) => t.stops.some((x) => x.kind === 'pickup' && x.prId === prId))
+
+/**
+ * May this collection go on this trip? The reason it may NOT, in words, or null. ONE function: the store enforces it (so no
+ * surface can bypass it) and the Add-to-route dialog shows it.
+ */
+export function pickupTripBlock(tripId: string, prId: string): string | null {
+  const trip = tripById(tripId)
+  const pr = pickupRequestById(prId)
+  if (!trip || !pr) return 'That trip or request is gone.'
+  if (trip.status === 'Completed' || trip.status === 'Yet to debrief') return `${trip.id} is already ${trip.status === 'Completed' ? 'completed' : 'waiting for its debrief'}.`
+  if (pr.carrierMode === 'CARRIER') return `${pr.number} is with a 3PL carrier — take it back from the carrier first.`
+  if (pr.slotConfirmed === false) return `${pr.number} is waiting for the shipper to confirm its slot.`
+  if (isHeldForReview(pr)) return `${pr.number} is held for review — decide on it first.`
+  const first = pr.startAt.slice(0, 10), last = (pr.endAt || pr.startAt).slice(0, 10)
+  if (trip.date && (trip.date < first || trip.date > last)) return `${pr.number} is for ${pr.date}; ${trip.id} runs on ${trip.date}.`
+  const hub = pr.destinationCode ?? pr.storeCode
+  if (trip.hubCode && hub && trip.hubCode !== hub) return `${pr.number} is routed from ${hub}; ${trip.id} runs from ${trip.hubCode}.`
+  const store = growOrdersSnapshot().stores.find((s) => s.code === pr.storeCode)
+  return dedicationBlock(trip.vehicle, trip.hubCode, store?.party.businessName?.trim() || pr.storeCode)
+}
+
+/**
+ * May this driver / vehicle take this trip? The reason it may NOT, or null: a vehicle dedicated to another merchant cannot carry
+ * a stop of any other; a driver cannot be on two trips whose pickup windows overlap on the same day.
+ */
+export function driverTripBlock(tripId: string, driverName: string, vehicle: string | null): string | null {
+  const trip = tripById(tripId)
+  if (!trip) return null
+  const stores = growOrdersSnapshot().stores
+  for (const x of trip.stops) {
+    const pr = x.prId ? pickupRequestById(x.prId) : undefined
+    if (!pr) continue
+    const why = dedicationBlock(vehicle ?? trip.vehicle, trip.hubCode, stores.find((s) => s.code === pr.storeCode)?.party.businessName?.trim() || pr.storeCode)
+    if (why) return why
+  }
+  const mine = trip.stops.flatMap((x) => (x.prId ? [pickupRequestById(x.prId)] : [])).filter((p): p is GrowPickupRequest => !!p)
+  for (const other of db.trips) {
+    if (other.id === tripId || other.date !== trip.date || other.driverName !== driverName) continue
+    if (other.status === 'Completed' || other.status === 'Yet to debrief') continue
+    for (const x of other.stops) {
+      const op = x.prId ? pickupRequestById(x.prId) : undefined
+      const clash = op && mine.find((p) => p.startAt < op.endAt && op.startAt < p.endAt)
+      if (op && clash) return `${driverName} is already on ${other.id} at ${op.slot} — it overlaps ${clash.number} (${clash.slot}).`
+    }
+  }
+  return null
+}
 
 export const planningActions = {
   /** Route the selection directly — the PFP → ROUTING hand-off. Pickup stops
@@ -405,6 +457,16 @@ export const planningActions = {
     return trip
   },
 
+  /**
+   * "Add to route", with the REASON when it may not (First Mile Ops, 2026-10-07: "a dispatcher error is blocked, with its reason, in
+   * the store — not only in a menu"). null = added. A different day, a different hub, a request held for review or waiting for the
+   * shipper's slot, a 3PL's request, and a vehicle dedicated to another merchant are all refused here.
+   */
+  addPickupToTripOrReason(tripId: string, prId: string): string | null {
+    const why = pickupTripBlock(tripId, prId)
+    return why ?? (planningActions.addPickupToTrip(tripId, prId) ? null : 'That request could not be added.')
+  },
+
   /** "Add to route": a collection joins a trip (leaving any other trip it was on). */
   addPickupToTrip(tripId: string, prId: string): boolean {
     const trip = tripById(tripId)
@@ -412,6 +474,7 @@ export const planningActions = {
     if (!trip || !pr || !isOpenPr(pr.status) || trip.status === 'Completed' || trip.status === 'Yet to debrief') return false
     /* a 3PL runs its own collection — take it back from the carrier first (P7) */
     if (pr.carrierMode === 'CARRIER') return false
+    if (pickupTripBlock(tripId, prId)) return false
     const prev = tripOf(prId)
     if (prev?.id === tripId) return true
     if (prev) mapTrip(prev.id, (t) => ({ ...t, stops: resequence(t.stops.filter((x) => x.prId !== prId)) }))
@@ -425,13 +488,16 @@ export const planningActions = {
   },
 
   /** Take a stop off a trip. `stopId` is the stop's prId (pickup) or orderId (delivery). */
-  removeStopFromTrip(tripId: string, stopId: string) {
+  removeStopFromTrip(tripId: string, stopId: string): string | null {
     const trip = tripById(tripId)
     const stop = trip?.stops.find((x) => x.prId === stopId || x.orderId === stopId)
-    if (!trip || !stop) return
+    if (!trip || !stop) return null
+    /* a stop the driver has reached or finished stays on the record — it is reported, not deleted */
+    if (stop.status === 'Arrived' || stop.status === 'Done' || stop.status === 'Failed') return `${stop.orderNumber} is ${stop.status === 'Arrived' ? 'being collected right now' : 'already ' + stop.status.toLowerCase()} — it cannot come off the trip.`
     mapTrip(tripId, (t) => ({ ...t, stops: resequence(t.stops.filter((x) => x !== stop)) }))
     commit()
     if (stop.prId && pickupRequestById(stop.prId)?.tripId === tripId) growOrderActions.setPickupTrip(stop.prId, null)
+    return null
   },
 
   /** Orders whose route was discarded go back to the planning queue (Same/Next
@@ -447,9 +513,12 @@ export const planningActions = {
   },
 
   /** A driver takes the trip — every collection on it becomes Assigned. */
-  assignDriver(tripId: string, driverName: string, vehicle?: string | null) {
+  assignDriver(tripId: string, driverName: string, vehicle?: string | null): string | null {
     const trip = tripById(tripId)
-    if (!trip || !driverName) return
+    if (!trip || !driverName) return null
+    /* a dedicated vehicle for another merchant, or a driver already on an overlapping trip — refused, with the reason */
+    const why = driverTripBlock(tripId, driverName, vehicle ?? null)
+    if (why) return why
     mapTrip(tripId, (t) => ({
       ...t, driverName, vehicle: vehicle ?? t.vehicle,
       /* a trip named after its driver follows the driver; a custom name stays */
@@ -462,6 +531,7 @@ export const planningActions = {
     trip.stops.forEach((x) => {
       if (x.prId && (x.status === 'Pending' || x.status === 'Arrived')) growOrderActions.setPickupTrip(x.prId, tripId, driverName)
     })
+    return null
   },
 
   /** Ops cancels a trip before it starts — every collection on it goes back to

@@ -10,6 +10,7 @@
  *   · `ensureDailyRun` — once a day, on app load (the prototype's stand-in for the hub-local timer).
  */
 import { growOrderActions, growOrdersSnapshot } from './store'
+import { readPickupModuleConfig } from '../config/pickupModule'
 import { pickupPolicy } from './pickupSlots'
 import {
   activeSchedulesAt, addDays, dayOf, daysText, keyOfPr, refOf, runLabel, scheduleKey, scheduleStore, validateSchedule, ymd,
@@ -49,6 +50,22 @@ function changeText(before: PickupSchedule | undefined, after: PickupSchedule): 
 }
 const logOf = (code: string, by: string, change: string): ScheduleAudit => ({ at: new Date().toISOString(), by, scheduleCode: code, change })
 
+/**
+ * A roster that was paused, deleted, re-timed or ended no longer makes the requests it made for the days ahead: its open,
+ * UNASSIGNED ones are cancelled (their waybills go back to Ready for Pickup and join the next run). One already planned or
+ * assigned is left for the dispatcher — a driver may be on the way. `after` = the schedule as saved (null = deleted).
+ */
+function retireStaleRequests(id: string, after: PickupSchedule | null) {
+  const today = ymd(new Date())
+  for (const pr of growOrdersSnapshot().pickupRequests) {
+    if (pr.schedule?.id !== id || pr.date < today || pr.status !== 'Requested' || pr.tripId) continue
+    const run = after?.runs.find((r) => r.id === pr.schedule!.runId)
+    const valid = !!after && after.status === 'Active' && !!run && runLabel(run) === pr.schedule.runLabel && after.days.includes(dayOf(pr.date))
+      && pr.date >= after.effectiveFrom && (!after.effectiveTo || pr.date <= after.effectiveTo)
+    if (!valid) growOrderActions.cancelPickupRequest(pr.id, 'SCHEDULE_CHANGED')
+  }
+}
+
 /** Validate and store a schedule (new or edited). Errors come back in words; nothing is written when there are any. */
 export function saveSchedule(s: PickupSchedule, by: string): { ok: true } | { ok: false; errors: string[] } {
   const stores = growOrdersSnapshot().stores
@@ -63,6 +80,9 @@ export function saveSchedule(s: PickupSchedule, by: string): { ok: true } | { ok
       audit: [logOf(s.code, by, changeText(before, next)), ...st.audit].slice(0, 200),
     }
   })
+  /* what the edit made stale goes, and what it added is made at once — nobody has to remember to press Generate */
+  retireStaleRequests(s.id, next)
+  runGenerator('Schedule change')
   return { ok: true }
 }
 
@@ -78,6 +98,8 @@ export function removeSchedule(id: string, by: string) {
     const cur = st.schedules.find((x) => x.id === id)
     return cur ? { ...st, schedules: st.schedules.filter((x) => x.id !== id), audit: [logOf(cur.code, by, 'Deleted'), ...st.audit].slice(0, 200) } : st
   })
+  retireStaleRequests(id, null)
+  runGenerator('Schedule change')
 }
 
 export function setHorizon(days: number) {
@@ -95,6 +117,12 @@ export function runGenerator(by: GeneratorRun['by'], opts: { from?: string; hubC
   const st = scheduleStore.get()
   const to = addDays(from, st.horizonDays - 1)
   let run: GeneratorRun
+  /* pickups switched off (Settings → Pickup module): the roster makes nothing, and says so */
+  if (!readPickupModuleConfig().enabled) {
+    run = { at: now.toISOString(), by, from, to, created: 0, existing: 0, closed: 0, linked: 0, status: 'Success', message: 'Pickups are switched off — nothing was generated' }
+    scheduleStore.update((s) => ({ ...s, lastRun: run }))
+    return run
+  }
   try {
     /* 1 — yesterday's collections nobody assigned are closed (23:59); their waybills wait for the next run */
     const closed = growOrderActions.closeUnassignedScheduleRequests(today).length

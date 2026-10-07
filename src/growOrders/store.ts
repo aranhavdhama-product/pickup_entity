@@ -737,7 +737,13 @@ export const growOrderActions = {
     const pr = pickRunPr(db.pickupRequests, o.storeCode, new Date())
     if (!pr) return null
     if (!growOrderActions.attachOrdersToPickup(pr.id, [o.id]).length) return null
-    if (pr.destinationCode) db.orders = db.orders.map((x) => (x.id === o.id ? { ...x, inboundHubCode: pr.destinationCode ?? x.inboundHubCode } : x))
+    if (pr.destinationCode) {
+      db.orders = db.orders.map((x) => (x.id === o.id ? { ...x, inboundHubCode: pr.destinationCode ?? x.inboundHubCode } : x))
+      /* said out loud, never silent: the first mile drops at the roster's hub, whatever the consignment's own hub was */
+      if (o.inboundHubCode && o.inboundHubCode !== pr.destinationCode) {
+        mapPr(pr.id, (p) => noted(p, `${o.orderNumber} joined this run — first-mile hub ${pr.destinationCode} (its own hub was ${o.inboundHubCode})`))
+      }
+    }
     commit()
     return db.pickupRequests.find((p) => p.id === pr.id) ?? null
   },

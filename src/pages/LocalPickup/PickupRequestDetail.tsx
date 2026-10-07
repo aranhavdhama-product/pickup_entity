@@ -154,7 +154,8 @@ function Detail({ pr, back }: { pr: GrowPickupRequest; back: () => void }) {
       ? act('moveRoute', 'Move to another route', () => setDialog('route'))
       : act('addToRoute', 'Add to route', () => setDialog('route'))),
     !!pr.tripId && act('removeFromRoute', 'Remove from route', () => {
-      planningActions.removeStopFromTrip(pr.tripId!, pr.id)
+      const stay = planningActions.removeStopFromTrip(pr.tripId!, pr.id)
+      if (stay) { toast.error(stay); return }
       toast.success(`${pr.number} removed from ${pr.tripId}.`)
     }),
     threePl

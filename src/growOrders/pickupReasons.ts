@@ -40,6 +40,8 @@ export const CANCEL_REASONS: readonly ReasonOption[] = [
   { code: 'ORDER_CANCELLED', label: 'Order cancelled' },
   /* closed by the end-of-day job: a roster request nobody assigned (Pickup Schedules) */
   { code: 'NOT_ASSIGNED', label: 'Not assigned by the end of the day' },
+  /* closed because the roster that made it was paused, changed or deleted (Pickup Schedules) */
+  { code: 'SCHEDULE_CHANGED', label: 'Its schedule was paused, changed or deleted' },
   { code: 'OTHER', label: 'Other' },
 ]
 
