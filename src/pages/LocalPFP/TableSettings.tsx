@@ -472,7 +472,7 @@ function sample(c: ResolvedColumn, kind: 'consignment' | 'pickup'): string {
   if (kind === 'pickup' && c.capability === 'consignment') return c.pickupDefault ?? '—'
   const SAMPLES: Record<string, [string, string]> = {
     orderNumber: ['GRW-100482', 'PR-000123'],
-    state: ['At Facility', 'Requested'],
+    state: ['At Facility', 'Pickup Requested'],
     window: ['18/09 09:00–13:00', '18/09 09:00–13:00'],
     shipFromName: ['Makati Flagship Store', 'Makati Flagship Store'],
     shipToName: ['Maria Santos', 'San Pablo Hub'],

@@ -43,8 +43,8 @@ import { usePickupLocations } from './pickupLocations'
 
 const STAGES: { label: string; states: string[] }[] = [
   { label: 'Created', states: ['Created'] },
-  { label: 'Ready For Pickup', states: ['Ready To Ship', 'Pickup Requested'] },
-  { label: 'In-Transit', states: ['Pickedup', 'Partially Pickedup', 'At Facility', 'Driver Out'] },
+  { label: 'Ready For Pickup', states: ['Ready To Ship', 'Pickup Requested', 'Pickup Failed'] },
+  { label: 'In-Transit', states: ['Pickedup', 'Intransit', 'At Facility', 'Driver Out'] },
 ]
 
 const ddmm = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`

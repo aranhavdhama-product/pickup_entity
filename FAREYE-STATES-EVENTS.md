@@ -4,6 +4,12 @@ Supplied by the owner on 2026-09-24 (the platform's own lists). This is the voca
 prototype must speak; `src/growOrders/fareyeEvents.ts` carries the machine-readable subset
 the auto-pickup module reads. Detail on APIs lives in FAREYE-APIS.md; gotchas in FAREYE-QUIRKS.md.
 
+> **2026-10-08 — the OFFICIAL consignment states and sub-states (owner: "use them only") are in `src/growOrders/fareyeStates.ts`**
+> (19 primaries, the pairs below). Service Completed / Service Failed / RTO Received From Carrier, and the secondaries Planned,
+> Damage, Out For Service, Driver Assigned For Service, Geo Lookup Not Found, Not Loaded On Lastmile are NOT in it and are never shown.
+> PICKUP_REQUESTED has no secondary; a driver assigned for the pickup = CREATED + DRIVER_ASSIGNED_FOR_PICKUP; on the way = DRIVER_OUT +
+> OUT_FOR_PICKUP; partial = PICKEDUP + PARTIALLY_PICKEDUP; PICKUP_FAILED is a primary; UNDELIVERED may carry PARTIALLY_DELIVERED.
+
 ## Primary states (lifecycle order)
 
 | # | Primary state | Notes |

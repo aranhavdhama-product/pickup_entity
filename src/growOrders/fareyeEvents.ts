@@ -37,6 +37,8 @@ export const AUTO_PICKUP_TRIGGER_EVENTS: AutoPickupTriggerEvent[] = [
     meaning: 'ready for planning', local: 'paid, no validation error' },
   { code: 'consignment::pickup-schedule-updated', label: 'consignment::pickup-schedule-updated', title: 'Pickup window set on the consignment', level: 'L1',
     meaning: 'a pickup window was set on the consignment', local: 'paid, no error, a pickup window is present' },
+  { code: 'consignment::carrier-assigned', label: 'consignment::carrier-assigned', title: 'Carrier assigned', level: 'L2',
+    meaning: 'a carrier was assigned to the consignment', local: 'paid, no error, a carrier is set' },
   { code: 'consignment::accepted-by-carrier', label: 'consignment::accepted-by-carrier', title: 'Accepted by the carrier', level: 'L2',
     meaning: 'the 3PL accepted it', local: 'paid, no error, a carrier is set' },
 ]
@@ -70,6 +72,7 @@ export function triggerFired(code: string, o: TriggerSubject): boolean {
     case 'consignment::pickup-schedule-updated':
       return o.paymentStatus === 'Paid' && !o.error && !!o.sender?.windowStart && !!o.sender?.windowEnd
     case 'consignment::accepted-by-carrier':
+    case 'consignment::carrier-assigned':
       return o.paymentStatus === 'Paid' && !o.error && !!(o.carrier && o.carrier.trim())
     /* REAL now: only a consignment marked ready (Mark Ready To Ship) has fired these */
     case 'consignment::marked-ready-for-ship':

@@ -36,7 +36,7 @@ import { Download as DownloadGlyph } from '../LocalPFP/icons'
 import { STATE_OPTIONS, matchesState, stateGroupOf } from '../LocalPFP/stateVocabulary'
 import { toast } from '../../nueva/toast'
 import { useGrowOrders, growOrderActions } from '../../growOrders/store'
-import { isOpenPr, isPickupEligible } from '../../growOrders/tabs'
+import { isPickupEligible } from '../../growOrders/tabs'
 import type { GrowOrder } from '../../growOrders/types'
 import {
   csvOf, downloadCsv, executionOverlay, toConsignmentRow, type LocalConsignmentRow,
@@ -78,9 +78,6 @@ const tabIndexOf = (slug: string | null): number => {
 }
 const TAB_ICONS = [ShieldAlert, RouteIcon, Handshake, AlertTriangle, Undo2, Package]
 
-
-/** The secondary state of a consignment inside an open pickup request. */
-const PICKUP_SCHEDULED = 'Pickup Scheduled'
 
 const uniq = (xs: string[]) => [...new Set(xs.filter(Boolean))].sort()
 
@@ -134,19 +131,17 @@ export default function LocalConsignments() {
   const [uploading, setUploading] = useState(false)
   const [more, setMore] = useState<Record<string, string[]>>({})
 
-  const openPrIds = useMemo(() => new Set(db.pickupRequests.filter((p) => isOpenPr(p.status)).map((p) => p.id)), [db.pickupRequests])
   /** EVERY consignment, not just the planning queue — a draft is not one yet. */
   const all = useMemo<LocalConsignmentRow[]>(() => db.orders
     .filter((o) => !o.isDraft)
     .map((o) => toConsignmentRow(o, db, {
-      /* a console secondary state wins; otherwise an open first-mile booking
-         reads "Pickup Scheduled" — distinct from routing's "Scheduled" */
-      secondaryState: plan.secondaryState[o.id] ?? (openPrIds.has(o.pickupRequestId ?? '') ? PICKUP_SCHEDULED : undefined),
+      /* the console's planning secondary state; an open first-mile booking is the PICKUP_REQUESTED state (no secondary) */
+      secondaryState: plan.secondaryState[o.id],
       schedule: plan.scheduleOverrides[o.id],
       exception: plan.exceptions[o.id],
       ...executionOverlay(o, plan.trips),
     }))
-    .sort((a, b) => (a.order.createdAt < b.order.createdAt ? 1 : -1)), [db, plan, openPrIds])
+    .sort((a, b) => (a.order.createdAt < b.order.createdAt ? 1 : -1)), [db, plan])
 
   const inTab = useMemo(() => all.filter(TABS[tab].test), [all, tab])
   const tabCounts = useMemo(() => TABS.map((t) => all.filter(t.test).length), [all])

@@ -75,6 +75,11 @@ function Row({ label, hint, children }: { label: string; hint: ReactNode; childr
   )
 }
 
+/** the platform's own event name, as FarEye prints it (`entity::event`) */
+function EventCode({ code }: { code: string }) {
+  return <code className="rounded bg-warm-100 px-1.5 py-0.5 font-mono text-[11px] text-ink-2">{code}</code>
+}
+
 /** A switch with its state in words beside it. */
 function ToggleField({ checked, onChange, label, on = 'On', off = 'Off' }: {
   checked: boolean; onChange: (v: boolean) => void; label: string; on?: string; off?: string
@@ -255,7 +260,7 @@ export default function PickupSettings() {
                   options={[{ value: 'manual', label: 'Manual' }, { value: 'auto', label: 'Automatic' }]} />
               </Row>
               {auto && (
-                <Row label="Create it when the consignment is" hint={STATE_HINT[state]}>
+                <Row label="Create it when the consignment is" hint={<>{STATE_HINT[state]} FarEye event <EventCode code={draft.triggerEvent} /></>}>
                   <Seg<AutoPickupAfterState> label="Create it when the consignment is" value={state}
                     onChange={(st) => set({ triggerEvent: LEGACY_AFTER_STATE_EVENT[st] })}
                     options={AUTO_AFTER_STATES.map((st) => ({ value: st, label: st }))} />
@@ -287,7 +292,7 @@ export default function PickupSettings() {
                   <Row label="Shipper confirms the time" hint="Ops can plan the pickup only after the shipper confirms its time.">
                     <ToggleField checked={draft.slotConfirmation} onChange={(on) => set({ slotConfirmation: on })} label="Shipper confirms the time" />
                   </Row>
-                  <Row label="Exact event" hint={triggerHint(draft.triggerEvent)}>
+                  <Row label="Exact event" hint={<>{triggerHint(draft.triggerEvent)} <EventCode code={draft.triggerEvent} /></>}>
                     <div className="w-full">
                       <MenuSelect value={draft.triggerEvent} options={AUTO_PICKUP_TRIGGER_CODES} labels={triggerOptionLabel}
                         onChange={(e) => set({ triggerEvent: e })} />

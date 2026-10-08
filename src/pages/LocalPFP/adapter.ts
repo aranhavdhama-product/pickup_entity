@@ -14,6 +14,7 @@
  * overrides, exceptions, closures) live in `planningStore.ts`.
  */
 import type { ConsignmentOrderRow, ConsignmentState, TimeWindow } from '../../data/mockData'
+import { officialState } from '../../growOrders/fareyeStates'
 import type { GrowOrder, GrowOrdersDb, GrowPickupRequest, StoreLocation } from '../../growOrders/types'
 import { displayStatus, isOpenPr, type DisplayStatus } from '../../growOrders/tabs'
 import { hubName, inboundHubFor } from '../../growOrders/hubs'
@@ -88,27 +89,19 @@ export const palletSpacesOf = (o: GrowOrder): number =>
  * invented: the full filter list (staging's 41 options + the official primaries it lacks) lives in ./stateVocabulary.
  */
 export const FAREYE_STATES = [
-  'Created', 'Pickup Requested', 'Ready To Ship', 'Pickedup', 'Partially Pickedup', 'At Facility', 'Intransit',
+  'Created', 'Pickup Requested', 'Ready To Ship', 'Pickedup', 'Pickup Failed', 'At Facility', 'Intransit',
   'Driver Out', 'Delivered', 'Undelivered', 'Cancelled',
 ] as const
+/** the pickup leg's secondary states — the official ones only (owner, 2026-10-08) */
 export const FAREYE_PICKUP_SECONDARY = [
-  'Label Generated', 'Scheduled', 'Planned', 'Driver Assigned For Pickup', 'Out For Pickup',
-  'At Pickup Location', 'Pickup Failed',
+  'Label Generated', 'Driver Assigned For Pickup', 'Out For Pickup', 'At Pickup Location', 'Partially Pickedup',
 ] as const
 /** A pickup request may be scheduled ONLY from these states … */
-export const SCHEDULE_PICKUP_STATES = ['Created', 'Ready To Ship'] as const
+export const SCHEDULE_PICKUP_STATES = ['Created', 'Ready To Ship', 'Pickup Failed'] as const
 /** … and never while one of these pickup secondary states is on the row. */
 export const SCHEDULE_PICKUP_BLOCKING_SECONDARY = [
-  'Scheduled', 'Planned', 'Driver Assigned For Pickup', 'Out For Pickup', 'At Pickup Location',
+  'Scheduled', 'Driver Assigned For Pickup', 'Out For Pickup', 'At Pickup Location',
 ] as const
-
-const PR_SECONDARY: Record<string, string> = {
-  Requested: 'Scheduled',
-  Planned: 'Planned',
-  'Ready For Last Mile Dispatch': 'Planned',
-  Assigned: 'Driver Assigned For Pickup',
-  'Out For Pickup': 'Out For Pickup',
-}
 
 /** State + pickup-derived secondary state of an order, in FarEye's words. */
 export function fareyeStatesOf(
@@ -125,18 +118,20 @@ export function fareyeStatesOf(
   if (ds === 'Picked Up') {
     const pr = prs.find((p) => p.id === o.pickedInRequestId) ?? prs.find((p) => p.id === o.pickupRequestId)
     const partial = pr ? pr.orderIds.some((id) => !pr.pickedOrderIds.includes(id)) : false
-    return { state: partial ? 'Partially Pickedup' : 'Pickedup', secondary: '' }
+    return { state: 'Pickedup', secondary: partial ? 'Partially Pickedup' : '' }
   }
   /* still with the merchant: Ready for Pickup / Pickup Scheduled */
   const booked = prs.find((p) => p.id === o.pickupRequestId)
   if (booked && isOpenPr(booked.status)) {
-    /* FarEye's own lifecycle (owner's list, 2026-09-24): PICKUP_REQUESTED is a PRIMARY
-       state, between CREATED and READY_TO_SHIP; the request's stage is the secondary */
-    return { state: 'Pickup Requested', secondary: PR_SECONDARY[booked.status] ?? 'Scheduled' }
+    /* the OFFICIAL pairs (owner, 2026-10-08): PICKUP_REQUESTED has no secondary; a driver assigned for the pickup is CREATED +
+       DRIVER_ASSIGNED_FOR_PICKUP; on the way is DRIVER_OUT + OUT_FOR_PICKUP. Planned is the request's own stage, not a state. */
+    if (booked.status === 'Assigned') return { state: 'Created', secondary: 'Driver Assigned For Pickup' }
+    if (booked.status === 'Out For Pickup') return { state: 'Driver Out', secondary: 'Out For Pickup' }
+    return { state: 'Pickup Requested', secondary: '' }
   }
   /* released by a failed attempt and not rebooked: FarEye shows the failure */
   const failed = prs.find((p) => p.status === 'Pickup Failed' && p.orderIds.includes(o.id))
-  if (!o.pickupRequestId && failed) return { state: 'Ready To Ship', secondary: 'Pickup Failed' }
+  if (!o.pickupRequestId && failed) return { state: 'Pickup Failed', secondary: '' }
   /* FarEye: CREATED (sub LABEL_GENERATED) until `consignment::marked-ready-for-ship`
      lands it in READY_TO_SHIP (owner, 2026-09-25: show both) */
   return { state: o.readyToShip ? 'Ready To Ship' : 'Created', secondary: 'Label Generated' }
@@ -177,7 +172,7 @@ export function stateTone(state: string): 'success' | 'info' | 'warning' | 'dang
   if (state === 'Delivered') return 'success'
   if (state === 'Undelivered' || state === 'Cancelled') return 'danger'
   if (state === 'Created') return 'neutral'
-  if (state === 'Driver Out' || state === 'Partially Pickedup') return 'warning'
+  if (state === 'Driver Out' || state === 'Pickup Failed') return 'warning'
   return 'info'
 }
 
@@ -416,10 +411,13 @@ export function toConsignmentRow(
     consignmentNumber: o.orderNumber,
     referenceNumber: o.orderNumber,
     orderNumber: o.orderNumber,
-    state: fareyeStatesOf(o, db.pickupRequests).state as ConsignmentState,
-    /* the pickup leg's secondary state wins while the parcel is with the merchant;
-       the planning overlay (Scheduled / Staged / Planned for routing) applies after */
-    secondaryState: fareyeStatesOf(o, db.pickupRequests).secondary || overlay.secondaryState || '',
+    /* ONE official pair (owner, 2026-10-08): the pickup leg's secondary wins while the parcel is with the merchant; the planning
+       overlay (Scheduled / Staged / routing) applies after, and a value with no official home is mapped or dropped */
+    ...(() => {
+      const st = fareyeStatesOf(o, db.pickupRequests)
+      const off = officialState(st.state, st.secondary || overlay.secondaryState || '')
+      return { state: off.state as ConsignmentState, secondaryState: off.secondary }
+    })(),
     weightKg: totalWeightKg(o),
     volume: `${volumeMm3(o).toLocaleString()} mm³`,
     volumeMm3: volumeMm3(o),

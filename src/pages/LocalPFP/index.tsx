@@ -97,7 +97,7 @@ const matchesSearch = (r: UnifiedRow, needle: string): boolean => (isPickupRow(r
   : `${r.orderNumber} ${r.referenceNumber} ${r.merchant} ${r.address}`).toLowerCase().includes(needle)
 
 /** the consignment states that still need planning (owner, 2026-09-25) */
-const NEEDS_PLANNING_STATES = new Set(['Created', 'Ready To Ship', 'Pickup Requested'])
+const NEEDS_PLANNING_STATES = new Set(['Created', 'Ready To Ship', 'Pickup Requested', 'Pickup Failed'])
 
 const FLAG_ICON: Record<CategoryFlag, (p: { size?: number }) => React.JSX.Element> = {
   VIP: (p) => <Star {...p} />,

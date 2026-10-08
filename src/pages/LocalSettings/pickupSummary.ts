@@ -25,6 +25,8 @@ const TRIGGER_COPY: Record<string, { when: string; hint: string }> = {
     hint: 'Once it is paid, has no errors and is marked ready for planning.' },
   'consignment::pickup-schedule-updated': { when: 'when a consignment gets a pickup window',
     hint: 'Once it is paid, has no errors and has a pickup window.' },
+  'consignment::carrier-assigned': { when: 'when a carrier is assigned to a consignment',
+    hint: 'Once it is paid, has no errors and a carrier is assigned.' },
   'consignment::accepted-by-carrier': { when: 'when the carrier accepts a consignment',
     hint: 'Once it is paid, has no errors and a carrier is set.' },
 }
