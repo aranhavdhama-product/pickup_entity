@@ -251,7 +251,9 @@ export default function CheckoutPage() {
       <WizardSteps steps={ORDER_STEPS} active={1} done={[0]} onSelect={(i) => { if (i === 0) backToForm() }} />
       {/* ONE choice on the left — which service (owner, 2026-10-07: "payment in the summary section, how to pay section"); the summary, the
           price and HOW YOU PAY are one column on the right. A hidden Service Type has nothing to choose: one centred column. */}
-      <div className={locked ? 'mx-auto flex max-w-[760px] flex-col gap-4' : 'grid gap-4 lg:grid-cols-[1fr_420px]'}>
+      {/* owner, 2026-10-07 ("can the width of the card be smaller"): the cards are 640px at most, the payment rail 420px, the pair centred —
+          not stretched across a wide screen */}
+      <div className={locked ? 'mx-auto flex max-w-[760px] flex-col gap-4' : 'grid gap-6 lg:grid-cols-[minmax(0,640px)_420px] lg:justify-center'}>
         <div className={`flex min-w-0 flex-col gap-4 ${locked ? 'hidden' : ''}`}>
           {!locked && (
             <Panel title={side?.label ?? 'Service Type'}>

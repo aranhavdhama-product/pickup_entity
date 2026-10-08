@@ -36,7 +36,6 @@ import { cutoffRuleLine, merchantMayChange, rescheduleError, usePortalMerchant }
 import { Button, Field, Input, MenuSelect, Modal, StatusPill } from '../../nueva/components'
 import { SwitchBox } from '../../components/consignmentForm'
 import { SlotWindowFields } from '../LocalPickup/slotFields'
-import { BookingChoiceControl } from '../LocalPickup/bookingCards'
 import { bookGroup, joinCandidates, pickupCountOf, type BookingChoice } from '../LocalPickup/bookingPlan'
 import { usePickupLocations } from './pickupLocations'
 import {
@@ -637,13 +636,15 @@ function BookingCard({ group: g, stores, conflict, onDrop, control }: {
  * drops it from THIS booking only — the page's selection is untouched until
  * Book succeeds.
  */
-export function BookPickupDialog({ orders, stores, onClose, onBooked }: {
+export function BookPickupDialog({ orders, stores, onClose, onBooked, prefer = 'new' }: {
   orders: GrowOrder[]
   stores: StoreLocation[]
   onClose: () => void
   onBooked: () => void
+  /** owner, 2026-10-07: NO options inside the dialog — "Schedule Pickup" always books a new request ('new'); "Add to existing pickup
+   *  request" is its OWN menu item ('existing': it asks only WHICH request, per booking). Splitting is on the request's own page. */
+  prefer?: 'new' | 'existing'
 }) {
-  /* open by default so every booking's New / Add to existing / Split choice is visible */
   const [showBookings, setShowBookings] = useState(true)
   const [dropped, setDropped] = useState<Set<string>>(new Set())
   const kept = useMemo(() => orders.filter((o) => !dropped.has(o.id)), [orders, dropped])
@@ -659,7 +660,9 @@ export function BookPickupDialog({ orders, stores, onClose, onBooked }: {
     const candidates = joinCandidates({ storeCode: g.storeCode, destinationCode: g.destinationCode, vehicle: g.vehicle },
       db.pickupRequests, rules.policy.allowAddToExistingUntil)
     const picked = choices[g.key]
-    const choice: BookingChoice = picked && (picked.mode !== 'existing' || candidates.some((p) => p.id === picked.prId)) ? picked : { mode: 'new' }
+    const choice: BookingChoice = prefer === 'new' ? { mode: 'new' }
+      : picked?.mode === 'existing' && candidates.some((p) => p.id === picked.prId) ? picked
+      : candidates.length ? { mode: 'existing', prId: candidates[0].id } : { mode: 'new' }
     return { g, candidates, choice }
   })
   const n = pickupCountOf(cards.map((c) => ({ choice: c.choice, shipments: c.g.orders.length })))
@@ -697,11 +700,11 @@ export function BookPickupDialog({ orders, stores, onClose, onBooked }: {
   }
 
   return (
-    <Modal open title="Book a Pickup" onClose={onClose}
+    <Modal open title={prefer === 'existing' ? 'Add to an existing pickup request' : 'Book a Pickup'} onClose={onClose}
       footer={<Footer onClose={onClose} onConfirm={submit} disabled={!win || n === 0} icon={<Truck size={14} />}
-        label={`Book ${n} pickup${n === 1 ? '' : 's'}`} />}>
+        label={prefer === 'existing' ? 'Add to the request' : `Book ${n} pickup${n === 1 ? '' : 's'}`} />}>
       <div className="flex flex-col gap-4 pb-3">
-        <Hint>Specify the date and time window for scheduling your courier pickup.</Hint>
+        <Hint>{prefer === 'existing' ? 'Pick the open pickup request each booking joins.' : 'Specify the date and time window for scheduling your courier pickup.'}</Hint>
         {/* what the merchant is about to create — a courier collects at one
             address and drops at one hub, so a mixed selection is several bookings */}
         <section className="rounded-md border border-line">
@@ -721,9 +724,15 @@ export function BookPickupDialog({ orders, stores, onClose, onBooked }: {
               <BookingCard key={g.key} group={g} stores={stores} conflict={conflicts.get(g.key)} onDrop={drop}
                 control={(() => {
                   const c = cards.find((x) => x.g.key === g.key)!
-                  return <BookingChoiceControl choice={c.choice} onChange={(ch) => setChoices((m) => ({ ...m, [g.key]: ch }))}
-                    candidates={c.candidates} shipments={g.orders.length} ftl={!!g.vehicle}
-                    labelOf={(p) => `${p.number} · ${prWindow(p)} · ${p.orderIds.length} order${p.orderIds.length === 1 ? '' : 's'}`} />
+                  /* no options (owner, 2026-10-07): a new booking asks nothing; Add to existing asks only which request */
+                  if (prefer !== 'existing') return undefined
+                  return c.candidates.length ? (
+                    <div className="w-[300px]">
+                      <MenuSelect value={c.choice.mode === 'existing' ? c.choice.prId : ''} options={c.candidates.map((p) => p.id)}
+                        labels={(id) => { const p = c.candidates.find((x) => x.id === id); return p ? `${p.number} · ${prWindow(p)} · ${p.orderIds.length} order${p.orderIds.length === 1 ? '' : 's'}` : id }}
+                        onChange={(id) => setChoices((m) => ({ ...m, [g.key]: { mode: 'existing', prId: id } }))} />
+                    </div>
+                  ) : <p className="max-w-[300px] text-right text-[12px] text-ink-3">No open request here — books a new one.</p>
                 })()} />
             ))}
             {n === 0 && (

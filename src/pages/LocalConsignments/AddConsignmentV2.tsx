@@ -3592,12 +3592,11 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
         <FNum fieldKey="pkgQty" label={lbl('pkgQty')} required integer min={1} blankZero placeholder="eg, 1" value={p.quantity}
           error={err(!(p.quantity > 0))} disabled={barcodeEach && p.quantity <= 1} onChange={(q) => setParcel(i, { quantity: q })} />
       </div>, true],
-      /* a preset's size IS its master row — typed only for a Custom package */
+      /* a preset fills its master size, and it stays editable (owner, 2026-10-07: "dimension can be edited here") */
       !hid('pkgDimensions') && ['pkgDimensions', <div key="dims" className={cell('dims')}>
         <SFld fieldKey="pkgDimensions" label={`${ownLbl('pkgDimensions', 'Dimensions')} (${u.d})`} required={isCustom && need('pkgDimensions')}
-          error={isCustom && need('pkgDimensions') && !(p.l > 0 && p.w > 0 && p.h > 0)} helper={isCustom ? undefined : 'From the package type'}>
-          {isCustom ? <DimsBox units={u} l={p.l} w={p.w} h={p.h} error={need('pkgDimensions')} onChange={(d) => setParcel(i, d)} />
-            : <ReadBox value={`${u.toD(p.l)} × ${u.toD(p.w)} × ${u.toD(p.h)}`} />}
+          error={isCustom && need('pkgDimensions') && !(p.l > 0 && p.w > 0 && p.h > 0)} helper={isCustom ? undefined : 'Filled from the package type — edit if this box differs'}>
+          <DimsBox units={u} l={p.l} w={p.w} h={p.h} error={isCustom && need('pkgDimensions')} onChange={(d) => setParcel(i, d)} />
         </SFld>
       </div>, p.l > 0],
       !hid('pkgWeight') && ['pkgWeight', <div key="weight" className={cell('weight')}>
@@ -4925,16 +4924,11 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
       {/* sticky footer — the form switch (owner, 2026-09-29: where the section strip was), then Go Back + Add Order */}
       <div data-form-footer className="sticky bottom-0 z-30 mt-6 flex items-center gap-x-4 rounded-xl border border-warm-200 bg-surface px-6 py-3 shadow-ds-1">
         {merchantMode ? (
-          /* Grow step 1: the lowest rate for what is on screen (the service is picked at checkout), or the carried
-             service's estimate */
-          <div className="min-w-0 text-[13px]">
-            {!mode ? <p className="truncate text-ink-3">Choose a load type in Handling to see rates</p>
-              : !ready ? <p className="truncate text-ink-3">Rates appear once the addresses and packages are in</p>
-              : !ftlOk ? <p className="truncate text-ink-3">Add a vehicle</p>
-              : !quotes.length ? <p className="truncate text-ink-3">No service can be booked on this route — please contact support</p>
-              : quote ? <p className="truncate text-ink"><b>{money(quote.net, currency)}</b><span className="text-ink-2"> estimated · {quote.name}{vehicleLine ? ` · ${vehicleLine}` : ''}</span></p>
-              : <p className="truncate text-ink"><span className="text-ink-2">From </span><b>{money(cheapest ?? 0, currency)}</b><span className="text-ink-2"> · choose the service next</span></p>}
-          </div>
+          /* Grow step 1 (owner, 2026-10-07: "remove the estimate from the bar below"): no price here — the rate is shown where the
+             service is chosen, on the next step. Only what STOPS an order is said: no vehicle, or no bookable service. */
+          mode && ready && !ftlOk ? <p className="min-w-0 truncate text-[13px] text-ink-3">Add a vehicle</p>
+            : mode && ready && ftlOk && !quotes.length ? <p className="min-w-0 truncate text-[13px] text-ink-3">No service can be booked on this route — please contact support</p>
+            : null
         ) : (
           /* a view switch, not an action — quieter than Add Order */
           <Button variant="ghost" disabled={editing} onClick={() => setTier(simple ? 'full' : 'simplified')}>

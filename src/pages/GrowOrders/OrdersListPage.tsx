@@ -25,7 +25,7 @@ import { useMasters } from '../../growOrders/masters'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  AlertTriangle, ChevronDown, Download, Handshake, Package, Pencil, Printer, RotateCcw,
+  AlertTriangle, ChevronDown, Download, Handshake, Package, PackageSearch, Pencil, Printer, RotateCcw,
   Route as RouteIcon, ShieldAlert, Truck, Undo2, Upload, X,
 } from 'lucide-react'
 import { useGrowOrders, growOrderActions } from '../../growOrders/store'
@@ -139,6 +139,8 @@ export default function OrdersListPage() {
   const [bulkOpen, setBulkOpen] = useState(false)
   /** the Schedule Pickup dialog: the ticked orders and the table's own clear() */
   const [booking, setBooking] = useState<{ rows: ShipmentRow[]; clear: () => void } | null>(null)
+  /** the Add to existing pickup request dialog (its own menu item, like the console's — owner, 2026-10-07) */
+  const [joining, setJoining] = useState<{ rows: ShipmentRow[]; clear: () => void } | null>(null)
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [stateSel, setStateSel] = useState<string[]>([])
@@ -230,6 +232,10 @@ export default function OrdersListPage() {
         /* disabled items say why (tooltip), like the pickup actions */
         reason: bookable ? undefined : 'Only paid shipments in Created or Ready To Ship, not yet on a pickup request',
         onClick: bookable ? () => setBooking({ rows: sel, clear }) : undefined,
+      }, {
+        label: 'Add to existing pickup request', icon: <PackageSearch size={14} />, disabled: !bookable,
+        reason: bookable ? undefined : 'Only paid shipments in Created or Ready To Ship, not yet on a pickup request',
+        onClick: bookable ? () => setJoining({ rows: sel, clear }) : undefined,
       }] : []),
       {
         label: 'Initiate Return to Origin', icon: <RotateCcw size={14} />, disabled: !rtoable,
@@ -326,6 +332,10 @@ export default function OrdersListPage() {
       {booking && (
         <BookPickupDialog orders={booking.rows.map((r) => r.order)} stores={db.stores} onClose={() => setBooking(null)}
           onBooked={() => { booking.clear(); setBooking(null) }} />
+      )}
+      {joining && (
+        <BookPickupDialog prefer="existing" orders={joining.rows.map((r) => r.order)} stores={db.stores} onClose={() => setJoining(null)}
+          onBooked={() => { joining.clear(); setJoining(null) }} />
       )}
       {bulkOpen && (
         <BulkUploadDialog stores={db.stores} onClose={() => setBulkOpen(false)}
