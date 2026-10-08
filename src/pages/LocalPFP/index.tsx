@@ -717,17 +717,14 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
      Active Leg, no Pickup Request column (viewColumns.CONSIGNMENT_TAB_COLUMNS).
      Active Leg stays on All and on the module-off page (no tabs). A column
      hidden on `/local/columns` is hidden here too. */
+  /* All (owner, 2026-10-08: "very clear"): ONE short set of columns for planning — not staging's 19. Order · Ship By · State ·
+     Active Leg · Secondary State · Carrier · Merchant · Weight · Address, each placed once. */
+  const ALL_KEYS = ['_select', '_flags', 'orderNumber', 'shipByDate', 'state', 'activeLeg', 'secondaryState', 'carrier', 'merchant', 'weight', 'address', '_pad']
   const tabColumns = pickupsOn && !fixture
-    ? CONSIGNMENT_TAB_COLUMNS.filter((c) => c.key === '_select' || c.key === '_flags' || c.key === '_pad' || !hidden.has(c.key))
-      /* All reads both legs, so Active Leg comes back beside State (owner, 2026-10-08) */
-      .flatMap((c) => (tab === 'all' && c.key === 'state' ? [c, LEG_COLUMN] : [c]))
-      /* … and Carrier follows Secondary State (owner, 2026-10-08) */
-      .reduce<StagingColumn[]>((out, c, _i, all2) => {
-        if (tab !== 'all') return [...out, c]
-        if (c.key === 'carrier') return out
-        const carrier = all2.find((x) => x.key === 'carrier')
-        return c.key === 'secondaryState' && carrier ? [...out, c, carrier] : [...out, c]
-      }, [])
+    ? tab === 'all'
+      ? ALL_KEYS.map((k) => (k === 'activeLeg' ? LEG_COLUMN : CONSIGNMENT_TAB_COLUMNS.find((c) => c.key === k)))
+        .filter((c): c is StagingColumn => !!c && (c.key === '_select' || c.key === '_flags' || c.key === '_pad' || c.key === 'activeLeg' || !hidden.has(c.key)))
+      : CONSIGNMENT_TAB_COLUMNS.filter((c) => c.key === '_select' || c.key === '_flags' || c.key === '_pad' || !hidden.has(c.key))
     : stagingColumns
   const columns = view === 'pickup' ? PR_VIEW_COLUMNS
     : view === 'common' ? COMMON_COLUMNS
@@ -1230,17 +1227,17 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
                               return n
                             })} />
                           <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, color: 'var(--pfp-brand)' }}>
-                            {groupRow ? 'Pickup' : tab === 'all' ? 'Delivery' : 'No pickup'}
+                            {groupRow ? 'First mile · Pickup' : tab === 'all' ? 'Last mile' : 'No pickup'}
                           </span>
                           {groupRow ? (
                             <>
-                              <button type="button" className="pfp-order" style={{ fontWeight: 700 }} onClick={() => nav(`${basePath}/pickup/${groupRow.id}${search}`)}>
-                                {groupRow.reference}
-                              </button>
-                              <span>{groupRow.merchant} · {groupRow.windowLabel}</span>
-                              <span style={{ color: 'var(--pfp-ink-hint)' }}>{groupRow.state}</span>
+                              <button type="button" className="pfp-order" style={{ fontWeight: 700 }} title="Open this pickup request"
+                                onClick={() => nav(`${basePath}/pickup/${groupRow.id}${search}`)}>{groupRow.reference}</button>
+                              <span><span style={{ color: 'var(--pfp-ink-hint)' }}>Merchant </span>{groupRow.merchant}</span>
+                              <span><span style={{ color: 'var(--pfp-ink-hint)' }}>Collect </span>{groupRow.windowLabel}</span>
+                              <span><span style={{ color: 'var(--pfp-ink-hint)' }}>Pickup is </span><b>{groupRow.state}</b></span>
                             </>
-                          ) : <span style={{ fontWeight: 700 }}>{tab === 'all' ? 'Last mile · no pickup needed' : 'No pickup request'}</span>}
+                          ) : <span style={{ fontWeight: 700 }}>{tab === 'all' ? 'Deliveries — no pickup needed' : 'No pickup request'}</span>}
                           <span style={{ color: 'var(--pfp-ink-hint)' }}>· {groupIds.length} consignment{groupIds.length === 1 ? '' : 's'}</span>
                         </span>
                       </td>

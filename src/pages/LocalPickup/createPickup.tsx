@@ -13,8 +13,8 @@
  * This replaces the console Pickup page's old "Eligible consignments" tab as the place ops book waiting
  * consignments (Consignment Order → Schedule Pickup still does the same from a selection).
  */
-import { useEffect, useMemo, useState } from 'react'
-import { ChevronDown, Plus } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Plus } from 'lucide-react'
 import { Button, Checkbox, Field, Input, MenuSelect, Modal } from '../../nueva/components'
 import { toast } from '../../nueva/toast'
 import { useGrowOrders } from '../../growOrders/store'
@@ -45,40 +45,9 @@ function useWaitingConsignments(): GrowOrder[] {
 /** "Create pickup ▾" — the two choices; a single button when blind pickups are switched off. */
 export function CreatePickupButton({ onPick }: { onPick: (k: CreatePickupKind) => void }) {
   const cfg = usePickupModuleConfig()
-  const waiting = useWaitingConsignments().length
-  const [open, setOpen] = useState(false)
-  const blind = blindPickupsAllowed(cfg)
-  useEffect(() => {
-    if (!open) return
-    const h = (e: MouseEvent) => { if (!(e.target as HTMLElement).closest('[data-create-pickup]')) setOpen(false) }
-    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
-    window.addEventListener('click', h); window.addEventListener('keydown', k)
-    return () => { window.removeEventListener('click', h); window.removeEventListener('keydown', k) }
-  }, [open])
-  if (!blind) return <Button icon={<Plus size={15} />} onClick={() => onPick('request')}>Create pickup</Button>
-  /* Create pickup OPENS the Blind pickup request (owner, 2026-10-07: "when clicking on add pickup, blind pickup request should open");
-     the small arrow beside it keeps the other way — a Pickup request for the consignments already waiting */
-  return (
-    <div className="relative inline-flex" data-create-pickup>
-      <Button icon={<Plus size={15} />} onClick={() => onPick('blind')}>Create pickup</Button>
-      <button type="button" aria-label="More ways to create a pickup" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((v) => !v)}
-        className="ml-1 inline-flex h-8 w-8 items-center justify-center rounded-md border border-line bg-surface text-ink-2 hover:bg-warm-50 hover:text-ink">
-        <ChevronDown size={14} />
-      </button>
-      {open && (
-        <div role="menu" className="absolute right-0 top-full z-40 mt-2 w-[300px] rounded-lg border border-line bg-surface py-1.5 shadow-ds-overlay">
-          <button type="button" role="menuitem" onClick={() => { setOpen(false); onPick('request') }}
-            className="flex w-full items-start gap-3 px-3.5 py-2.5 text-left hover:bg-warm-50">
-            <span className="min-w-0 flex-1">
-              <span className="block text-[13px] font-bold text-ink">Pickup request for waiting consignments</span>
-              <span className="block text-[12px] text-ink-3">Book the consignments that have no pickup yet</span>
-            </span>
-            <span className="mt-0.5 rounded-full bg-warm-100 px-2 text-[11px] font-bold leading-5 text-ink-2">{waiting}</span>
-          </button>
-        </div>
-      )}
-    </div>
-  )
+  /* ONE button (owner, 2026-10-08: "remove this option"): it opens the Blind pickup request; with blind pickups off it opens
+     the Pickup request for the consignments already waiting */
+  return <Button icon={<Plus size={15} />} onClick={() => onPick(blindPickupsAllowed(cfg) ? 'blind' : 'request')}>Create pickup</Button>
 }
 
 /** Mount once per page: renders the popup the button picked. `onCreated` gets every request made. */
