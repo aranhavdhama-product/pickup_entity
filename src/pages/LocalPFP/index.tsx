@@ -347,6 +347,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
   const [creating, setCreating] = useState<CreatePickupKind | null>(null)
   /** the consignments a Schedule Pickup is being booked for (Pending For Pickup → select → Schedule Pickup) */
   const [scheduling, setScheduling] = useState<string[] | null>(null)
+  const [joining, setJoining] = useState<string[] | null>(null)
   const canCreatePickup = pickupsOn && pickupCfg.mode !== 'auto' && !fixture
 
   /* The saved column configuration still governs which of staging's 20 columns
@@ -655,6 +656,9 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
       ftl: picks.filter((p) => p.rowType === 'FTL Pickup').length,
       mixed: selectedRows.length > 0 && picks.length > 0,
       /* the ones a pickup can be booked for NOW: waiting, bookable, and the module is in Manual mode */
+      /* where the selected consignments ARE decides what can be done with them (owner, 2026-10-08) */
+      lastMile: selectedRows.filter((r) => r.activeLeg === 'Last Mile').length,
+      forwardLastMile: selectedRows.filter((r) => r.activeLeg === 'Last Mile' && r.orderTypeLabel === 'Forward').length,
       awaiting: pickupCfg.mode === 'manual' && pickupsOn
         ? selectedRows.filter((r) => awaitingPickup(r) && canSchedulePickup(r.order, db.pickupRequests)).length : 0,
     }
@@ -1083,15 +1087,20 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
           toast.info('Not available in the prototype.')
           return
         }
-        if (kind === 'bookPickup') {
-          setScheduling(selectedRows.filter((r) => awaitingPickup(r) && canSchedulePickup(r.order, db.pickupRequests)).map((r) => r.orderId))
-          return
-        }
+        const bookable = selectedRows.filter((r) => awaitingPickup(r) && canSchedulePickup(r.order, db.pickupRequests))
+        if (kind === 'bookPickup') { setScheduling(bookable.map((r) => r.orderId)); return }
+        if (kind === 'addToExisting') { setJoining(bookable.map((r) => r.orderId)); return }
+        /* an action runs on the rows it applies to; the selection narrows to them so nothing is acted on out of sight */
+        const lastMileRows = selectedRows.filter((r) => r.activeLeg === 'Last Mile')
+        const narrowTo = (rows: LocalConsignmentRow[]) => { if (rows.length !== selectedAll.length) setSelected(new Set(rows.map((r) => r.id))) }
         if (kind === 'ready') {
-          planningActions.markReadyForPlanning(selIds)
-          done(`${selIds.length} marked ready for planning.`)
+          const ids = lastMileRows.map((r) => r.orderId)
+          planningActions.markReadyForPlanning(ids)
+          done(`${ids.length} marked ready for planning.`)
           return
         }
+        if (kind === 'schedule' || kind === 'close') narrowTo(lastMileRows)
+        if (kind === 'rto') narrowTo(lastMileRows.filter((r) => r.orderTypeLabel === 'Forward'))
         if (kind === 'csv') {
           downloadCsv('pending-for-planning-selected.csv', csvOf(selectedRows))
           toast.success(`${selectedRows.length} row${selectedRows.length === 1 ? '' : 's'} exported.`)
@@ -1533,6 +1542,17 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
             if (failed.length) toast.error(`${failed.join(', ')} can no longer take consignments — nothing added there.`)
           }} />
       )}
+      {joining && (
+        <SchedulePickupDialog orderIds={joining} prefer="existing" title="Add to existing pickup request" onClose={() => setJoining(null)}
+          onDone={(results, failed) => {
+            clearSelection(); setJoining(null)
+            if (results.length) {
+              const n = results.reduce((k, r) => k + r.count, 0)
+              toast.success(`${n} consignment${n === 1 ? '' : 's'} added to ${results.map((r) => r.number).join(', ')}.`)
+            }
+            if (failed.length) toast.error(`${failed.join(', ')} can no longer take consignments — nothing added there.`)
+          }} />
+      )}
       <CreatePickupDialogs kind={creating} onClose={() => setCreating(null)}
         onCreated={(prs) => { if (prs.length && tab === 'last-mile') switchTab('first-mile') }} />
 
@@ -1706,14 +1726,14 @@ function SelectionPanel({ count, metrics, routable, profile, pickupMetrics, prIt
   routable: number
   profile: {
     total: number; consignments: number; pickups: number
-    forward: number; reverse: number; reserved: number; ftl: number; mixed: boolean; awaiting: number
+    forward: number; reverse: number; reserved: number; ftl: number; mixed: boolean; awaiting: number; lastMile: number; forwardLastMile: number
   }
   pickupMetrics: { orders: number; weight: number; known: boolean; approx: boolean }
   /** the shared pickup-request menu for the selected pickups (a pickups-only selection) */
   prItems: PrSelectionItem[]
   onClose: () => void
   onAction: (kind: 'schedule' | 'rto' | 'plan' | 'ready' | 'close' | 'csv' | 'exception' | 'cancel'
-    | 'modify' | 'carrier' | 'storage' | 'driver' | 'bestRoute' | 'cancelMixed' | 'bookPickup') => void
+    | 'modify' | 'carrier' | 'storage' | 'driver' | 'bestRoute' | 'cancelMixed' | 'bookPickup' | 'addToExisting') => void
 }) {
   /**
    * Each action declares HOW MANY of the selected rows it can actually act on,
@@ -1738,23 +1758,29 @@ function SelectionPanel({ count, metrics, routable, profile, pickupMetrics, prIt
     /* ---- consignment actions: EXACTLY staging's list, in staging's order
             (owner, 2026-09-25). The five with no local implementation say so
             in a toast. ---- */
-    /* owner, 2026-10-08: consignments waiting for a pickup are planned FROM this page */
+    /* WHERE a consignment is decides its actions (owner, 2026-10-08): waiting for a pickup → book one; at the facility (last mile) →
+       schedule, route, ready, return, close; any → exception, cancel, CSV. What does not apply to the selection folds under "Not available". */
     { key: 'bookPickup', label: 'Schedule Pickup', icon: <Truck size={16} />, eligible: profile.awaiting, kind: 'consignment',
-      scope: 'Consignments waiting for a pickup request, with the pickup module in Manual mode.' },
-    { key: 'modify', label: 'Modify Order Details', icon: <NotePencil size={16} />, eligible: c, kind: 'consignment' },
-    { key: 'schedule', label: 'Schedule', icon: <Clock size={16} />, eligible: c, kind: 'consignment',
-      scope: 'A pickup is scheduled by its collection window instead.' },
-    { key: 'rto', label: 'Initiate Return to Origin', icon: <ArrowUturnLeft size={16} />, eligible: profile.forward,
-      kind: 'consignment', scope: 'Forward consignments only — a reverse order is already returning.' },
-    { key: 'carrier', label: 'Modify Carrier', icon: <PackageGlyph size={16} />, eligible: c, kind: 'consignment' },
-    { key: 'storage', label: 'Modify Storage Location', icon: <MapPin size={16} />, eligible: c, kind: 'consignment' },
-    { key: 'driver', label: 'Assign To Driver', icon: <Send size={16} />, eligible: c, kind: 'consignment' },
-    { key: 'bestRoute', label: 'Add To Best Route', icon: <Sparkles size={16} />, eligible: routable, kind: 'consignment',
-      scope: 'Shipments that are at the facility and have a delivery window.' },
+      blocked: 'Only consignments waiting for a pickup request — pick "Pending For Pickup" — with the pickup module in Manual mode.' },
+    { key: 'addToExisting', label: 'Add to existing pickup request', icon: <Truck size={16} />, eligible: profile.awaiting, kind: 'consignment',
+      blocked: 'Only consignments waiting for a pickup request — pick "Pending For Pickup" — with the pickup module in Manual mode.' },
+    { key: 'schedule', label: 'Schedule delivery', icon: <Clock size={16} />, eligible: profile.lastMile, kind: 'consignment',
+      blocked: 'Only consignments at the facility (last mile). A consignment waiting for a pickup is scheduled with Schedule Pickup.' },
     { key: 'plan', label: 'Plan For Routing', icon: <RoutePath size={16} />, eligible: routable, kind: 'consignment',
       scope: 'Shipments that are at the facility and have a delivery window.' },
-    { key: 'ready', label: 'Mark Ready for Planning', icon: <CalendarCheck size={16} />, eligible: c, kind: 'consignment' },
-    { key: 'close', label: 'Close Consignment', icon: <ListChecks size={16} />, eligible: c, kind: 'consignment' },
+    { key: 'ready', label: 'Mark Ready for Planning', icon: <CalendarCheck size={16} />, eligible: profile.lastMile, kind: 'consignment',
+      blocked: 'Only consignments at the facility (last mile).' },
+    { key: 'rto', label: 'Initiate Return to Origin', icon: <ArrowUturnLeft size={16} />, eligible: profile.forwardLastMile,
+      kind: 'consignment', blocked: 'Forward consignments at the facility only — a reverse order is already returning, and one not yet collected has nothing to return.' },
+    { key: 'close', label: 'Close Consignment', icon: <ListChecks size={16} />, eligible: profile.lastMile, kind: 'consignment',
+      blocked: 'Only consignments at the facility (last mile).' },
+    { key: 'exception', label: 'Raise Exception', icon: <WarningTriangle size={16} />, eligible: c, kind: 'consignment' },
+    /* staging's other five have no local implementation — they sit folded, never as live-looking buttons */
+    { key: 'modify', label: 'Modify Order Details', icon: <NotePencil size={16} />, eligible: 0, kind: 'consignment', blocked: 'Not available in the prototype.' },
+    { key: 'carrier', label: 'Modify Carrier', icon: <PackageGlyph size={16} />, eligible: 0, kind: 'consignment', blocked: 'Not available in the prototype.' },
+    { key: 'storage', label: 'Modify Storage Location', icon: <MapPin size={16} />, eligible: 0, kind: 'consignment', blocked: 'Not available in the prototype.' },
+    { key: 'driver', label: 'Assign To Driver', icon: <Send size={16} />, eligible: 0, kind: 'consignment', blocked: 'Not available in the prototype.' },
+    { key: 'bestRoute', label: 'Add To Best Route', icon: <Sparkles size={16} />, eligible: 0, kind: 'consignment', blocked: 'Not available in the prototype.' },
     { key: 'csv', label: 'Download CSV', icon: <Download size={16} />, eligible: c, kind: 'both',
       scope: 'Exports the consignment rows.' },
     { key: 'exception', label: 'Raise Exception', icon: <WarningTriangle size={16} />, eligible: c, kind: 'consignment' },
