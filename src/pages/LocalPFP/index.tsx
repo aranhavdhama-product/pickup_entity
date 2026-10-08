@@ -379,13 +379,12 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
   /* 2026-10-08 (2): the SAME switch on All and First Mile — **Pickup requests | Consignments**. On All the default is
      Consignments: every first-mile consignment under its pickup request, then the last-mile ones — both legs on the first page,
      each request's consignments together. On First Mile the default stays Pickup requests. */
-  const consView = pickupsOn && !fixture && (tab === 'all' ? params.get('view') !== 'pickups' : tab === 'first-mile' && params.get('view') === 'consignments')
-  const pickupsOnAll = pickupsOn && !fixture && tab === 'all' && !consView
+  const consView = pickupsOn && !fixture && tab === 'all'
   const grouped = consView && params.get('group') !== 'none'
   const group: GroupBy = consView ? 'none' : 'pr'
-  const viewFor = (t: TabKey, g: GroupBy, cons: boolean, pickupOnly: boolean): ColumnView =>
-    cons ? 'firstMileConsignment' : pickupOnly ? 'pickup' : viewOf(t, g)
-  const view: ColumnView = fixture || !pickupsOn ? 'consignment' : viewFor(tab, group, consView, pickupsOnAll)
+  const viewFor = (t: TabKey, g: GroupBy, cons: boolean): ColumnView =>
+    cons ? 'firstMileConsignment' : viewOf(t, g)
+  const view: ColumnView = fixture || !pickupsOn ? 'consignment' : viewFor(tab, group, consView)
   /* owner, 2026-09-25: the filter line follows the tab's ROW KIND — pickup
      requests get the Pickup page's grammar, consignments the staging set, All
      the common set (see FILTER_DIMS) */
@@ -393,8 +392,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
   const tabRows = useMemo(
     () => (!pickupsOn ? all
       : tab === 'all' && consView ? all.filter((r) => !isPickupRow(r))        // every consignment, first mile included
-        : tab === 'all' && pickupsOnAll ? all.filter(isPickupRow)             // the pickup requests only
-          : all.filter((r) => inTab(tab, group, r))), [all, tab, group, pickupsOn, consView, pickupsOnAll])
+        : all.filter((r) => inTab(tab, group, r))), [all, tab, group, pickupsOn, consView])
   /** what the pickup-request and All cells read */
   const cellCtx = useMemo<ExtraCtx>(() => ({
     stores: db.stores,
@@ -507,7 +505,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
   const tabCounts = useMemo(() => {
     const needle = q.trim().toLowerCase()
     const base = (r: UnifiedRow) => (!funnel.Merchant || r.merchant === funnel.Merchant) && (!needle || matchesSearch(r, needle))
-    const count = (t: TabKey) => (t === tab && !consView && !pickupsOnAll ? filtered.length : all.filter((r) => inTab(t, 'pr', r) && base(r)).length)
+    const count = (t: TabKey) => (t === tab && !consView ? filtered.length : all.filter((r) => inTab(t, 'pr', r) && base(r)).length)
     return { 'first-mile': count('first-mile'), 'last-mile': count('last-mile'), all: count('all') }
   }, [all, filtered, tab, group, q, funnel.Merchant])
 
@@ -675,15 +673,13 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
 
   /* A tab change clears the selection: rows picked on another tab would stay
      selected out of sight, and the panel would act on rows nobody can see. */
-  const switchTab = (next: TabKey, fm?: { cons?: boolean; flat?: boolean }) => {
-    const nextCons = next === 'all' ? fm ? !!fm.cons : true : !!fm?.cons
+  const switchTab = (next: TabKey, opts?: { flat?: boolean }) => {
+    const nextCons = next === 'all'
     setParams((p) => {
       const n = new URLSearchParams(p)
       if (next === 'all') n.delete('tab'); else n.set('tab', next)
       n.delete('group'); n.delete('view')
-      if (next === 'all' && fm && !fm.cons) n.set('view', 'pickups')
-      if (next === 'first-mile' && fm?.cons) n.set('view', 'consignments')
-      if (nextCons && fm?.flat) n.set('group', 'none')
+      if (nextCons && opts?.flat) n.set('group', 'none')
       return n
     }, { replace: true })
     clearSelection()
@@ -691,7 +687,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
     /* a filter that belongs to the other row kind no longer applies: reset
        everything but Merchant and search (owner, 2026-09-25) */
     const ng: GroupBy = nextCons ? 'none' : 'pr'
-    if (filterModeOf(viewFor(next, ng, nextCons, next === 'all' && !nextCons)) !== filterMode) {
+    if (filterModeOf(viewFor(next, ng, nextCons)) !== filterMode) {
       setFrom(''); setTo(''); setStateSel([]); setPrStatusSel([]); setTypeSel('')
       setException(''); setCarrier(''); setFlag(''); setQuick(''); setQuickOpen(false)
       setFunnel((f): Record<string, string> => (f.Merchant ? { Merchant: f.Merchant } : {}))
@@ -1123,21 +1119,18 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
             <LocalTabs
               tabs={tabs.map((t) => ({ id: t.key, label: t.label, count: tabCounts[t.key], icon: TAB_ICON[t.key] }))}
               active={tab} onChange={(id) => switchTab(id as TabKey)}
-              right={canCreatePickup ? <CreatePickupButton onPick={setCreating} /> : undefined} />
-          )}
-
-          {/* ONE switch on All and First Mile (owner, 2026-10-08): the pickup requests, or the consignments — grouped under each request */}
-          {(tab === 'all' || tab === 'first-mile') && !fixture && pickupsOn && (
-            <div className="pfp-tabs" role="group" aria-label="View" style={{ gap: 8, alignItems: 'center' }}>
-              <span style={{ color: 'var(--pfp-ink-hint)' }}>View</span>
-              <button type="button" className="pfp-chip" aria-pressed={!consView} onClick={() => switchTab(tab, { cons: false })}>Pickup requests</button>
-              <button type="button" className="pfp-chip" aria-pressed={consView} onClick={() => switchTab(tab, { cons: true })}>Consignments</button>
-              {consView && (<>
-                <span style={{ color: 'var(--pfp-ink-hint)', marginLeft: 16 }}>Group by</span>
-                <button type="button" className="pfp-chip" aria-pressed={grouped} onClick={() => switchTab(tab, { cons: true })}>Pickup request</button>
-                <button type="button" className="pfp-chip" aria-pressed={!grouped} onClick={() => switchTab(tab, { cons: true, flat: true })}>None</button>
-              </>)}
-            </div>
+              right={(
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 12 }}>
+                  {/* All lists the consignments; this folds each pickup request's consignments together (owner, 2026-10-08) */}
+                  {consView && (
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer', color: 'var(--pfp-ink-muted)', whiteSpace: 'nowrap' }}>
+                      <input type="checkbox" checked={grouped} onChange={() => switchTab('all', { flat: grouped })} />
+                      Group by pickup request
+                    </label>
+                  )}
+                  {canCreatePickup ? <CreatePickupButton onPick={setCreating} /> : null}
+                </span>
+              )} />
           )}
 
           {/* ----------------------------------------------- row 2: the strip */}
@@ -1218,31 +1211,28 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
                 <Fragment key={r.id}>
                   {groupFirst && (
                     <tr>
-                      <td colSpan={columns.length} style={{ background: 'var(--pfp-brand-tint)', padding: '8px 16px' }}>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 12 }}>
-                          {groupRow && (
-                            <input type="checkbox" aria-label={`Select the consignments of ${groupRow.reference}`}
-                              checked={groupIds.every((id) => selected.has(id))}
-                              onChange={() => setSelected((s) => {
-                                const n = new Set(s)
-                                if (groupIds.every((id) => n.has(id))) groupIds.forEach((id) => n.delete(id)); else groupIds.forEach((id) => n.add(id))
-                                return n
-                              })} />
-                          )}
-                          {tab === 'all' && (
-                            <span style={{ fontWeight: 700, color: 'var(--pfp-ink-hint)' }}>{groupRow ? 'First mile' : 'Last mile'}</span>
-                          )}
+                      <td colSpan={columns.length} style={{ background: 'rgb(250, 250, 250)', borderLeft: '3px solid var(--pfp-brand)', padding: '8px 16px' }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 12, whiteSpace: 'nowrap' }}>
+                          <input type="checkbox" aria-label={groupRow ? `Select the consignments of ${groupRow.reference}` : 'Select the deliveries'}
+                            checked={groupIds.every((id) => selected.has(id))}
+                            onChange={() => setSelected((s) => {
+                              const n = new Set(s)
+                              if (groupIds.every((id) => n.has(id))) groupIds.forEach((id) => n.delete(id)); else groupIds.forEach((id) => n.add(id))
+                              return n
+                            })} />
+                          <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, color: 'var(--pfp-brand)' }}>
+                            {groupRow ? 'Pickup' : tab === 'all' ? 'Delivery' : 'No pickup'}
+                          </span>
                           {groupRow ? (
                             <>
-                              <button type="button" className="pfp-order" onClick={() => nav(`${basePath}/pickup/${groupRow.id}${search}`)}>
-                                <ArrowRight size={16} />{groupRow.reference}
+                              <button type="button" className="pfp-order" style={{ fontWeight: 700 }} onClick={() => nav(`${basePath}/pickup/${groupRow.id}${search}`)}>
+                                {groupRow.reference}
                               </button>
-                              <span style={{ fontWeight: 700 }}>{groupRow.state}</span>
-                              <span>{groupRow.merchant}</span>
-                              <span>{groupRow.windowLabel}</span>
-                              <span style={{ color: 'var(--pfp-ink-hint)' }}>{groupIds.length} consignment{groupIds.length === 1 ? '' : 's'}</span>
+                              <span>{groupRow.merchant} · {groupRow.windowLabel}</span>
+                              <span style={{ color: 'var(--pfp-ink-hint)' }}>{groupRow.state}</span>
                             </>
-                          ) : <b>{tab === 'all' ? 'Deliveries' : 'No pickup request'} <span style={{ fontWeight: 400, color: 'var(--pfp-ink-hint)' }}>· {groupIds.length} consignment{groupIds.length === 1 ? '' : 's'}</span></b>}
+                          ) : <span style={{ fontWeight: 700 }}>{tab === 'all' ? 'Last mile · no pickup needed' : 'No pickup request'}</span>}
+                          <span style={{ color: 'var(--pfp-ink-hint)' }}>· {groupIds.length} consignment{groupIds.length === 1 ? '' : 's'}</span>
                         </span>
                       </td>
                     </tr>
