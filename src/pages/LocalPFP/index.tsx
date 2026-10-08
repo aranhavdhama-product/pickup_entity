@@ -1101,7 +1101,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
       onAction={(kind) => {
         /* staging actions with no local implementation (owner, 2026-09-25: the
            consignment panel carries staging's exact list) */
-        if (kind === 'modify' && selectedRows[0]) { nav(`/local/consignments/new?draft=${selectedRows[0].orderId}`); return }
+        if (kind === 'modify') { if (selectedRows[0]) nav(`/local/consignments/new?draft=${selectedRows[0].orderId}`); return }
         if (kind === 'bestRoute') {
           /* the best open route for these shipments — today a new Un-assigned route (the planner assigns the driver in Control Tower) */
           const trip = planningActions.planForRouting(routable.map((r) => ({ orderId: r.orderId, orderNumber: r.orderNumber, address: r.address })))
