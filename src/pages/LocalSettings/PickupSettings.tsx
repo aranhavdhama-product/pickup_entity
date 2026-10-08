@@ -309,7 +309,7 @@ export default function PickupSettings() {
                   </Row>
                 )}
               </>)}
-              <Row label="Merchant master" hint={`Merchant locations collected on set days, with or without orders — ${schedules.filter((x) => x.status === 'Active').length} active.`}>
+              <Row label="Merchant master" hint={`Merchant locations that get a request made for them on set days, even with no orders — ${schedules.filter((x) => x.status === 'Active').length} active. They follow the pickup days below.`}>
                 <Button variant="outline" icon={<CalendarClock size={13} />} onClick={() => navigate('/local/settings/merchant-master')}>Merchant master ({schedules.length})</Button>
               </Row>
               <Row label={auto ? 'Pickup date limits' : 'Booking window'}
@@ -337,7 +337,7 @@ export default function PickupSettings() {
                   </Row>
                 )}
                 <GroupLabel>Booking</GroupLabel>
-                <Row label="Pickup days" hint={`${DAYS_SOURCE_HINT[draft.pickupDaysSource]} Hub holidays always block pickups.`}>
+                <Row label="Pickup days" hint={`Which days ANY pickup can fall on, merchant master runs included. ${DAYS_SOURCE_HINT[draft.pickupDaysSource]} Hub holidays always block.`}>
                   <div className="flex w-full flex-col items-end gap-2">
                     <div className="w-full">
                       <MenuSelect value={draft.pickupDaysSource} options={PICKUP_DAYS_SOURCES}
