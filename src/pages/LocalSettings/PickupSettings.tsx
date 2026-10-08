@@ -226,7 +226,7 @@ export default function PickupSettings() {
     draft.photo !== 'off' && `photo ${POD_LABEL[draft.photo].toLowerCase()}`, draft.otp && 'code'].filter(Boolean)
   const flow = [
     { title: 'Create', caption: auto ? `Automatic — when a consignment is ${state}` : `Manual — merchants and ops book${draft.blindAllowed ? ', even before consignments exist' : ''}` },
-    { title: 'Book', caption: `Up to ${plural(would.bookingHorizonDays, 'day')} ahead; same-day until ${would.sameDayCutoff}` },
+    { title: auto ? 'Date' : 'Book', caption: auto ? `Placed within ${plural(would.bookingHorizonDays, 'day')}; same-day until ${would.sameDayCutoff}` : `Up to ${plural(would.bookingHorizonDays, 'day')} ahead; same-day until ${would.sameDayCutoff}` },
     { title: 'Pick up', caption: draft.manifestRequired
       ? `Handover: ${SCAN_LABEL[stored.scanMode].toLowerCase()}${proof.length ? ` · proof: ${proof.join(', ')}` : ''}`
       : `Closes when picked up${proof.length ? ` · proof: ${proof.join(', ')}` : ''}` },
@@ -250,9 +250,9 @@ export default function PickupSettings() {
                 safe default and waits in ONE fold. Nothing here needs touching for the module to work. */}
             <Card n={1} icon={<Workflow size={16} />} title="Pickup settings"
               caption="The defaults already work — change only what is different for you.">
-              <Row label="Who creates pickup requests" hint={auto ? 'Created for you as soon as a consignment is ready — booking buttons are hidden.' : 'Merchants and ops book each pickup. Add Schedules for regular collections.'}>
-                <Seg<PickupMode> label="Who creates pickup requests" value={draft.mode} onChange={(m) => set({ mode: m })}
-                  options={[{ value: 'manual', label: 'People book' }, { value: 'auto', label: 'Automatic' }]} />
+              <Row label="How pickup requests are created" hint={auto ? 'Created for you as soon as a consignment is ready — booking buttons are hidden.' : 'Merchants and ops book each pickup. Add Schedules for regular collections.'}>
+                <Seg<PickupMode> label="How pickup requests are created" value={draft.mode} onChange={(m) => set({ mode: m })}
+                  options={[{ value: 'manual', label: 'Manual' }, { value: 'auto', label: 'Automatic' }]} />
               </Row>
               {auto && (
                 <Row label="Create it when the consignment is" hint={STATE_HINT[state]}>
@@ -264,10 +264,13 @@ export default function PickupSettings() {
               <Row label="Scheduled pickups (rosters)" hint={`A merchant location collected on set days, with or without orders — ${schedules.filter((x) => x.status === 'Active').length} active.`}>
                 <Button variant="outline" icon={<CalendarClock size={13} />} onClick={() => navigate('/local/pickup/schedules')}>Schedules ({schedules.length})</Button>
               </Row>
-              <Row label="Booking window" hint="How far ahead a pickup can be booked, and until when today's can.">
+              <Row label={auto ? 'Pickup date limits' : 'Booking window'}
+                hint={auto ? 'An automatic pickup is never placed further out than this; after the cut-off, today\'s consignments go to the next pickup day.'
+                  : 'How far ahead people can book, and until when today\'s pickups can still be booked.'}>
                 <div className="flex items-center gap-2">
+                  <span className="text-[13px] text-ink-2">{auto ? 'Within' : 'Up to'}</span>
                   <div className="w-16"><Input type="number" value={draft.bookingHorizonDays} onChange={(n) => set({ bookingHorizonDays: n })} /></div>
-                  <span className="text-[13px] text-ink-2">days · today until</span>
+                  <span className="text-[13px] text-ink-2">{auto ? 'days · today\'s until' : 'days ahead · today\'s until'}</span>
                   <div className="w-[92px]"><Input type="time" value={draft.sameDayCutoff} onChange={(t) => set({ sameDayCutoff: t })} /></div>
                 </div>
               </Row>
