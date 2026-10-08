@@ -32,7 +32,7 @@ import { toast } from '../../nueva/toast'
 import { ClearFilters, ColumnChooser, DateRange, FilterLine, SearchBox } from '../../local/chrome'
 import { useColumnPrefs } from '../../local/columnPrefs'
 import { PFP_COLUMNS_CONSIGNMENT_KEY, PFP_COLUMNS_PICKUP_KEY, useViewSetup } from './viewSetup'
-import { Columns3, Rows3, ChevronDown as OpenChevron, ChevronRight as ClosedChevron, Truck } from 'lucide-react'
+import { Clock as ClockIcon, Columns3, Hourglass, History, Rows3, TriangleAlert, type LucideIcon, ChevronDown as OpenChevron, ChevronRight as ClosedChevron, Truck } from 'lucide-react'
 import { useGrowOrders, growOrderActions } from '../../growOrders/store'
 import type { PrAction } from '../../growOrders/prActions'
 import { isPickupEligible } from '../../growOrders/tabs'
@@ -119,14 +119,16 @@ const EXCEPTION_OPTIONS = ['Geo Lookup Not Found', 'Damaged', 'Misroute']
 
 /** the Quick Filter strip — staging's four exception buckets, with local predicates */
 const QUICK_FILTERS = [
-  { key: 'failed', label: 'Failed', hint: 'Orders with failed attempts' },
-  { key: 'inbound', label: 'Inbound Pending', hint: 'Orders awaiting arrival at hub' },
-  { key: 'scheduling', label: 'Pending For Scheduling', hint: 'Orders pending for confirmation' },
-  { key: 'past', label: 'Past Delivery Date', hint: 'Orders past their delivery date' },
+  { key: 'failed', label: 'Failed', hint: 'Consignments with failed attempts', tone: 'plain' },
+  { key: 'inbound', label: 'Inbound Pending', hint: 'Consignments awaiting arrival at hub', tone: 'amber' },
+  { key: 'scheduling', label: 'Pending For Scheduling', hint: 'Consignments pending for confirmation', tone: 'rose' },
+  { key: 'past', label: 'Past Delivery Date', hint: 'Consignments past their delivery date', tone: 'rose' },
   /* owner, 2026-10-08: consignments with no pickup request yet are NOT in the list unless this card is picked — then they can be
      selected and planned (Schedule Pickup) right here */
-  { key: 'pickup', label: 'Pending For Pickup', hint: 'Consignments waiting for a pickup request' },
+  { key: 'pickup', label: 'Pending For Pickup', hint: 'Consignments waiting for a pickup request', tone: 'amber' },
 ] as const
+/** the exception list's icons — the same set the Consignment Order exception cards use */
+const QUICK_ICON: Record<string, LucideIcon> = { failed: TriangleAlert, inbound: ClockIcon, scheduling: Hourglass, past: History, pickup: Truck }
 
 type QuickKey = typeof QUICK_FILTERS[number]['key']
 
@@ -1102,18 +1104,21 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
   const awaitingCount = useMemo(() => all.filter(awaitingPickup).length, [all])
 
   const quickStrip = (
-    <div>
+    <div className="lc-exceptions">
       <div className="pfp-strip" data-quick="true">
-        {QUICK_FILTERS.map((f) => (
-          <button key={f.key} type="button" className="pfp-exception-card"
-            aria-pressed={quick === f.key}
-            onClick={() => { setQuick(quick === f.key ? '' : f.key); setPage(1) }}>
-            <h4>{f.label}</h4>
-            <p>{f.key === 'pickup' ? `${awaitingCount} consignment${awaitingCount === 1 ? '' : 's'} waiting for a pickup request` : f.hint}</p>
-          </button>
-        ))}
+        {QUICK_FILTERS.map((f) => {
+          const Icon = QUICK_ICON[f.key]
+          return (
+            <button key={f.key} type="button" className="pfp-exception-card" data-tone={f.tone}
+              aria-pressed={quick === f.key}
+              onClick={() => { setQuick(quick === f.key ? '' : f.key); setPage(1) }}>
+              <span className="lc-ex-head"><span className="lc-ex-icon"><Icon size={20} /></span><h4>{f.label}</h4></span>
+              <p>{f.key === 'pickup' ? `${awaitingCount} consignment${awaitingCount === 1 ? '' : 's'} waiting for a pickup request` : f.hint}</p>
+            </button>
+          )
+        })}
       </div>
-      <p className="pfp-exception-note">Selecting any exception type will update the order list accordingly.</p>
+      <p className="pfp-exception-note">Selecting any exception type will update the consignment list accordingly.</p>
     </div>
   )
 
