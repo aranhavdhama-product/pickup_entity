@@ -140,6 +140,7 @@ const PR_DEFS = PR_COLUMN_DEFS.filter((d) => d.defaultOn && d.key !== 'type')
 /** First Mile / Pickup request: the `/local/pickup` grid, + Active Leg after the 3rd column (owner, 2026-10-08). */
 export const PR_VIEW_COLUMNS: StagingColumn[] = [
   SELECT,
+  onPage('_flags'),   // the category icons of its consignments (owner, 2026-10-08)
   /* Active Leg sits after the 3rd column — Reference · State · Exception · Active Leg (owner, 2026-10-08) */
   ...PR_DEFS.flatMap((d) => {
     const col = { key: prKey(d.key), label: d.label, width: d.width }
@@ -151,6 +152,7 @@ export const PR_VIEW_COLUMNS: StagingColumn[] = [
 /** All: what a consignment row and a pickup-request row both carry */
 export const COMMON_COLUMNS: StagingColumn[] = [
   SELECT,
+  onPage('_flags'),
   { key: 'c:ref', label: 'Reference', width: measured('referenceNumber') },
   { key: 'c:type', label: 'Type', width: measured('orderType') },
   LEG,

@@ -190,7 +190,7 @@ const toStagingDisplay = (r: UnifiedRow): DisplayRow => {
       : '-'
     return {
       id: r.id, orderId: '', rowType: r.rowType,
-      flags: [], flagsDash: true, editable: false,
+      flags: r.flags, flagsDash: r.flags.length === 0, editable: false,
       cells: {
         orderNumber: r.reference, referenceNumber: r.reference,
         shipByDate: r.pickupWindow.start.slice(0, 10), state: String(r.state),
@@ -479,7 +479,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
       if (typeSel && typeKeyOf(r) !== typeSel) return false
       if (exception && r.exception !== exception) return false
       if (quick && !quickTest(quick, r)) return false
-      if (flag && (pickup || !r.flags.includes(flag))) return false
+      if (flag && !r.flags.includes(flag)) return false
       if (carrier && (pickup || r.carrier !== carrier)) return false
 
       for (const [dim, value] of Object.entries(funnel)) {

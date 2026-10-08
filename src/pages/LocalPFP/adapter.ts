@@ -488,6 +488,8 @@ export function toConsignmentRow(
  */
 export interface LocalPickupRow {
   rowType: 'Pickup Request' | 'Reserved Pickup' | 'FTL Pickup'
+  /** the category flags of the consignments on the request (VIP · Fragile · …), in the flag order — the grid's icon column */
+  flags: CategoryFlag[]
   id: string
   /** the request id — the key a mutation is addressed by */
   prId: string
@@ -586,6 +588,7 @@ export function toPickupRow(
 
   return {
     rowType: type,
+    flags: CATEGORY_FLAGS.filter((f) => p.orderIds.some((id) => { const o = db.orders.find((x) => x.id === id); return !!o && flagsOf(o).includes(f) })),
     id: p.id,
     prId: p.id,
     reference: p.number,
