@@ -64,7 +64,7 @@ import ViewConsignment from './ViewConsignment'
 import ViewPickup from './ViewPickup'
 import {
   ArrowRight, Barbell, Biohazard, CaretDown, CaretDownSolid, CaretUpSolid, ChevronLeft,
-  ChevronRight, Close, Clock, CalendarCheck, Download, Eye, Funnel, GridFour, ListChecks,
+  ChevronRight, Close, Clock, CalendarCheck, Download, Eye, Funnel, ListChecks,
   ListGlyph, MagnifyingGlass, NotePencil, Refresh, RoutePath, Star, Stack,
   ArrowUturnLeft, MapPin, Package as PackageGlyph, Send, Sparkles,
   StepDown, StepUp, TableEdit, Trash, WarningCircle, WarningTriangle, WineGlass,
@@ -100,7 +100,7 @@ const matchesSearch = (r: UnifiedRow, needle: string): boolean => (isPickupRow(r
   : `${r.orderNumber} ${r.referenceNumber} ${r.merchant} ${r.address}`).toLowerCase().includes(needle)
 
 /** the consignment states that still need planning (owner, 2026-09-25) */
-const NEEDS_PLANNING_STATES = new Set(['Created', 'Ready To Ship', 'Pickup Requested', 'Pickup Failed'])
+const NEEDS_PLANNING_STATES = new Set(['Created', 'Ready To Ship', 'Pickup Requested', 'Pickup Failed', 'At Facility'])
 
 const FLAG_ICON: Record<CategoryFlag, (p: { size?: number }) => React.JSX.Element> = {
   VIP: (p) => <Star {...p} />,
@@ -320,20 +320,14 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
   /* `?quick=pickup` opens the page on Pending For Pickup (deep link) */
   const quickFromUrl = () => new URLSearchParams(window.location.search).get('quick') === 'pickup'
   const [quick, setQuick] = useState<QuickKey | ''>(() => (quickFromUrl() ? 'pickup' : ''))
-  const [quickOpen, setQuickOpen] = useState(quickFromUrl)
+  /* the STAGING-REPLICA layout keeps its own Quick Filter button; the local page shows the cards permanently */
+  const [quickOpen, setQuickOpen] = useState(false)
   const [typeSel, setTypeSel] = useState('')
   /* whether the Carriers / Categories strip is shown, remembered per browser —
      an operator who hides it wants it hidden tomorrow too. OWNER-REQUESTED
      deviation: with no stored preference the strip starts HIDDEN, so the list
      gets the height (staging always shows it; logged in pixel-diff-log.md).
      '0' = the operator chose to show it, '1' = chose to hide it. */
-  const [stripOpen, setStripOpen] = useState(() => {
-    try { return localStorage.getItem('pfp-strip-hidden') === '0' } catch { return false }
-  })
-  const toggleStrip = () => setStripOpen((v) => {
-    try { localStorage.setItem('pfp-strip-hidden', v ? '1' : '0') } catch { /* private mode */ }
-    return !v
-  })
   const [sort, setSort] = useState<{ key: string; dir: 'asc' | 'desc' } | null>(null)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
@@ -439,13 +433,13 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
     () => tabRows.filter((r): r is LocalConsignmentRow => !isPickupRow(r)), [tabRows])
 
   const carriers = useMemo(
-    () => (fixture ? FIXTURE_CARRIERS : uniq(tabConsignments.map((r) => r.carrier))),
-    [fixture, tabConsignments])
+    () => (fixture ? FIXTURE_CARRIERS : uniq(all.filter((r): r is LocalConsignmentRow => !isPickupRow(r)).map((r) => r.carrier))),
+    [fixture, all])
 
   const categories = useMemo(() => (fixture
     ? FIXTURE_CATEGORIES
-    : CATEGORY_FLAGS.map((f) => ({ label: f, count: tabConsignments.filter((r) => r.flags.includes(f)).length }))
-  ), [fixture, tabConsignments])
+    : CATEGORY_FLAGS.map((f) => ({ label: f, count: tabRows.filter((r) => r.flags.includes(f)).length }))
+  ), [fixture, tabRows])
 
   /** the options behind each of the funnel's 14 single-selects */
   const funnelOptions = useMemo<Record<string, string[]>>(() => ({
@@ -750,7 +744,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
     const ng: GroupBy = nextCons ? 'none' : 'pr'
     if (filterModeOf(viewFor(next, ng, nextCons)) !== filterMode) {
       setFrom(''); setTo(''); setStateSel([]); setPrStatusSel([]); setTypeSel('')
-      setException(''); setCarrier(''); setFlag(''); setQuick(''); setQuickOpen(false)
+      setException(''); setCarrier(''); setFlag(''); setQuick('')
       setFunnel((f): Record<string, string> => (f.Merchant ? { Merchant: f.Merchant } : {}))
     } else if (typeSel && !all.some((r) => inTab(next, ng, r) && typeKeyOf(r) === typeSel)) setTypeSel('')
   }
@@ -1241,18 +1235,6 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
 
             {/* the icon tools as ONE quiet bar (owner, 2026-10-08: "looks cluttered — without removing any option"): filters · actions · view */}
             <div className="pfp-iconbar">
-              {/* Show / Hide cards and Quick Filter — icon-only, the label is the tooltip; pressed = the section is open */}
-              {filterMode === 'consignment' && <button type="button" className="pfp-iconbtn pfp-toggle" onClick={toggleStrip}
-                aria-pressed={stripOpen}
-                aria-label={stripOpen ? 'Hide the Carriers and Categories chips' : 'Show the Carriers and Categories chips'}
-                title={stripOpen ? 'Hide carriers & categories' : 'Show carriers & categories'}>
-                <GridFour size={16} />
-              </button>}
-              {filterMode === 'consignment' && <button type="button" className="pfp-iconbtn pfp-toggle" onClick={() => setQuickOpen((v) => !v)}
-                aria-pressed={quickOpen} aria-label="Quick Filter" title="Quick Filter">
-                <WarningCircle size={18} style={{ color: 'rgb(199, 40, 32)' }} />
-              </button>}
-              {filterMode === 'consignment' && <span className="pfp-iconbar-sep" aria-hidden />}
               {downloadControl}
               <span className="pfp-iconbar-sep" aria-hidden />
               {viewControl}
@@ -1263,23 +1245,22 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
 
           {/* ----------------------------------------------- row 2: the strip */}
           {/* ONE scope line: Leg · Carriers · Categories on the left, the Blind pickup action on the right; the quick-filter cards sit below */}
-          {(legChips || canCreatePickup || (filterMode === 'consignment' && stripOpen && !quickOpen)) && (
+          {/* owner, 2026-10-08: permanent — Leg · Carriers · Categories AND the exception cards, on every leg and every view */}
+          {!fixture && (
             <div className="pfp-scope">
               <div className="pfp-chipbar">
                 {legChips}
-                {legChips && filterMode === 'consignment' && stripOpen && !quickOpen && <span className="pfp-chipbar-sep" aria-hidden />}
-                {filterMode === 'consignment' && stripOpen && !quickOpen && (<>
-                  <span className="pfp-chipbar-label">Carriers:</span>
-                  {carriers.map((c) => carrierChip(c, 'sm'))}
-                  <span className="pfp-chipbar-sep" aria-hidden />
-                  <span className="pfp-chipbar-label">Categories:</span>
-                  {categories.map((c) => categoryChip(c, 'sm'))}
-                </>)}
+                {legChips && <span className="pfp-chipbar-sep" aria-hidden />}
+                <span className="pfp-chipbar-label">Carriers:</span>
+                {carriers.map((c) => carrierChip(c, 'sm'))}
+                <span className="pfp-chipbar-sep" aria-hidden />
+                <span className="pfp-chipbar-label">Categories:</span>
+                {categories.map((c) => categoryChip(c, 'sm'))}
               </div>
               {canCreatePickup && <CreatePickupButton onPick={setCreating} />}
             </div>
           )}
-          {filterMode === 'consignment' && quickOpen && quickStrip}
+          {!fixture && quickStrip}
         </>
       )}
 

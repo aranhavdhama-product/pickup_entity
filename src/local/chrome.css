@@ -475,17 +475,17 @@
 /* ----------------------------------------------- the exception list (Quick Filter) ---------------------------------
    The Consignment Order exception cards' design (owner, 2026-10-08): one white panel, tinted cards, a white icon tile,
    a bold title and a one-line description; the picked card gets a brand ring. */
-.lc-exceptions { margin-top: 14px; padding: 14px 16px 12px; border-radius: 14px; background: var(--pfp-surface); }
+.lc-exceptions { margin-top: 10px; padding: 10px 12px 8px; border-radius: 14px; background: var(--pfp-surface); }
 .lc-exceptions .pfp-strip, .lc-exceptions .pfp-strip[data-quick='true'] { margin-top: 0; gap: 12px; }
 .pfp .pfp-exception-card {
-  height: auto; min-height: 78px; padding: 14px 16px; border: 1px solid transparent; border-radius: 12px;
-  display: flex; flex-direction: column; justify-content: center; gap: 10px; background: var(--pfp-canvas);
+  height: auto; min-height: 0; padding: 10px 14px; border: 1px solid transparent; border-radius: 12px;
+  display: flex; flex-direction: column; justify-content: center; gap: 6px; background: var(--pfp-canvas);
 }
 .pfp .pfp-exception-card[data-tone='amber'] { background: color-mix(in srgb, var(--pfp-brand) 7%, var(--pfp-surface)); }
 .pfp .pfp-exception-card[data-tone='rose'] { background: color-mix(in srgb, rgb(199, 40, 32) 6%, var(--pfp-surface)); }
 .pfp .pfp-exception-card[aria-pressed='true'] { border-color: var(--pfp-brand); box-shadow: inset 0 0 0 1px var(--pfp-brand); }
 .lc-ex-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.lc-ex-icon { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 10px; background: var(--pfp-surface); color: rgb(199, 40, 32); }
-.pfp .pfp-exception-card h4 { margin: 0; font-size: 16px; font-weight: 700; color: var(--pfp-ink); }
-.pfp .pfp-exception-card p { margin: 0; font-size: 14px; line-height: 20px; color: var(--pfp-ink-muted); }
-.lc-exceptions .pfp-exception-note { margin: 10px 0 0; }
+.lc-ex-icon { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 9px; background: var(--pfp-surface); color: rgb(199, 40, 32); }
+.pfp .pfp-exception-card h4 { margin: 0; font-size: 15px; font-weight: 700; color: var(--pfp-ink); }
+.pfp .pfp-exception-card p { margin: 0; font-size: 13px; line-height: 18px; color: var(--pfp-ink-muted); }
+.lc-exceptions .pfp-exception-note { margin: 6px 0 0; font-size: 12px; }

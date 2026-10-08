@@ -214,7 +214,8 @@ export type Leg = (typeof LEGS)[number]
 
 export function legsOf(o: GrowOrder, stores: StoreLocation[]): Leg[] {
   const legs: Leg[] = []
-  if (o.pickupRequestId) legs.push('FM')
+  /* a consignment that still has to be COLLECTED (booked or not yet) is on the first mile; one already at the hub is not */
+  if (o.pickupRequestId || (o.status === 'Order Created' && !o.isDraft)) legs.push('FM')
   const store = stores.find((s) => s.code === o.storeCode)
   const originHub = store ? inboundHubFor(store.party) : ''
   if (originHub && originHub !== o.inboundHubCode) legs.push('MM')
@@ -415,7 +416,9 @@ export function toConsignmentRow(
        overlay (Scheduled / Staged / routing) applies after, and a value with no official home is mapped or dropped */
     ...(() => {
       const st = fareyeStatesOf(o, db.pickupRequests)
-      const off = officialState(st.state, st.secondary || overlay.secondaryState || '')
+      /* a consignment AT the facility (the last mile's own state) is Unplanned until planning says otherwise */
+      const sec = st.state === 'At Facility' && !st.secondary ? overlay.secondaryState || 'Unplanned' : st.secondary || overlay.secondaryState || ''
+      const off = officialState(st.state, sec)
       return { state: off.state as ConsignmentState, secondaryState: off.secondary }
     })(),
     weightKg: totalWeightKg(o),
@@ -650,7 +653,7 @@ export const isPendingPickup = (p: GrowPickupRequest): boolean =>
 
 /** The merchant statuses that are waiting to be planned — paid, collected or
  *  about to be, and not yet on a route. */
-const QUEUE_STATUSES: DisplayStatus[] = ['Ready for Pickup', 'Pickup Scheduled', 'Picked Up']
+const QUEUE_STATUSES: DisplayStatus[] = ['Ready for Pickup', 'Pickup Scheduled', 'Picked Up', 'In Transit']
 
 /**
  * Is this order in the Pending For Planning queue?
