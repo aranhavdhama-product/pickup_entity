@@ -125,7 +125,7 @@ const QUICK_FILTERS = [
   { key: 'past', label: 'Past Delivery Date', hint: 'Consignments past their delivery date', tone: 'rose' },
   /* owner, 2026-10-08: consignments with no pickup request yet are NOT in the list unless this card is picked — then they can be
      selected and planned (Schedule Pickup) right here */
-  { key: 'pickup', label: 'Pending For Pickup', hint: 'Consignments waiting for a pickup request', tone: 'amber' },
+  { key: 'pickup', label: 'No Pickup Request', hint: 'Consignments waiting for a pickup request', tone: 'amber' },
 ] as const
 /** the exception list's icons — the same set the Consignment Order exception cards use */
 const QUICK_ICON: Record<string, LucideIcon> = { failed: TriangleAlert, inbound: ClockIcon, scheduling: Hourglass, past: History, pickup: Truck }
@@ -421,7 +421,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
       if (awaitingMode) return all.filter(awaitingPickup)
       const base = tab === 'all' && consView ? all.filter((r) => !isPickupRow(r))   // every consignment, first mile included
         : all.filter((r) => inTab(tab, group, r))                                   // All · Pickup requests = the requests + the last-mile consignments
-      /* consignments still waiting for a pickup request are not listed — until "Pending For Pickup" is picked */
+      /* consignments still waiting for a pickup request are not listed — until "No Pickup Request" is picked */
       return base.filter((r) => !awaitingPickup(r))
     }, [all, tab, group, pickupsOn, consView, awaitingMode])
   /** what the pickup-request and All cells read */
@@ -1149,9 +1149,9 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
       )}
       <span className="pfp-chipbar-sep" aria-hidden />
       <button type="button" className="pfp-chip" data-size="sm" aria-pressed={quick === 'pickup'}
-        title="Consignments waiting for a pickup request — select them and Schedule Pickup"
+        title="First mile not scheduled: no pickup request has been created for these consignments yet — select them and Schedule Pickup"
         onClick={() => { setQuick(quick === 'pickup' ? '' : 'pickup'); setPage(1) }}>
-        <Truck size={14} />Pending For Pickup<span className="pfp-chip-count">{awaitingCount}</span>
+        <Truck size={14} />No Pickup Request<span className="pfp-chip-count">{awaitingCount}</span>
       </button>
     </>
   ) : null
@@ -1761,9 +1761,9 @@ function SelectionPanel({ count, metrics, routable, profile, pickupMetrics, prIt
     /* WHERE a consignment is decides its actions (owner, 2026-10-08): waiting for a pickup → book one; at the facility (last mile) →
        schedule, route, ready, return, close; any → exception, cancel, CSV. What does not apply to the selection folds under "Not available". */
     { key: 'bookPickup', label: 'Schedule Pickup', icon: <Truck size={16} />, eligible: profile.awaiting, kind: 'consignment',
-      blocked: 'Only consignments waiting for a pickup request — pick "Pending For Pickup" — with the pickup module in Manual mode.' },
+      blocked: 'Only consignments waiting for a pickup request — pick the "No Pickup Request" chip — with the pickup module in Manual mode.' },
     { key: 'addToExisting', label: 'Add to existing pickup request', icon: <Truck size={16} />, eligible: profile.awaiting, kind: 'consignment',
-      blocked: 'Only consignments waiting for a pickup request — pick "Pending For Pickup" — with the pickup module in Manual mode.' },
+      blocked: 'Only consignments waiting for a pickup request — pick the "No Pickup Request" chip — with the pickup module in Manual mode.' },
     { key: 'schedule', label: 'Schedule delivery', icon: <Clock size={16} />, eligible: profile.lastMile, kind: 'consignment',
       blocked: 'Only consignments at the facility (last mile). A consignment waiting for a pickup is scheduled with Schedule Pickup.' },
     { key: 'plan', label: 'Plan For Routing', icon: <RoutePath size={16} />, eligible: routable, kind: 'consignment',
