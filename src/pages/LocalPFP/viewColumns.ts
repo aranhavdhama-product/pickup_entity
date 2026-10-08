@@ -132,11 +132,14 @@ const prKey = (k: string) => `pr:${k}`
 /* owner, 2026-10-08: no Type column on this page's pickup grid (the tab / group already says it is a pickup) */
 const PR_DEFS = PR_COLUMN_DEFS.filter((d) => d.defaultOn && d.key !== 'type')
 
-/** First Mile / Pickup request: the `/local/pickup` grid. No Active Leg — the
-    tab already says the leg (owner, 2026-09-25; Active Leg is All-only). */
+/** First Mile / Pickup request: the `/local/pickup` grid, + Active Leg after State (owner, 2026-10-08). */
 export const PR_VIEW_COLUMNS: StagingColumn[] = [
   SELECT,
-  ...PR_DEFS.map((d) => ({ key: prKey(d.key), label: d.label, width: d.width })),
+  /* Active Leg sits right after State (owner, 2026-10-08) */
+  ...PR_DEFS.flatMap((d) => {
+    const col = { key: prKey(d.key), label: d.label, width: d.width }
+    return d.key === 'status' ? [col, LEG] : [col]
+  }),
   PAD,
 ]
 

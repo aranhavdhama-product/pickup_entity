@@ -65,7 +65,7 @@ import {
   ArrowUturnLeft, MapPin, Package as PackageGlyph, Send, Sparkles,
   StepDown, StepUp, TableEdit, Trash, WarningCircle, WarningTriangle, WineGlass,
 } from './icons'
-import { COLUMNS, FUNNEL_FILTERS, ROLE, TABLE_SCROLL_WIDTH, cssVars } from './stagingTokens'
+import { COLUMNS, FUNNEL_FILTERS, ROLE, TABLE_SCROLL_WIDTH, cssVars, type StagingColumn } from './stagingTokens'
 import { STATE_OPTIONS, matchesState } from './stateVocabulary'
 import {
   FIXTURE_CARRIERS, FIXTURE_CATEGORIES, FIXTURE_DATE_RANGE, FIXTURE_STATS,
