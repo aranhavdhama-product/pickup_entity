@@ -88,11 +88,16 @@ import {
  */
 type FilterMode = 'consignment' | 'pickup' | 'common'
 const filterModeOf = (v: ColumnView): FilterMode => (v === 'pickup' ? 'pickup' : v === 'common' ? 'common' : 'consignment')
+/** the LOCAL page's funnel: EVERY dimension, on every leg and view (owner, 2026-10-08: "all tabs' filters should have the pickup and the
+    last-mile filters") — the pickup requests' four, then the consignments' (Order Type first). A filter only the other kind has drops that
+    kind's rows (a Pickup Address leaves only pickups; a Facility leaves only consignments). */
+const PICKUP_DIMS = ['Type', 'Pickup Address', 'Destination Hub', 'Source']
 const FILTER_DIMS: Record<FilterMode, string[]> = {
   consignment: FUNNEL_FILTERS.filter((d) => d !== 'Merchant' && d !== 'Order Type'),
   pickup: ['Type', 'Pickup Address', 'Destination Hub', 'Source'],
   common: ['Destination'],
 }
+const ALL_DIMS = [...PICKUP_DIMS, 'Order Type', ...FILTER_DIMS.consignment]
 
 /** search: a pickup request by its number / pickup address, a consignment by its numbers / address */
 const matchesSearch = (r: UnifiedRow, needle: string): boolean => (isPickupRow(r)
@@ -486,11 +491,12 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
     const needle = q.trim().toLowerCase()
     return tabRows.filter((r) => {
       const pickup = isPickupRow(r)
-      if (filterMode === 'pickup' && pickup) {
+      /* a pickup-only filter (Pickup Status) leaves only pickups, on every leg and view */
+      if (prStatusSel.length && (!pickup || !prStatusSel.some((st) => matchesStatus(r.request, st)))) return false
+      if (pickup) {
         /* the pickup WINDOW overlaps the range (a window may span days) */
         if (from && r.pickupWindow.end.slice(0, 10) < from) return false
         if (to && r.pickupWindow.start.slice(0, 10) > to) return false
-        if (prStatusSel.length && !prStatusSel.some((st) => matchesStatus(r.request, st))) return false
       } else {
         const day = sortKey(r)
         if (from && day < from) return false
@@ -523,13 +529,15 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
           if (dim === 'Sort Code' && r.shipToPincode !== value) return false
           if (dim === 'Tags' && !r.tag.includes(value)) return false
           if (dim === 'Scheduling' && (r.deliveryWindow ? 'Scheduled' : 'Not scheduled') !== value) return false
+          /* the pickup requests' own dimensions: a consignment has none of them */
+          if (PICKUP_DIMS.includes(dim)) return false
         }
       }
 
       if (needle && !matchesSearch(r, needle)) return false
       return true
     })
-  }, [tabRows, from, to, stateSel, prStatusSel, exception, quick, flag, carrier, funnel, q, typeSel, filterMode])
+  }, [tabRows, from, to, stateSel, prStatusSel, exception, quick, flag, carrier, funnel, q, typeSel])
 
   /* the tab counts: the open tab = what it lists after ITS filters; the others
      = their rows under what survives a tab switch (Merchant + search) */
@@ -738,8 +746,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
 
   /* A tab change clears the selection: rows picked on another tab would stay
      selected out of sight, and the panel would act on rows nobody can see. */
-  const switchTab = (next: TabKey, opts?: { cons?: boolean }) => {
-    const nextCons = opts?.cons ?? consFor(next, false)
+  const switchTab = (next: TabKey) => {
     setParams((p) => {
       const n = new URLSearchParams(p)
       n.delete('tab')
@@ -749,14 +756,6 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
     }, { replace: true })
     clearSelection()
     setPage(1)
-    /* a filter that belongs to the other row kind no longer applies: reset
-       everything but Merchant and search (owner, 2026-09-25) */
-    const ng: GroupBy = nextCons ? 'none' : 'pr'
-    if (filterModeOf(viewFor(next, ng, nextCons)) !== filterMode) {
-      setFrom(''); setTo(''); setStateSel([]); setPrStatusSel([]); setTypeSel('')
-      setException(''); setCarrier(''); setFlag(''); setQuick('')
-      setFunnel((f): Record<string, string> => (f.Merchant ? { Merchant: f.Merchant } : {}))
-    } else if (typeSel && !all.some((r) => inTab(next, ng, r) && typeKeyOf(r) === typeSel)) setTypeSel('')
   }
 
   /* ---- pickup-request rows: the SAME 16-item menu as the /local/pickup grid
@@ -879,7 +878,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
   const funnelControl = (
     <div style={{ position: 'relative' }} onClick={(e) => e.stopPropagation()}>
       <button type="button" className="pfp-funnel" aria-label="More filters"
-        data-active={!!((!replica && filterMode === 'consignment' && exception) || FILTER_DIMS[filterMode].some((d) => funnel[d])) || undefined}
+        data-active={!!((!replica && exception) || (replica ? FILTER_DIMS[filterMode] : ALL_DIMS).some((d) => funnel[d])) || undefined}
         onClick={() => setPop(pop === 'funnel' ? null : 'funnel')}>
         <Funnel size={16} />
       </button>
@@ -889,14 +888,33 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
             {/* current page: Exceptions moved off the toolbar into the funnel
                 as its FIRST section (owner, spec §11). The replica keeps it on
                 the list toolbar, where staging has it. */}
-            {!replica && filterMode === 'consignment' && exceptionsControl}
-            {FILTER_DIMS[filterMode].map((dim) => (
-              <select key={dim} className="pfp-select" value={funnel[dim] ?? ''}
-                onChange={(e) => { setFunnel((f) => ({ ...f, [dim]: e.target.value })); setPage(1) }}>
-                <option value="">{dim}</option>
-                {(funnelOptions[dim] ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
-              </select>
-            ))}
+            {replica ? (
+              FILTER_DIMS[filterMode].map((dim) => (
+                <select key={dim} className="pfp-select" value={funnel[dim] ?? ''}
+                  onChange={(e) => { setFunnel((f) => ({ ...f, [dim]: e.target.value })); setPage(1) }}>
+                  <option value="">{dim}</option>
+                  {(funnelOptions[dim] ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
+                </select>
+              ))
+            ) : (<>
+              <p className="lc-pop-group" style={{ gridColumn: '1 / -1', margin: 0 }}>Pickup requests</p>
+              {PICKUP_DIMS.map((dim) => (
+                <select key={dim} className="pfp-select" value={funnel[dim] ?? ''}
+                  onChange={(e) => { setFunnel((f) => ({ ...f, [dim]: e.target.value })); setPage(1) }}>
+                  <option value="">{dim === 'Type' ? 'Pickup Type' : dim}</option>
+                  {(funnelOptions[dim] ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
+                </select>
+              ))}
+              <p className="lc-pop-group" style={{ gridColumn: '1 / -1', margin: 0 }}>Consignments</p>
+              {exceptionsControl}
+              {['Order Type', ...FILTER_DIMS.consignment].map((dim) => (
+                <select key={dim} className="pfp-select" value={funnel[dim] ?? ''}
+                  onChange={(e) => { setFunnel((f) => ({ ...f, [dim]: e.target.value })); setPage(1) }}>
+                  <option value="">{dim}</option>
+                  {(funnelOptions[dim] ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
+                </select>
+              ))}
+            </>)}
           </div>
         </div>
       )}
@@ -910,7 +928,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
       <div className="pfp-select" style={{ width: ROLE.stateSelect.width }} data-placeholder={prStatusSel.length === 0}
         role="button" tabIndex={0}
         onClick={() => { setPrStatusDraft(prStatusSel); setPop(pop === 'prStatus' ? null : 'prStatus') }}>
-        <span>{prStatusSel.length ? `${prStatusSel.length} selected` : 'Status'}</span>
+        <span>{prStatusSel.length ? `${prStatusSel.length} selected` : replica ? 'Status' : 'Pickup Status'}</span>
         <span className="pfp-select-caret"><CaretDown size={16} /></span>
       </div>
       {pop === 'prStatus' && (
@@ -984,7 +1002,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
           {showViews && (<>
           <p className="lc-pop-group">Show</p>
           {([['pickups', tab === 'all' ? 'Pickup requests + deliveries' : 'Pickup requests'], ['consignments', tab === 'all' ? 'Consignments by pickup' : 'Consignments']] as const).map(([k, label]) => (
-            <button key={k} type="button" className="pfp-pop-option" onClick={() => { setVs(tab === 'all' ? { all: k } : { firstMile: k }); switchTab(tab, { cons: k === 'consignments' }) }}>
+            <button key={k} type="button" className="pfp-pop-option" onClick={() => { setVs(tab === 'all' ? { all: k } : { firstMile: k }); switchTab(tab) }}>
               <input type="radio" readOnly checked={(k === 'consignments') === consView} tabIndex={-1} />
               <span>{label}</span>
             </button>
@@ -1242,12 +1260,11 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
         <>
           {/* ---------------------------------------------------- row 1: filters */}
           <FilterLine>
+            {/* every filter on every leg and view (owner, 2026-10-08): the consignments' State, the pickups' Status, Merchant, and the funnel with BOTH sets */}
             {dateControl}
-            {filterMode === 'consignment' && stateControl}
-            {filterMode === 'pickup' && prStatusControl}
+            {stateControl}
+            {prStatusControl}
             {merchantControl}
-            {filterMode === 'consignment' && orderTypeControl}
-            {filterMode === 'common' && typeControl}
             {funnelControl}
             <ClearFilters active={filtersOn} onClick={clearAll} />
 
