@@ -161,6 +161,10 @@ interface Draft {
   /** kept as typed (a string) so clearing the field does not snap back; clamped 1–30 on save */
   bookingHorizonDays: string
   sameDayCutoff: string
+  /** the rule behind "Pickup time · Set by the rule" (autoPickup.dateRule / daysAfterOrder / slot) */
+  dateRule: PickupModuleConfig['autoPickup']['dateRule']
+  daysAfterOrder: string
+  slot: string
   pickupDaysSource: PickupDaysSource
   manifestRequired: boolean
   signature: PodLevel; photo: PodLevel; otp: boolean; overagePolicy: PickupModuleConfig['overagePolicy']
@@ -171,6 +175,7 @@ const draftOf = (c: PickupModuleConfig): Draft => ({
   enabled: c.enabled, mode: c.mode, triggerEvent: c.autoPickup.triggerEvent, slotConfirmation: c.autoPickup.slotConfirmation,
   blindAllowed: c.manualPickup.blindAllowed, userSelectsWindow: c.autoPickup.userSelectsWindow,
   bookingHorizonDays: String(c.bookingHorizonDays), sameDayCutoff: c.sameDayCutoff, pickupDaysSource: c.pickupDaysSource,
+  dateRule: c.autoPickup.dateRule, daysAfterOrder: String(c.autoPickup.daysAfterOrder), slot: c.autoPickup.slot || c.slotDefinitions[0] || '',
   manifestRequired: c.manifestRequired,
   signature: c.podRequirements.signature, photo: c.podRequirements.photo, otp: c.podRequirements.otp, overagePolicy: c.overagePolicy,
   autoRescheduleOnFail: c.autoRescheduleOnFail,
@@ -185,6 +190,7 @@ const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/
 const savedOf = (d: Draft, base: PickupModuleConfig) => ({
   ...d, bookingHorizonDays: horizonOf(d.bookingHorizonDays, base.bookingHorizonDays),
   sameDayCutoff: HHMM.test(d.sameDayCutoff) ? d.sameDayCutoff : base.sameDayCutoff,
+  daysAfterOrder: String(Math.min(14, Math.max(0, Math.round(Number(d.daysAfterOrder)) || 0))),
 })
 const sameDraft = (d: Draft, c: PickupModuleConfig) => {
   const a = savedOf(d, c), b = savedOf(draftOf(c), c)
@@ -207,14 +213,15 @@ export default function PickupSettings() {
     /* only the keys on this page move — everything else keeps its stored value */
     const v = savedOf(draft, stored)
     writePickupModuleConfig({ enabled: v.enabled, mode: v.mode,
-      autoPickup: { ...stored.autoPickup, triggerEvent: v.triggerEvent, slotConfirmation: v.slotConfirmation, userSelectsWindow: v.userSelectsWindow },
+      autoPickup: { ...stored.autoPickup, triggerEvent: v.triggerEvent, slotConfirmation: v.slotConfirmation, userSelectsWindow: v.userSelectsWindow,
+        dateRule: v.dateRule, daysAfterOrder: Number(v.daysAfterOrder), slot: v.slot },
       manualPickup: { ...stored.manualPickup, blindAllowed: v.blindAllowed },
       /* shared by both modes — top-level (autoPickup.maxDaysAhead is derived from it) */
       bookingHorizonDays: v.bookingHorizonDays, sameDayCutoff: v.sameDayCutoff, pickupDaysSource: v.pickupDaysSource,
       manifestRequired: v.manifestRequired,
       podRequirements: { signature: v.signature, photo: v.photo, otp: v.otp }, overagePolicy: v.overagePolicy,
       autoRescheduleOnFail: v.autoRescheduleOnFail, merchantCancelUntil: v.merchantCancelUntil, allowAddToExistingUntil: v.allowAddToExistingUntil })
-    set({ bookingHorizonDays: String(v.bookingHorizonDays), sameDayCutoff: v.sameDayCutoff })   // show the clamped values
+    set({ bookingHorizonDays: String(v.bookingHorizonDays), sameDayCutoff: v.sameDayCutoff, daysAfterOrder: v.daysAfterOrder })   // show the clamped values
     toast.success('Pickup settings saved')
   }
   /* Cancel reverts the draft to the saved config (no "Restore defaults") */
@@ -230,8 +237,8 @@ export default function PickupSettings() {
     || draft.autoRescheduleOnFail !== D.autoRescheduleOnFail || draft.merchantCancelUntil !== D.merchantCancelUntil
     || draft.allowAddToExistingUntil !== D.allowAddToExistingUntil
   const state = stateOfEvent(draft.triggerEvent)
-  const facts = { ...would, dateRule: stored.autoPickup.dateRule, daysAfterOrder: stored.autoPickup.daysAfterOrder,
-    slot: stored.autoPickup.slot || stored.slotDefinitions[0] || '' }
+  const facts = { ...would, dateRule: draft.dateRule, daysAfterOrder: Number(draft.daysAfterOrder) || 0,
+    slot: draft.slot || stored.slotDefinitions[0] || '' }
   const proof = [draft.signature !== 'off' && `signature ${POD_LABEL[draft.signature].toLowerCase()}`,
     draft.photo !== 'off' && `photo ${POD_LABEL[draft.photo].toLowerCase()}`, draft.otp && 'code'].filter(Boolean)
   const flow = [
@@ -281,6 +288,26 @@ export default function PickupSettings() {
                       onChange={(v) => set({ userSelectsWindow: v !== 'rule', slotConfirmation: v === 'confirm' })} />
                   </div>
                 </Row>
+                {/* the rule itself (owner, 2026-10-08: "where is its rule?") — which day, which slot */}
+                {!draft.userSelectsWindow && (
+                  <Row label="The rule" hint="Used for every automatic pickup (and for a consignment where the shipper is not asked).">
+                    <div className="flex w-full flex-col gap-2">
+                      <Mini label="Pickup day">
+                        <MenuSelect value={draft.dateRule} options={['same-day', 'next-business-day', 'days-after-order']}
+                          labels={(v) => ({ 'same-day': 'Same day', 'next-business-day': 'Next pickup day', 'days-after-order': 'Days after the order' } as Record<string, string>)[v] ?? v}
+                          onChange={(v) => set({ dateRule: v as Draft['dateRule'] })} />
+                      </Mini>
+                      {draft.dateRule === 'days-after-order' && (
+                        <Mini label="Days after">
+                          <div className="w-20"><Input type="number" value={draft.daysAfterOrder} onChange={(n) => set({ daysAfterOrder: n })} /></div>
+                        </Mini>
+                      )}
+                      <Mini label="Time slot">
+                        <MenuSelect value={draft.slot} options={stored.slotDefinitions} labels={(v) => v.replace('-', ' – ')} onChange={(v) => set({ slot: v })} />
+                      </Mini>
+                    </div>
+                  </Row>
+                )}
               </>)}
               <Row label="Scheduled pickups (rosters)" hint={`A merchant location collected on set days, with or without orders — ${schedules.filter((x) => x.status === 'Active').length} active.`}>
                 <Button variant="outline" icon={<CalendarClock size={13} />} onClick={() => navigate('/local/pickup/schedules')}>Schedules ({schedules.length})</Button>
