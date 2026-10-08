@@ -391,7 +391,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
   const grouped = consView && (urlGroup ? urlGroup !== 'none' : vs.grouped)
   const group: GroupBy = consView ? 'none' : 'pr'
   const viewFor = (t: TabKey, g: GroupBy, cons: boolean): ColumnView =>
-    cons ? 'firstMileConsignment' : t === 'all' ? 'pickup' : viewOf(t, g)
+    cons ? 'firstMileConsignment' : viewOf(t, g)
   const view: ColumnView = fixture || !pickupsOn ? 'consignment' : viewFor(tab, group, consView)
   /* owner, 2026-09-25: the filter line follows the tab's ROW KIND — pickup
      requests get the Pickup page's grammar, consignments the staging set, All
@@ -399,8 +399,8 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
   const filterMode: FilterMode = filterModeOf(view)
   const tabRows = useMemo(
     () => (!pickupsOn ? all
-      : tab === 'all' ? (consView ? all.filter((r) => !isPickupRow(r)) : all.filter(isPickupRow))   // every consignment, or the pickup requests
-        : all.filter((r) => inTab(tab, group, r))), [all, tab, group, pickupsOn, consView])
+      : tab === 'all' && consView ? all.filter((r) => !isPickupRow(r))           // every consignment, first mile included
+        : all.filter((r) => inTab(tab, group, r))), [all, tab, group, pickupsOn, consView])   // All · Pickup requests = the requests + the last-mile consignments
   /** what the pickup-request and All cells read */
   const cellCtx = useMemo<ExtraCtx>(() => ({
     stores: db.stores,
@@ -539,7 +539,26 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
       }
       return [...g.entries()].sort(([a], [b]) => Number(a === '') - Number(b === '')).flatMap(([, v]) => v)
     }
-    if (!sort) return byRequest(rows)
+    /* All, no column sort: every page is a MIX of both legs (owner, 2026-10-08: "page one needs a mix of both") — half the page
+       from the first-mile consignments (grouped under their pickup request), half from the last-mile deliveries; when one leg
+       runs short the other fills the page. A group that straddles a page repeats its header on the next. */
+    const mixLegs = (xs: DisplayRow[]) => {
+      if (tab !== 'all') return xs
+      const firstMile = (r: DisplayRow) => (consView ? r.cells.activeLeg === 'First Mile' : r.rowType !== 'Consignment')
+      const fm = xs.filter(firstMile), lm = xs.filter((r) => !firstMile(r))
+      if (!fm.length || !lm.length) return xs
+      const half = Math.ceil(pageSize / 2), out: DisplayRow[] = []
+      let i = 0, j = 0
+      while (i < fm.length || j < lm.length) {
+        let takeFm = Math.min(half, fm.length - i)
+        const takeLm = Math.min(pageSize - takeFm, lm.length - j)
+        if (takeFm + takeLm < pageSize) takeFm = Math.min(pageSize - takeLm, fm.length - i)
+        out.push(...fm.slice(i, i + takeFm), ...lm.slice(j, j + takeLm))
+        i += takeFm; j += takeLm
+      }
+      return out
+    }
+    if (!sort) return mixLegs(byRequest(rows))
     const { key, dir } = sort
     return byRequest([...rows].sort((a, b) => {
       const x = a.cells[key] ?? '', y = b.cells[key] ?? ''
@@ -548,7 +567,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
         ? n - m : x.localeCompare(y)
       return dir === 'asc' ? cmp : -cmp
     }))
-  }, [fixture, filtered, sort, cellCtx, tab, grouped])
+  }, [fixture, filtered, sort, cellCtx, tab, grouped, consView, pageSize])
 
   /* The fixture is ONE page of staging's 101 rows, so its pager must be
      staging's — five numbered buttons and an enabled next arrow. Deriving the
