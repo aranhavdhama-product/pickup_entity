@@ -32,7 +32,6 @@ const TITLES: [string, string][] = [
   ['/local/settings/consignment-order', 'Consignment Order'],
   ['/local/settings', 'Settings'],
   ['/local/columns', 'Column Configuration'],
-  ['/local/changes', "What's Changed"],
 ]
 
 /* staging titles its route page "Route & Dispatch | ORD | 17 Sep 2026" */

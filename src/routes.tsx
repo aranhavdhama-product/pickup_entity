@@ -59,7 +59,6 @@ import LocalPickupSettings from './pages/LocalSettings/PickupSettings'
 import LocalGeneralSettings from './pages/LocalSettings/GeneralSettings'
 import LocalConsignmentOrderSettings from './pages/LocalSettings/ConsignmentOrderSettings'
 import LocalServiceOrderMasters from './pages/LocalSettings/ServiceOrderMasters'
-import LocalPfpChanges from './pages/LocalPFP/Changes'
 import LocalConsignments from './pages/LocalConsignments'
 import ConsoleUnavailable from './pages/ConsoleUnavailable'
 
@@ -161,7 +160,6 @@ export default function AppRoutes() {
         <Route path="/local/settings/masters/service_order/:subId" element={<LocalServiceOrderMasters page="sub" />} />
         <Route path="/local/settings/general" element={<LocalGeneralSettings />} />
         <Route path="/local/settings/consignment-order" element={<LocalConsignmentOrderSettings />} />
-        <Route path="/local/changes" element={<LocalPfpChanges />} />
       </Route>
 
       {/* ------------------------------------------ standalone demo shells -- */}

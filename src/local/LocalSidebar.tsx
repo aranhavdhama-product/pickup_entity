@@ -15,7 +15,7 @@
 import { useLocation } from 'react-router-dom'
 import { pickupPagesVisible, usePickupModuleConfig } from '../config/pickupModule'
 import {
-  CalendarClock, FileClock, Package, Radar, RotateCcw, Route, Settings, Smartphone, Store, Truck,
+  CalendarClock, Package, Radar, RotateCcw, Route, Settings, Smartphone, Store, Truck,
   Warehouse,
 } from 'lucide-react'
 import { ShellRowBody, ShellSidebar, type ShellNavItem } from './shell'
@@ -58,7 +58,6 @@ const LOCAL_NAV: LocalNavItem[] = [
   { id: 'inbound', label: 'Inbound', icon: Warehouse, path: '/local/inbound', owns: '/local/inbound' },
   /* Settings landing: Column configuration (/local/columns) + Pickup Request */
   { id: 'settings', label: 'Settings', icon: Settings, path: '/local/settings', owns: '/local/settings', also: ['/local/columns'] },
-  { id: 'changes', label: "What's changed", icon: FileClock, path: '/local/changes' },
 ]
 
 /** Standalone demo surfaces — their own shells, so they open in a new tab. */
