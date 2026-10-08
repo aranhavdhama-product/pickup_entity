@@ -657,6 +657,8 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
     return next
   })
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  /* grouped view: the groups folded shut (a pickup request id; '' = the deliveries) */
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
   /* a booked consignment as the Last Mile grid shows it — independent of the queue filters */
   const childRow = (orderId: string): DisplayRow | null => {
     const o = cellCtx.byId.get(orderId)
@@ -1128,6 +1130,16 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
               right={(
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 12 }}>
                   {/* All lists the consignments; this folds each pickup request's consignments together (owner, 2026-10-08) */}
+                  {grouped && (() => {
+                    const keys = [...new Set(display.map((x) => cellCtx.byId.get(x.orderId)?.pickupRequestId ?? ''))]
+                    const allShut = keys.length > 0 && keys.every((k) => collapsedGroups.has(k))
+                    return (
+                      <button type="button" onClick={() => setCollapsedGroups(allShut ? new Set() : new Set(keys))}
+                        style={{ border: 0, background: 'none', cursor: 'pointer', color: 'var(--pfp-brand)', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                        {allShut ? 'Expand all' : 'Collapse all'}
+                      </button>
+                    )
+                  })()}
                   {consView && (
                     <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer', color: 'var(--pfp-ink-muted)', whiteSpace: 'nowrap' }}>
                       <input type="checkbox" checked={grouped} onChange={() => switchTab('all', { flat: grouped })} />
@@ -1217,8 +1229,14 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
                 <Fragment key={r.id}>
                   {groupFirst && (
                     <tr>
-                      <td colSpan={columns.length} style={{ background: 'rgb(250, 250, 250)', borderLeft: '3px solid var(--pfp-brand)', padding: '8px 16px' }}>
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 12, whiteSpace: 'nowrap' }}>
+                      <td colSpan={columns.length} style={{ background: 'rgb(250, 250, 250)', borderTop: '1px solid var(--pfp-line)', padding: '10px 16px' }}>
+                        {/* a swimlane header (owner, 2026-10-08, Jira's board): fold arrow · name · small grey details */}
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 10, whiteSpace: 'nowrap' }}>
+                          <button type="button" aria-expanded={!collapsedGroups.has(prId)} title={collapsedGroups.has(prId) ? 'Show its consignments' : 'Hide its consignments'}
+                            onClick={() => setCollapsedGroups((s) => { const n = new Set(s); if (n.has(prId)) n.delete(prId); else n.add(prId); return n })}
+                            style={{ border: 0, background: 'none', cursor: 'pointer', padding: 0, display: 'inline-flex', color: 'var(--pfp-ink-hint)' }}>
+                            {collapsedGroups.has(prId) ? <ClosedChevron size={16} /> : <OpenChevron size={16} />}
+                          </button>
                           <input type="checkbox" aria-label={groupRow ? `Select the consignments of ${groupRow.reference}` : 'Select the deliveries'}
                             checked={groupIds.every((id) => selected.has(id))}
                             onChange={() => setSelected((s) => {
@@ -1226,23 +1244,29 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
                               if (groupIds.every((id) => n.has(id))) groupIds.forEach((id) => n.delete(id)); else groupIds.forEach((id) => n.add(id))
                               return n
                             })} />
-                          <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, color: 'var(--pfp-brand)' }}>
-                            {groupRow ? 'First mile · Pickup' : tab === 'all' ? 'Last mile' : 'No pickup'}
-                          </span>
                           {groupRow ? (
                             <>
-                              <button type="button" className="pfp-order" style={{ fontWeight: 700 }} title="Open this pickup request"
+                              <Truck size={16} style={{ color: 'var(--pfp-brand)' }} aria-label="Pickup" />
+                              <button type="button" className="pfp-order" style={{ fontWeight: 700, fontSize: 14 }} title="Open this pickup request"
                                 onClick={() => nav(`${basePath}/pickup/${groupRow.id}${search}`)}>{groupRow.reference}</button>
-                              <span><span style={{ color: 'var(--pfp-ink-hint)' }}>Merchant </span>{groupRow.merchant}</span>
-                              <span><span style={{ color: 'var(--pfp-ink-hint)' }}>Collect </span>{groupRow.windowLabel}</span>
-                              <span><span style={{ color: 'var(--pfp-ink-hint)' }}>Pickup is </span><b>{groupRow.state}</b></span>
+                              <span style={{ fontSize: 12, color: 'var(--pfp-ink-hint)' }}>
+                                ({groupIds.length} consignment{groupIds.length === 1 ? '' : 's'}) · {groupRow.merchant} · Collect {groupRow.windowLabel} · {groupRow.state}
+                              </span>
                             </>
-                          ) : <span style={{ fontWeight: 700 }}>{tab === 'all' ? 'Deliveries — no pickup needed' : 'No pickup request'}</span>}
-                          <span style={{ color: 'var(--pfp-ink-hint)' }}>· {groupIds.length} consignment{groupIds.length === 1 ? '' : 's'}</span>
+                          ) : (
+                            <>
+                              <PackageIcon size={16} style={{ color: 'var(--pfp-brand)' }} aria-label="Delivery" />
+                              <b style={{ fontSize: 14 }}>{tab === 'all' ? 'Deliveries' : 'No pickup request'}</b>
+                              <span style={{ fontSize: 12, color: 'var(--pfp-ink-hint)' }}>
+                                ({groupIds.length} consignment{groupIds.length === 1 ? '' : 's'}){tab === 'all' ? ' · last mile, no pickup needed' : ''}
+                              </span>
+                            </>
+                          )}
                         </span>
                       </td>
                     </tr>
                   )}
+                  {!(grouped && collapsedGroups.has(prId)) && (<>
                   <tr data-selected={selected.has(r.id)}>
                     {columns.map((c) => (
                       <Cell key={c.key} col={c.key} row={r}
@@ -1270,6 +1294,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
                       </td>
                     </tr>
                   )}
+                  </>)}
                 </Fragment>
               )
             })}
