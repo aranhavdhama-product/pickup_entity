@@ -30,7 +30,7 @@ import { toast } from '../../nueva/toast'
 /* owner-finalised chrome, shared by every local page (spec §11) — logged in
    scratchpad/split/pixel-diff-log.md */
 import { ClearFilters, DateRange, FilterLine, LocalTabs, SearchBox } from '../../local/chrome'
-import { Layers, Package as PackageIcon, Truck } from 'lucide-react'
+import { ChevronDown as OpenChevron, ChevronRight as ClosedChevron, Layers, Package as PackageIcon, Truck } from 'lucide-react'
 import { useGrowOrders, growOrderActions } from '../../growOrders/store'
 import type { PrAction } from '../../growOrders/prActions'
 import { PrActionDialogs } from '../LocalPickup/prSelectionActions'
@@ -237,7 +237,6 @@ const fixtureToDisplay = (f: FixtureRow, i: number): DisplayRow => ({
 /** the two columns staging gives a per-column search glyph */
 const SEARCHABLE = new Set(['orderNumber', 'referenceNumber'])
 /** the columns staging sorts */
-const PEEK = 8
 const SORTABLE = new Set(['orderNumber', 'referenceNumber', 'shipByDate', 'palletSpaces'])
 
 /* ------------------------------------------------------------ the tabs ---- */
@@ -377,16 +376,25 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
   /* owner, 2026-09-29: First Mile lists PICKUP REQUESTS only — no Group by (a stale `?group=none` is ignored) */
   /* owner, 2026-10-08: First Mile can ALSO be read as consignments — `?view=consignments`, grouped under their pickup
      request (`?group=none` = one flat list). Pickup requests stay the default. */
-  const fmCons = pickupsOn && tab === 'first-mile' && params.get('view') === 'consignments'
-  const grouped = fmCons && params.get('group') !== 'none'
-  const group: GroupBy = fmCons ? 'none' : 'pr'
-  const view: ColumnView = fixture || !pickupsOn ? 'consignment' : viewOf(tab, group)
+  /* 2026-10-08 (2): the SAME switch on All and First Mile — **Pickup requests | Consignments**. On All the default is
+     Consignments: every first-mile consignment under its pickup request, then the last-mile ones — both legs on the first page,
+     each request's consignments together. On First Mile the default stays Pickup requests. */
+  const consView = pickupsOn && !fixture && (tab === 'all' ? params.get('view') !== 'pickups' : tab === 'first-mile' && params.get('view') === 'consignments')
+  const pickupsOnAll = pickupsOn && !fixture && tab === 'all' && !consView
+  const grouped = consView && params.get('group') !== 'none'
+  const group: GroupBy = consView ? 'none' : 'pr'
+  const viewFor = (t: TabKey, g: GroupBy, cons: boolean, pickupOnly: boolean): ColumnView =>
+    cons ? 'firstMileConsignment' : pickupOnly ? 'pickup' : viewOf(t, g)
+  const view: ColumnView = fixture || !pickupsOn ? 'consignment' : viewFor(tab, group, consView, pickupsOnAll)
   /* owner, 2026-09-25: the filter line follows the tab's ROW KIND — pickup
      requests get the Pickup page's grammar, consignments the staging set, All
      the common set (see FILTER_DIMS) */
   const filterMode: FilterMode = filterModeOf(view)
   const tabRows = useMemo(
-    () => (pickupsOn ? all.filter((r) => inTab(tab, group, r)) : all), [all, tab, group, pickupsOn])
+    () => (!pickupsOn ? all
+      : tab === 'all' && consView ? all.filter((r) => !isPickupRow(r))        // every consignment, first mile included
+        : tab === 'all' && pickupsOnAll ? all.filter(isPickupRow)             // the pickup requests only
+          : all.filter((r) => inTab(tab, group, r))), [all, tab, group, pickupsOn, consView, pickupsOnAll])
   /** what the pickup-request and All cells read */
   const cellCtx = useMemo<ExtraCtx>(() => ({
     stores: db.stores,
@@ -499,7 +507,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
   const tabCounts = useMemo(() => {
     const needle = q.trim().toLowerCase()
     const base = (r: UnifiedRow) => (!funnel.Merchant || r.merchant === funnel.Merchant) && (!needle || matchesSearch(r, needle))
-    const count = (t: TabKey) => (t === tab ? filtered.length : all.filter((r) => inTab(t, group, r) && base(r)).length)
+    const count = (t: TabKey) => (t === tab && !consView && !pickupsOnAll ? filtered.length : all.filter((r) => inTab(t, 'pr', r) && base(r)).length)
     return { 'first-mile': count('first-mile'), 'last-mile': count('last-mile'), all: count('all') }
   }, [all, filtered, tab, group, q, funnel.Merchant])
 
@@ -540,16 +548,10 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
      staging's — five numbered buttons and an enabled next arrow. Deriving the
      count from the 20 rows on screen would show a single page and leave the
      footer band permanently unmatched. */
-  /* the All tab is a PEEK (owner, 2026-10-08: first mile and last mile together on the first page, never one hiding the other):
-     the first PEEK of each kind, due-first, each section saying its true total and linking to its own tab */
-  const peek = tab === 'all' && !fixture
-  const peekPicks = useMemo(() => (peek ? display.filter((r) => r.rowType !== 'Consignment') : []), [peek, display])
-  const peekCons = useMemo(() => (peek ? display.filter((r) => r.rowType === 'Consignment') : []), [peek, display])
-  const peekRows = useMemo(() => [...peekPicks.slice(0, PEEK), ...peekCons.slice(0, PEEK)], [peekPicks, peekCons])
-  const totalRows = fixture ? Number(FIXTURE_STATS.totalOrders) : peek ? peekRows.length : display.length
+  const totalRows = fixture ? Number(FIXTURE_STATS.totalOrders) : display.length
   const totalPages = Math.max(1, Math.ceil(totalRows / pageSize))
   const safePage = Math.min(page, totalPages)
-  const paged = fixture ? display : peek ? peekRows : display.slice((safePage - 1) * pageSize, safePage * pageSize)
+  const paged = fixture ? display : display.slice((safePage - 1) * pageSize, safePage * pageSize)
 
   /* Staging's four readouts. Consignments only: a pickup request and the orders
      it covers are the same parcels seen twice, so summing both double-counts. */
@@ -668,30 +670,32 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
   const toggleExpanded = (id: string) => setExpanded((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n })
 
   /* the header checkbox ticks one kind only: the pickups on the page when there are any, else the deliveries */
-  const pageIds = (tab === 'all' && !fixture && paged.some((r) => pickupIdSet.has(r.id))
-    ? paged.filter((r) => pickupIdSet.has(r.id)) : paged).map((r) => r.id)
+  const pageIds = paged.map((r) => r.id)
   const allOnPage = pageIds.length > 0 && pageIds.every((id) => selected.has(id))
 
   /* A tab change clears the selection: rows picked on another tab would stay
      selected out of sight, and the panel would act on rows nobody can see. */
-  const switchTab = (next: TabKey, nextGroup: GroupBy = group, fm?: { cons?: boolean; flat?: boolean }) => {
+  const switchTab = (next: TabKey, fm?: { cons?: boolean; flat?: boolean }) => {
+    const nextCons = next === 'all' ? fm ? !!fm.cons : true : !!fm?.cons
     setParams((p) => {
       const n = new URLSearchParams(p)
       if (next === 'all') n.delete('tab'); else n.set('tab', next)
       n.delete('group'); n.delete('view')
-      if (fm?.cons) n.set('view', 'consignments')
-      if (fm?.cons && fm.flat) n.set('group', 'none')
+      if (next === 'all' && fm && !fm.cons) n.set('view', 'pickups')
+      if (next === 'first-mile' && fm?.cons) n.set('view', 'consignments')
+      if (nextCons && fm?.flat) n.set('group', 'none')
       return n
     }, { replace: true })
     clearSelection()
     setPage(1)
     /* a filter that belongs to the other row kind no longer applies: reset
        everything but Merchant and search (owner, 2026-09-25) */
-    if (filterModeOf(viewOf(next, nextGroup)) !== filterMode) {
+    const ng: GroupBy = nextCons ? 'none' : 'pr'
+    if (filterModeOf(viewFor(next, ng, nextCons, next === 'all' && !nextCons)) !== filterMode) {
       setFrom(''); setTo(''); setStateSel([]); setPrStatusSel([]); setTypeSel('')
       setException(''); setCarrier(''); setFlag(''); setQuick(''); setQuickOpen(false)
       setFunnel((f): Record<string, string> => (f.Merchant ? { Merchant: f.Merchant } : {}))
-    } else if (typeSel && !all.some((r) => inTab(next, nextGroup, r) && typeKeyOf(r) === typeSel)) setTypeSel('')
+    } else if (typeSel && !all.some((r) => inTab(next, ng, r) && typeKeyOf(r) === typeSel)) setTypeSel('')
   }
 
   /* ---- pickup-request rows: the SAME 16-item menu as the /local/pickup grid
@@ -1122,16 +1126,16 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
               right={canCreatePickup ? <CreatePickupButton onPick={setCreating} /> : undefined} />
           )}
 
-          {/* First Mile reads two ways (owner, 2026-10-08): the pickup requests, or their consignments grouped under each request */}
-          {tab === 'first-mile' && !fixture && pickupsOn && (
-            <div className="pfp-tabs" role="group" aria-label="First Mile view" style={{ gap: 8, alignItems: 'center' }}>
-              <span style={{ color: 'var(--pfp-ink-hint)' }}>Show</span>
-              <button type="button" className="pfp-chip" aria-pressed={!fmCons} onClick={() => switchTab('first-mile', 'pr')}>Pickup requests</button>
-              <button type="button" className="pfp-chip" aria-pressed={fmCons} onClick={() => switchTab('first-mile', 'none', { cons: true })}>Consignments</button>
-              {fmCons && (<>
+          {/* ONE switch on All and First Mile (owner, 2026-10-08): the pickup requests, or the consignments — grouped under each request */}
+          {(tab === 'all' || tab === 'first-mile') && !fixture && pickupsOn && (
+            <div className="pfp-tabs" role="group" aria-label="View" style={{ gap: 8, alignItems: 'center' }}>
+              <span style={{ color: 'var(--pfp-ink-hint)' }}>View</span>
+              <button type="button" className="pfp-chip" aria-pressed={!consView} onClick={() => switchTab(tab, { cons: false })}>Pickup requests</button>
+              <button type="button" className="pfp-chip" aria-pressed={consView} onClick={() => switchTab(tab, { cons: true })}>Consignments</button>
+              {consView && (<>
                 <span style={{ color: 'var(--pfp-ink-hint)', marginLeft: 16 }}>Group by</span>
-                <button type="button" className="pfp-chip" aria-pressed={grouped} onClick={() => switchTab('first-mile', 'none', { cons: true })}>Pickup request</button>
-                <button type="button" className="pfp-chip" aria-pressed={!grouped} onClick={() => switchTab('first-mile', 'none', { cons: true, flat: true })}>None</button>
+                <button type="button" className="pfp-chip" aria-pressed={grouped} onClick={() => switchTab(tab, { cons: true })}>Pickup request</button>
+                <button type="button" className="pfp-chip" aria-pressed={!grouped} onClick={() => switchTab(tab, { cons: true, flat: true })}>None</button>
               </>)}
             </div>
           )}
@@ -1202,8 +1206,6 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
           <tbody>
             {paged.map((r, ix) => {
               const isPick = pickupIdSet.has(r.id)
-              const sectioned = tab === 'all' && !fixture
-              const first = sectioned && (ix === 0 || pickupIdSet.has(paged[ix - 1].id) !== isPick)
               const pr = isPick ? cellCtx.prById.get(r.id) : undefined
               const open = params.get('expand') === '1' || expanded.has(r.id)   // ?expand=1 = every pickup open (deep link)
               /* a consignment under its pickup request (First Mile → Consignments, grouped) */
@@ -1214,19 +1216,6 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
               const groupRow = groupPr ? toPickupRow(groupPr, db) : undefined
               return (
                 <Fragment key={r.id}>
-                  {first && (
-                    <tr>
-                      <td colSpan={columns.length} style={{ background: 'var(--pfp-brand-tint)', fontWeight: 700, padding: '8px 16px' }}>
-                        {isPick ? `First mile · Pickups to plan (${peekPicks.length})` : `Last mile · Deliveries to plan (${peekCons.length})`}
-                        {(isPick ? peekPicks.length : peekCons.length) > PEEK && (
-                          <button type="button" onClick={() => switchTab(isPick ? 'first-mile' : 'last-mile')}
-                            style={{ border: 0, background: 'none', cursor: 'pointer', fontWeight: 700, color: 'var(--pfp-brand)', marginLeft: 16 }}>
-                            Show all {isPick ? peekPicks.length : peekCons.length} →
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  )}
                   {groupFirst && (
                     <tr>
                       <td colSpan={columns.length} style={{ background: 'var(--pfp-brand-tint)', padding: '8px 16px' }}>
@@ -1240,6 +1229,9 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
                                 return n
                               })} />
                           )}
+                          {tab === 'all' && (
+                            <span style={{ fontWeight: 700, color: 'var(--pfp-ink-hint)' }}>{groupRow ? 'First mile' : 'Last mile'}</span>
+                          )}
                           {groupRow ? (
                             <>
                               <button type="button" className="pfp-order" onClick={() => nav(`${basePath}/pickup/${groupRow.id}${search}`)}>
@@ -1250,7 +1242,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
                               <span>{groupRow.windowLabel}</span>
                               <span style={{ color: 'var(--pfp-ink-hint)' }}>{groupIds.length} consignment{groupIds.length === 1 ? '' : 's'}</span>
                             </>
-                          ) : <b>No pickup request <span style={{ fontWeight: 400, color: 'var(--pfp-ink-hint)' }}>· {groupIds.length} consignment{groupIds.length === 1 ? '' : 's'}</span></b>}
+                          ) : <b>{tab === 'all' ? 'Deliveries' : 'No pickup request'} <span style={{ fontWeight: 400, color: 'var(--pfp-ink-hint)' }}>· {groupIds.length} consignment{groupIds.length === 1 ? '' : 's'}</span></b>}
                         </span>
                       </td>
                     </tr>
@@ -1267,10 +1259,10 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
                           else if (r.orderId) nav(`${basePath}/${r.orderId}${search}`)
                         }}
                         extra={LINK_COLUMNS.has(c.key) && isPick ? (
-                          <button type="button" title={open ? 'Hide its consignments' : 'Show its consignments'}
-                            aria-expanded={open} onClick={() => toggleExpanded(r.id)}
-                            style={{ border: 0, background: 'none', cursor: 'pointer', marginLeft: 8, fontSize: 12, color: 'var(--pfp-ink-hint)' }}>
-                            {open ? '▾' : '▸'} {pr?.orderIds.length ?? 0}
+                          <button type="button" title={`${open ? 'Hide' : 'Show'} its ${pr?.orderIds.length ?? 0} consignment${pr?.orderIds.length === 1 ? '' : 's'}`}
+                            aria-expanded={open} aria-label="Show its consignments" onClick={() => toggleExpanded(r.id)}
+                            style={{ border: 0, background: 'none', cursor: 'pointer', padding: 0, display: 'inline-flex', color: 'var(--pfp-ink-hint)' }}>
+                            {open ? <OpenChevron size={14} /> : <ClosedChevron size={14} />}
                           </button>
                         ) : undefined} />
                     ))}
@@ -1490,10 +1482,13 @@ function Cell({ col, row, selected, onToggle, onOpen, extra }: {
   if (LINK_COLUMNS.has(col)) {
     return (
       <td>
-        <button type="button" className="pfp-order" onClick={onOpen}>
-          <ArrowRight size={16} />{value}
-        </button>
-        {extra}
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 0, whiteSpace: 'nowrap', marginLeft: extra ? -6 : 0 }}>
+          {/* a pickup request: the chevron (open its consignments) takes the place of the arrow */}
+          {extra}
+          <button type="button" className="pfp-order" onClick={onOpen}>
+            {!extra && <ArrowRight size={16} />}{value}
+          </button>
+        </span>
       </td>
     )
   }
