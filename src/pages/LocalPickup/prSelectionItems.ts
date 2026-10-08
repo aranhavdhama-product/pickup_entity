@@ -101,7 +101,7 @@ export function prSelectionItems(sel: GrowPickupRequest[], { cfg, db, openDialog
     item('printLabel', 'Print consolidated label', () => {
       toast.info(`Print Consolidated Label — ${plural(sel.length, 'request')} (demo)`); clear()
     }),
-    item('cancel', 'Cancel', open('cancel')),
+    item('cancel', 'Cancel Pickup', open('cancel')),
     item('downloadCsv', 'Download CSV', () => {
       downloadCsv('pickup-requests-selected.csv', prCsv(sel, db)); toast.success(`${plural(sel.length, 'row')} exported.`); clear()
     }),

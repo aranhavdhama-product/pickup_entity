@@ -138,7 +138,7 @@ const QUICK_ICON: Record<string, LucideIcon> = { failed: TriangleAlert, inbound:
 type QuickKey = typeof QUICK_FILTERS[number]['key']
 
 /** a consignment nobody has booked a pickup for yet: ready for pickup (paid, no error) and on no pickup request — the Pickup page's "waiting" rule */
-const awaitingPickup = (r: UnifiedRow): boolean => !isPickupRow(r) && isPickupEligible(r.order) && !r.order.pickupRequestId
+const awaitingPickup = (r: UnifiedRow): r is LocalConsignmentRow => !isPickupRow(r) && isPickupEligible(r.order) && !r.order.pickupRequestId
 
 const quickTest = (key: QuickKey, r: UnifiedRow): boolean => {
   if (key === 'pickup') return awaitingPickup(r)
@@ -423,7 +423,8 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
   const tabRows = useMemo(
     () => {
       if (!pickupsOn) return all
-      if (awaitingMode) return all.filter(awaitingPickup)
+      /* No Pickup Request + a leg chip combine: First Mile keeps them (they are first mile), Last Mile leaves none */
+      if (awaitingMode) return all.filter((r) => awaitingPickup(r) && (tab === 'all' || (tab === 'first-mile') === (r.activeLeg === 'First Mile')))
       const base = tab === 'all' && consView ? all.filter((r) => !isPickupRow(r))   // every consignment, first mile included
         : all.filter((r) => inTab(tab, group, r))                                   // All · Pickup requests = the requests + the last-mile consignments
       /* consignments still waiting for a pickup request are not listed — until "No Pickup Request" is picked */
@@ -1110,9 +1111,15 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
            consignment panel carries staging's exact list) */
         if (kind === 'modify') { if (selectedRows[0]) nav(`/local/consignments/new?draft=${selectedRows[0].orderId}`); return }
         if (kind === 'bestRoute') {
-          /* the best open route for these shipments — today a new Un-assigned route (the planner assigns the driver in Control Tower) */
-          const trip = planningActions.planForRouting(routable.map((r) => ({ orderId: r.orderId, orderNumber: r.orderNumber, address: r.address })))
-          done(`${trip.stops.length} shipment${trip.stops.length === 1 ? '' : 's'} added to the best route ${trip.id} (Un-assigned) — assign a driver in Control Tower.`)
+          /* the best open route for these shipments — today a new Un-assigned route (the planner assigns the driver in Control Tower);
+             pickup requests in the selection go to the routing dialog, which opens on its "Add to best route" tab */
+          const pickupsToo = selectedPickups.length > 0 && pickupRoutable > 0
+          if (routable.length) {
+            const trip = planningActions.planForRouting(routable.map((r) => ({ orderId: r.orderId, orderNumber: r.orderNumber, address: r.address })))
+            toast.success(`${trip.stops.length} shipment${trip.stops.length === 1 ? '' : 's'} added to the best route ${trip.id} (Un-assigned) — assign a driver in Control Tower.`)
+          }
+          if (pickupsToo) { setPrDialog({ kind: 'route', prs: selectedPickups.map((r) => r.request) }); clearSelection() }
+          else done(routable.length ? 'Added to the best route.' : 'Nothing could be added.')
           return
         }
         if (kind === 'carrier' || kind === 'storage' || kind === 'driver') {
@@ -1169,7 +1176,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
     <>
       <span className="pfp-chipbar-label">Leg:</span>
       {([['first-mile', 'First Mile'], ['last-mile', 'Last Mile']] as const).map(([k, label]) => (
-        <button key={k} type="button" className="pfp-chip" data-size="sm" aria-pressed={tab === k && !awaitingMode}
+        <button key={k} type="button" className="pfp-chip" data-size="sm" aria-pressed={tab === k}
           onClick={() => switchTab(tab === k ? 'all' : k)}>{label}<span className="pfp-chip-count">{tabCounts[k]}</span></button>
       ))}
       {/* NOT an exception: consignments nobody has booked a pickup for are an action queue — picked here, they appear, get selected
@@ -1555,7 +1562,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
       )}
 
       {modal === 'cancelMixed' && (
-        <CancelPickupModal count={selectedAll.length} onClose={() => setModal(null)} onApply={(code) => {
+        <CancelPickupModal count={selectedPickups.length} consignments={selectedRows.length} onClose={() => setModal(null)} onApply={(code) => {
           selectedPickups.forEach((r) => growOrderActions.cancelPickupRequest(r.prId, code, 'Ops'))
           selIds.forEach((id) => growOrderActions.update(id, { status: 'Cancelled' }))
           planningActions.cancel(selIds, cancelReasonLabel(code))
@@ -1814,7 +1821,7 @@ function SelectionPanel({ count, metrics, routable, pickupRoutable, profile, pic
     { key: 'storage', label: 'Modify Storage Location', icon: <MapPin size={16} />, eligible: c, kind: 'consignment', show: profile.allFacility },
     { key: 'driver', label: 'Assign To Driver', icon: <Send size={16} />, eligible: c, kind: 'consignment', show: profile.allFacility },
     /* the two routing entries are ALWAYS listed — greyed, with the reason on hover, when nothing qualifies */
-    { key: 'bestRoute', label: 'Add To Best Route', icon: <Sparkles size={16} />, eligible: routable, kind: 'consignment',
+    { key: 'bestRoute', label: 'Add To Best Route', icon: <Sparkles size={16} />, eligible: routable + pickupRoutable, kind: 'consignment',
       scope: 'Shipments that are at the facility and have a delivery window.' },
     { key: 'plan', label: 'Plan For Routing', icon: <RoutePath size={16} />, eligible: routable + pickupRoutable, kind: 'consignment',
       scope: 'Shipments that are at the facility and have a delivery window.' },
@@ -1826,7 +1833,7 @@ function SelectionPanel({ count, metrics, routable, pickupRoutable, profile, pic
       scope: 'Exports the consignment rows.' },
     { key: 'cancel', label: 'Cancel Consignment', icon: <Trash size={16} />, eligible: c, kind: 'consignment', danger: true },
     /* a MIXED selection's cancel: calls off the pickups AND cancels the consignments */
-    { key: 'cancelMixed', label: 'Cancel', icon: <Trash size={16} />, eligible: profile.total, kind: 'mixed', danger: true,
+    { key: 'cancelMixed', label: 'Cancel Consignment and Pickup', icon: <Trash size={16} />, eligible: profile.total, kind: 'mixed', danger: true,
       scope: 'Cancels the selected consignments and calls off the selected pickup requests.' },
 
   ]
@@ -1844,7 +1851,7 @@ function SelectionPanel({ count, metrics, routable, pickupRoutable, profile, pic
   /* owner, 2026-09-25: a MIXED selection (All tab) shows ONLY what is valid
      for both kinds — Plan For Routing (n), Download CSV, Cancel; a
      single-kind selection shows that kind's list and nothing else */
-  const MIXED_KEYS = new Set<string>(['plan', 'csv', 'cancelMixed'])
+  const MIXED_KEYS = new Set<string>(['bestRoute', 'plan', 'csv', 'cancelMixed'])
   const actions = ALL.filter((a) => {
     if (profile.mixed) return MIXED_KEYS.has(a.key)
     if (a.kind === 'mixed') return false

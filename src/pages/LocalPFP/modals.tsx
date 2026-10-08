@@ -457,8 +457,8 @@ export function FailPickupModal({ count, onClose, onApply }: {
 
 /* ---------------------------------------------------------- Cancel Pickup -- */
 
-export function CancelPickupModal({ count, onClose, onApply }: {
-  count: number; onClose: () => void; onApply: (code: string) => void
+export function CancelPickupModal({ count, consignments = 0, onClose, onApply }: {
+  count: number; /** consignments cancelled with them (a mixed selection) */ consignments?: number; onClose: () => void; onApply: (code: string) => void
 }) {
   const [code, setCode] = useState('')
   return (
@@ -477,7 +477,7 @@ export function CancelPickupModal({ count, onClose, onApply }: {
         </select>
       </Field>
       <p style={{ margin: 0, fontSize: 12.5, color: 'var(--pfp-ink-muted)' }}>
-        Cancels {count} pickup{count === 1 ? '' : 's'}.
+        Cancels {consignments > 0 && `${consignments} consignment${consignments === 1 ? '' : 's'} and `}{count} pickup request{count === 1 ? '' : 's'}.
       </p>
     </Modal>
   )
