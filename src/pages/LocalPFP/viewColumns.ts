@@ -111,7 +111,7 @@ export const LEG_COLUMN = LEG
  * class (Tag, 160) — logged in pixel-diff-log.md.
  */
 export const CONSIGNMENT_TAB_KEYS = [
-  'orderNumber', 'referenceNumber', 'shipByDate', 'state', 'carrier', 'secondaryState', 'activeLeg',
+  'orderNumber', 'referenceNumber', 'shipByDate', 'activeLeg', 'state', 'carrier', 'secondaryState',
   'dispatchDate', 'weight', 'volume', 'palletSpaces', 'sku', 'vas', 'serviceTime', 'tag',
   'specialInstructions', 'merchant', 'orderType', 'ageing', 'address',
 ] as const
@@ -121,7 +121,7 @@ export const CONSIGNMENT_TAB_COLUMNS: StagingColumn[] = [
   onPage('_flags'),
   ...CONSIGNMENT_TAB_KEYS.map((k): StagingColumn => {
     if (k === 'vas') return VAS
-    if (k === 'activeLeg') return LEG   // owner, 2026-10-08: Active Leg in every consignment grid, after Secondary State like Consignment Order
+    if (k === 'activeLeg') return LEG   // owner, 2026-10-08: Active Leg in every consignment grid, after the 3rd column
     const c = T.table.columns.find((x) => x.key === k)
     if (!c) throw new Error(`PFP measured column ${k} is missing`)
     return c
@@ -133,13 +133,13 @@ const prKey = (k: string) => `pr:${k}`
 /* owner, 2026-10-08: no Type column on this page's pickup grid (the tab / group already says it is a pickup) */
 const PR_DEFS = PR_COLUMN_DEFS.filter((d) => d.defaultOn && d.key !== 'type')
 
-/** First Mile / Pickup request: the `/local/pickup` grid, + Active Leg after State (owner, 2026-10-08). */
+/** First Mile / Pickup request: the `/local/pickup` grid, + Active Leg after the 3rd column (owner, 2026-10-08). */
 export const PR_VIEW_COLUMNS: StagingColumn[] = [
   SELECT,
-  /* Active Leg sits right after State (owner, 2026-10-08) */
+  /* Active Leg sits after the 3rd column — Reference · State · Exception · Active Leg (owner, 2026-10-08) */
   ...PR_DEFS.flatMap((d) => {
     const col = { key: prKey(d.key), label: d.label, width: d.width }
-    return d.key === 'status' ? [col, LEG] : [col]
+    return d.key === 'exception' ? [col, LEG] : [col]
   }),
   PAD,
 ]

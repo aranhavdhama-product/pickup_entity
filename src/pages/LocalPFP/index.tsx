@@ -1249,9 +1249,9 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
                 <Fragment key={r.id}>
                   {groupFirst && (
                     <tr>
-                      <td colSpan={columns.length} style={{ background: 'rgb(250, 250, 250)', borderTop: '1px solid var(--pfp-line)', padding: '10px 16px' }}>
+                      <td colSpan={columns.length} style={{ background: 'rgb(250, 250, 250)', borderTop: '1px solid var(--pfp-line)', padding: '3px 16px', height: 30, fontSize: 13, lineHeight: '20px' }}>
                         {/* a swimlane header (owner, 2026-10-08, Jira's board): fold arrow · name · small grey details */}
-                        <span style={{ display: 'flex', alignItems: 'center', gap: 10, whiteSpace: 'nowrap' }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 8, whiteSpace: 'nowrap' }}>
                           <button type="button" aria-expanded={!collapsedGroups.has(prId)} title={collapsedGroups.has(prId) ? 'Show its consignments' : 'Hide its consignments'}
                             onClick={() => setCollapsedGroups((s) => { const n = new Set(s); if (n.has(prId)) n.delete(prId); else n.add(prId); return n })}
                             style={{ border: 0, background: 'none', cursor: 'pointer', padding: 0, display: 'inline-flex', color: 'var(--pfp-ink-hint)' }}>
@@ -1266,8 +1266,8 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
                             })} />
                           {groupRow ? (
                             <>
-                              <Truck size={16} style={{ color: 'var(--pfp-brand)' }} aria-label="Pickup" />
-                              <button type="button" className="pfp-order" style={{ fontWeight: 700, fontSize: 14 }} title="Open this pickup request"
+                              <Truck size={14} style={{ color: 'var(--pfp-brand)' }} aria-label="Pickup" />
+                              <button type="button" className="pfp-order" style={{ fontWeight: 700, fontSize: 13 }} title="Open this pickup request"
                                 onClick={() => nav(`${basePath}/pickup/${groupRow.id}${search}`)}>{groupRow.reference}</button>
                               <span style={{ fontSize: 12, color: 'var(--pfp-ink-hint)' }}>
                                 ({groupIds.length} consignment{groupIds.length === 1 ? '' : 's'}) · {groupRow.merchant} · Collect {groupRow.windowLabel} · {groupRow.state}
@@ -1275,8 +1275,8 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
                             </>
                           ) : (
                             <>
-                              <PackageIcon size={16} style={{ color: 'var(--pfp-brand)' }} aria-label="Delivery" />
-                              <b style={{ fontSize: 14 }}>{tab === 'all' ? 'Deliveries' : 'No pickup request'}</b>
+                              <PackageIcon size={14} style={{ color: 'var(--pfp-brand)' }} aria-label="Delivery" />
+                              <b style={{ fontSize: 13 }}>{tab === 'all' ? 'Deliveries' : 'No pickup request'}</b>
                               <span style={{ fontSize: 12, color: 'var(--pfp-ink-hint)' }}>
                                 ({groupIds.length} consignment{groupIds.length === 1 ? '' : 's'}){tab === 'all' ? ' · last mile, no pickup needed' : ''}
                               </span>
