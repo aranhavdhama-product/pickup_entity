@@ -153,7 +153,7 @@ export default function OrdersListPage() {
   const all = useMemo(() => shipmentRowsOf(db, plan), [db, plan])
   const inTab = useMemo(() => all.filter(TABS[tab].test), [all, tab])
   const tabCounts = useMemo(() => TABS.map((t) => all.filter(t.test).length), [all])
-  const { columns, chooser } = useShipmentColumns('grow-shipments-columns-v4', all)
+  const { columns, chooser } = useShipmentColumns('grow-shipments-columns-v3', all)
 
   /* the ONE State/Secondary State list (shared with Pending for Planning and the
      console Consignment Order page) — plus Draft / Save for later, the portal's

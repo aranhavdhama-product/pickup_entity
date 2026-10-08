@@ -153,7 +153,7 @@ export default function PickupRequestsPage() {
     return (p: GrowPickupRequest) => [...new Set(p.orderIds.flatMap((id) => byOrder.get(id) ?? []))]
   }, [shipments])
 
-  const shipCols = useShipmentColumns('grow-eligible-columns-v3', eligible)
+  const shipCols = useShipmentColumns('grow-eligible-columns-v2', eligible)
   const prCols = usePickupRequestColumns({ allRequests: db.pickupRequests, orders: db.orders, stores: db.stores, tagsOf, flagsOf: chipFlagsOf })
   /* tab counts off the UNFILTERED lists, like the console */
   const counts = localPrTabCounts(db.pickupRequests, eligible.length, now)
