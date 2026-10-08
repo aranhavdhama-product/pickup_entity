@@ -48,7 +48,7 @@ import { hiddenStagingColumns } from './columnConfig'
 import { type RowType } from './fieldRegistry'
 import { planningActions, usePlanning } from './planningStore'
 import {
-  COMMON_COLUMNS, CONSIGNMENT_TAB_COLUMNS, LINK_COLUMNS, MEASURED_COLUMNS, PILL_COLUMNS, PR_VIEW_COLUMNS, TABS,
+  COMMON_COLUMNS, CONSIGNMENT_TAB_COLUMNS, LEG_COLUMN, LINK_COLUMNS, MEASURED_COLUMNS, PILL_COLUMNS, PR_VIEW_COLUMNS, TABS,
   TYPE_OPTIONS, extraCells, inTab, typeKeyOf, parseTab, viewOf, widthOf,
   type ColumnView, type ExtraCtx, type GroupBy, type TabKey,
 } from './viewColumns'
@@ -719,6 +719,8 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
      hidden on `/local/columns` is hidden here too. */
   const tabColumns = pickupsOn && !fixture
     ? CONSIGNMENT_TAB_COLUMNS.filter((c) => c.key === '_select' || c.key === '_flags' || c.key === '_pad' || !hidden.has(c.key))
+      /* All reads both legs, so Active Leg comes back beside State (owner, 2026-10-08) */
+      .flatMap((c) => (tab === 'all' && c.key === 'state' ? [c, LEG_COLUMN] : [c]))
     : stagingColumns
   const columns = view === 'pickup' ? PR_VIEW_COLUMNS
     : view === 'common' ? COMMON_COLUMNS

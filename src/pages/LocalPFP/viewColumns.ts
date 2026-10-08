@@ -100,6 +100,7 @@ const prWidth = (key: string): number => {
 const SELECT = onPage('_select')
 const PAD = onPage('_pad')
 const LEG = onPage('activeLeg')
+export const LEG_COLUMN = LEG
 
 /**
  * Consignment rows on the First Mile (Group by None) and Last Mile tabs carry
@@ -128,7 +129,8 @@ export const CONSIGNMENT_TAB_COLUMNS: StagingColumn[] = [
 ]
 
 const prKey = (k: string) => `pr:${k}`
-const PR_DEFS = PR_COLUMN_DEFS.filter((d) => d.defaultOn)
+/* owner, 2026-10-08: no Type column on this page's pickup grid (the tab / group already says it is a pickup) */
+const PR_DEFS = PR_COLUMN_DEFS.filter((d) => d.defaultOn && d.key !== 'type')
 
 /** First Mile / Pickup request: the `/local/pickup` grid. No Active Leg — the
     tab already says the leg (owner, 2026-09-25; Active Leg is All-only). */
