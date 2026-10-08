@@ -23,7 +23,7 @@
  * staging order in `stagingTokens.json` is the DEFAULT sequence, and a column
  * the user has hidden there is hidden here.
  */
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState, type ReactNode } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import './pfpChrome.css'
 import { toast } from '../../nueva/toast'
@@ -237,6 +237,7 @@ const fixtureToDisplay = (f: FixtureRow, i: number): DisplayRow => ({
 /** the two columns staging gives a per-column search glyph */
 const SEARCHABLE = new Set(['orderNumber', 'referenceNumber'])
 /** the columns staging sorts */
+const PEEK = 8
 const SORTABLE = new Set(['orderNumber', 'referenceNumber', 'shipByDate', 'palletSpaces'])
 
 /* ------------------------------------------------------------ the tabs ---- */
@@ -504,8 +505,10 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
     /* no sort chosen: what is due first comes first (First Mile Ops 2026-10-07) — a pickup by its window start, a consignment by its
        ship-by day, a pickup ahead of a consignment due the same day; the Last Mile tab keeps its own order */
     const due = (r: UnifiedRow) => (isPickupRow(r) ? r.pickupWindow.start : `${r.shipByDate}T23:59`)
+    /* the All tab keeps the two kinds apart (owner, 2026-10-08): every pickup (first mile) above every delivery (last mile) */
     const ordered = !sort && tab !== 'last-mile'
-      ? [...filtered].sort((a, b) => (due(a) === due(b) ? Number(isPickupRow(b)) - Number(isPickupRow(a)) : due(a) < due(b) ? -1 : 1))
+      ? [...filtered].sort((a, b) => (tab === 'all' && isPickupRow(a) !== isPickupRow(b) ? Number(isPickupRow(b)) - Number(isPickupRow(a))
+        : due(a) === due(b) ? Number(isPickupRow(b)) - Number(isPickupRow(a)) : due(a) < due(b) ? -1 : 1))
       : filtered
     const rows = ordered.map((r) => toDisplay(r, cellCtx))
     if (!sort) return rows
@@ -523,10 +526,16 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
      staging's — five numbered buttons and an enabled next arrow. Deriving the
      count from the 20 rows on screen would show a single page and leave the
      footer band permanently unmatched. */
-  const totalRows = fixture ? Number(FIXTURE_STATS.totalOrders) : display.length
+  /* the All tab is a PEEK (owner, 2026-10-08: first mile and last mile together on the first page, never one hiding the other):
+     the first PEEK of each kind, due-first, each section saying its true total and linking to its own tab */
+  const peek = tab === 'all' && !fixture
+  const peekPicks = useMemo(() => (peek ? display.filter((r) => r.rowType !== 'Consignment') : []), [peek, display])
+  const peekCons = useMemo(() => (peek ? display.filter((r) => r.rowType === 'Consignment') : []), [peek, display])
+  const peekRows = useMemo(() => [...peekPicks.slice(0, PEEK), ...peekCons.slice(0, PEEK)], [peekPicks, peekCons])
+  const totalRows = fixture ? Number(FIXTURE_STATS.totalOrders) : peek ? peekRows.length : display.length
   const totalPages = Math.max(1, Math.ceil(totalRows / pageSize))
   const safePage = Math.min(page, totalPages)
-  const paged = fixture ? display : display.slice((safePage - 1) * pageSize, safePage * pageSize)
+  const paged = fixture ? display : peek ? peekRows : display.slice((safePage - 1) * pageSize, safePage * pageSize)
 
   /* Staging's four readouts. Consignments only: a pickup request and the orders
      it covers are the same parcels seen twice, so summing both double-counts. */
@@ -624,13 +633,21 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
     toast.success(msg)
   }
 
+  /* a pickup and a delivery are planned differently — ticking one kind drops the other (owner, 2026-10-08) */
+  const pickupIdSet = useMemo(() => new Set(all.filter(isPickupRow).map((r) => r.id)), [all])
   const toggleRow = (id: string) => setSelected((s) => {
     const next = new Set(s)
-    if (next.has(id)) next.delete(id); else next.add(id)
+    if (next.has(id)) { next.delete(id); return next }
+    for (const x of s) if (pickupIdSet.has(x) !== pickupIdSet.has(id)) next.delete(x)
+    next.add(id)
     return next
   })
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const toggleExpanded = (id: string) => setExpanded((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n })
 
-  const pageIds = paged.map((r) => r.id)
+  /* the header checkbox ticks one kind only: the pickups on the page when there are any, else the deliveries */
+  const pageIds = (tab === 'all' && !fixture && paged.some((r) => pickupIdSet.has(r.id))
+    ? paged.filter((r) => pickupIdSet.has(r.id)) : paged).map((r) => r.id)
   const allOnPage = pageIds.length > 0 && pageIds.every((id) => selected.has(id))
 
   /* A tab change clears the selection: rows picked on another tab would stay
@@ -1145,21 +1162,71 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
             </tr>
           </thead>
           <tbody>
-            {paged.map((r) => (
-              <tr key={r.id} data-selected={selected.has(r.id)}>
-                {columns.map((c) => (
-                  <Cell key={c.key} col={c.key} row={r}
-                    selected={selected.has(r.id)}
-                    onToggle={() => toggleRow(r.id)}
-                    /* routed by ROW KIND — a pickup has no order id, and
-                       sending its click to the consignment view gave a dead page */
-                    onOpen={() => {
-                      if (r.rowType !== 'Consignment') nav(`${basePath}/pickup/${r.id}${search}`)
-                      else if (r.orderId) nav(`${basePath}/${r.orderId}${search}`)
-                    }} />
-                ))}
-              </tr>
-            ))}
+            {paged.map((r, ix) => {
+              const isPick = pickupIdSet.has(r.id)
+              const sectioned = tab === 'all' && !fixture
+              const first = sectioned && (ix === 0 || pickupIdSet.has(paged[ix - 1].id) !== isPick)
+              const pr = isPick ? cellCtx.prById.get(r.id) : undefined
+              const kids = pr ? pr.orderIds.map((id) => cellCtx.byId.get(id)).filter((o): o is NonNullable<typeof o> => !!o) : []
+              const open = expanded.has(r.id)
+              return (
+                <Fragment key={r.id}>
+                  {first && (
+                    <tr>
+                      <td colSpan={columns.length} style={{ background: 'var(--pfp-brand-tint)', fontWeight: 700, padding: '8px 16px' }}>
+                        {isPick ? `First mile · Pickups to plan (${peekPicks.length})` : `Last mile · Deliveries to plan (${peekCons.length})`}
+                        <span style={{ fontWeight: 400, color: 'var(--pfp-ink-hint)', marginLeft: 12 }}>
+                          {isPick ? 'A driver collects from the merchant — plan the pickup; its consignments ride on it.' : 'A driver delivers parcels to customers.'}
+                        </span>
+                        {(isPick ? peekPicks.length : peekCons.length) > PEEK && (
+                          <button type="button" onClick={() => switchTab(isPick ? 'first-mile' : 'last-mile')}
+                            style={{ border: 0, background: 'none', cursor: 'pointer', fontWeight: 700, color: 'var(--pfp-brand)', marginLeft: 16 }}>
+                            Show all {isPick ? peekPicks.length : peekCons.length} →
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                  <tr data-selected={selected.has(r.id)}>
+                    {columns.map((c) => (
+                      <Cell key={c.key} col={c.key} row={r}
+                        selected={selected.has(r.id)}
+                        onToggle={() => toggleRow(r.id)}
+                        /* routed by ROW KIND — a pickup has no order id, and
+                           sending its click to the consignment view gave a dead page */
+                        onOpen={() => {
+                          if (r.rowType !== 'Consignment') nav(`${basePath}/pickup/${r.id}${search}`)
+                          else if (r.orderId) nav(`${basePath}/${r.orderId}${search}`)
+                        }}
+                        extra={LINK_COLUMNS.has(c.key) && isPick ? (
+                          <button type="button" title={open ? 'Hide its consignments' : `Show its ${kids.length} consignment${kids.length === 1 ? '' : 's'}`}
+                            aria-expanded={open} onClick={() => toggleExpanded(r.id)}
+                            style={{ border: 0, background: 'none', cursor: 'pointer', marginLeft: 8, fontSize: 12, color: 'var(--pfp-ink-hint)' }}>{open ? '▾' : '▸'} {kids.length}</button>
+                        ) : undefined} />
+                    ))}
+                  </tr>
+                  {isPick && open && (
+                    <tr>
+                      <td colSpan={columns.length} style={{ background: 'rgb(250, 250, 250)', padding: '6px 16px 10px 56px' }}>
+                        {kids.length === 0 ? <span style={{ color: 'var(--pfp-ink-hint)' }}>No consignments yet — added when the driver scans at the pickup.</span> : (
+                          <table style={{ width: '100%' }}>
+                            <tbody>
+                              {kids.map((o) => (
+                                <tr key={o.id} style={{ cursor: 'pointer' }} onClick={() => nav(`${basePath}/${o.id}${search}`)}>
+                                  <td style={{ width: 130, fontWeight: 700 }}>{o.orderNumber}</td>
+                                  <td>{o.receiver.name}{o.receiver.line1 ? ` · ${o.receiver.line1}` : ''}</td>
+                                  <td style={{ width: 160 }}>{o.status}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              )
+            })}
             {paged.length === 0 && (
               <tr>
                 <td colSpan={columns.length} style={{ textAlign: 'center', color: 'var(--pfp-ink-hint)' }}>
@@ -1297,8 +1364,8 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
  * `cells.tsx` (the configurable-column renderer) is deliberately NOT used here:
  * it renders this app's own cell grammar, and this route replicates staging's.
  */
-function Cell({ col, row, selected, onToggle, onOpen }: {
-  col: string; row: DisplayRow; selected: boolean; onToggle: () => void; onOpen: () => void
+function Cell({ col, row, selected, onToggle, onOpen, extra }: {
+  col: string; row: DisplayRow; selected: boolean; onToggle: () => void; onOpen: () => void; extra?: ReactNode
 }) {
   if (col === '_select') {
     return <td><input type="checkbox" checked={selected} onChange={onToggle} /></td>
@@ -1342,6 +1409,7 @@ function Cell({ col, row, selected, onToggle, onOpen }: {
         <button type="button" className="pfp-order" onClick={onOpen}>
           <ArrowRight size={16} />{value}
         </button>
+        {extra}
       </td>
     )
   }

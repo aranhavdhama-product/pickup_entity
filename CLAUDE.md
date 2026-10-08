@@ -771,6 +771,7 @@ effects (a cancelled/rescheduled PR leaving its trip) flow through `onPickupRequ
   by what is DUE first (a pickup's window start, a consignment's ship-by) unless a column sort is chosen, with an **Exception** column
   and **Due** (a pickup's day + slot). Open from the audit: form-setup sync starts only after a successful first pull, SKU-based goods
   still read the package-weight rule, Tags error text eager, saveTyped keyed by drop index.
+- **Pending For Planning → All tab = two sections (owner, 2026-10-08)**: a PEEK, not a pager — "First mile · Pickups to plan (n)" then "Last mile · Deliveries to plan (n)", the first 8 of each (due-first), each header with its true total and **Show all n →** to its own tab; a pickup row's `▸ n` opens the consignments riding on it right under it (click one = its overlay); selection keeps ONE kind (ticking a pickup drops ticked deliveries and vice versa; the header checkbox ticks the pickups, else the deliveries). First Mile / Last Mile tabs are unchanged.
 - **SKU line = ONE line on both portals** (2026-10-07): every SKU detail the builder shows and does NOT put under More (Grow: HSN Code ·
   Origin Country · Unit Cost) is a column of the line (`skuInline`); the rest wait behind the chevron. **Units**: weight (kg · g · lb ·
   oz) and size (cm · in · mm · m) are set independently per package (`Parcel.weightUnit` / `dimUnit`, over the older `unitSystem` pairs).
