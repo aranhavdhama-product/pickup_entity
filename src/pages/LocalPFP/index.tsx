@@ -723,13 +723,11 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
     toast.success(msg)
   }
 
-  /* a pickup and a delivery are planned differently — ticking one kind drops the other (owner, 2026-10-08) */
+  /* pickup requests and consignments can be ticked TOGETHER (owner, 2026-10-08) — a mixed selection offers Plan For Routing · CSV · Cancel */
   const pickupIdSet = useMemo(() => new Set(all.filter(isPickupRow).map((r) => r.id)), [all])
   const toggleRow = (id: string) => setSelected((s) => {
     const next = new Set(s)
-    if (next.has(id)) { next.delete(id); return next }
-    for (const x of s) if (pickupIdSet.has(x) !== pickupIdSet.has(id)) next.delete(x)
-    next.add(id)
+    if (next.has(id)) next.delete(id); else next.add(id)
     return next
   })
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
