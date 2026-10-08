@@ -27,7 +27,6 @@ import type { GrowOrder, GrowPickupRequest, StoreLocation } from '../../growOrde
 import { canAddOrdersTo, isOverduePr, isPickupEligible, rangesOverlap } from '../../growOrders/tabs'
 import { earliestWindow, pickupPolicy, violatesCutoff, windowLabel, type PickupPolicy } from '../../growOrders/pickupSlots'
 import { SlotWindowFields } from '../LocalPickup/slotFields'
-import { BookingChoiceControl } from '../LocalPickup/bookingCards'
 import { bookGroup, type BookingChoice } from '../LocalPickup/bookingPlan'
 import { usePickupModuleConfig } from '../../config/pickupModule'
 import { groupForPickup, storeAddress, storeName, type PickupGroup } from '../GrowOrders/utils'
@@ -157,17 +156,17 @@ export function SchedulePickupDialog({ orderIds, onClose, onDone, prefer = 'choo
     const choice: Choice = prefer === 'new' ? { mode: 'new' }
       : prefer === 'existing' ? (picked?.mode === 'existing' && candidates.some((p) => p.id === picked.prId) ? picked
         : candidates.length ? { mode: 'existing', prId: candidates[0].id } : { mode: 'new' })
-      : picked && (picked.mode !== 'existing' || candidates.some((p) => p.id === picked.prId))
-      ? picked
-      : target && candidates.some((p) => p.id === target.id) ? { mode: 'existing', prId: target.id } : { mode: 'new' }
+      /* Schedule pickup (owner, 2026-10-07: "no options here — Add to existing is its own menu item"): ALWAYS a new request per booking.
+         The store still joins it to an open one at the same pickup point when the account's pickup rules say so (`target`, said below);
+         Add to existing pickup request and Split pickup request are their own actions. */
+      : { mode: 'new' }
     const weight = Math.round(g.orders.reduce((n, o) => n + totalWeightKg(o), 0) * 10) / 10
     return { g, merchant, candidates, target, choice, weight }
   })
 
   const needsWindow = cards.some((c) => c.choice.mode !== 'existing')
-  /* how many requests the Confirm touches: a split card is one per shipment */
-  const pickupCount = cards.reduce((n, c) => n + (c.choice.mode === 'split' ? c.g.orders.length : 1), 0)
-  const allSplit = cards.length > 0 && cards.every((c) => c.choice.mode === 'split')
+  /* how many requests the Confirm touches: one per booking card */
+  const pickupCount = cards.length
   const canConfirm = cards.length > 0 && !(needsWindow && windowError)
 
   const confirm = () => {
@@ -208,7 +207,6 @@ export function SchedulePickupDialog({ orderIds, onClose, onDone, prefer = 'choo
           <>
             <p className="text-[13px] text-ink-2">
               <span className="font-bold text-ink">{plural(total, 'consignment')}</span> → <span className="font-bold text-ink">{plural(pickupCount, 'pickup')}</span>
-              {allSplit ? ' (one each)' : ''}
             </p>
             <div className="flex flex-col gap-2">
               {cards.map(({ g, candidates, target, choice, weight }) => {
@@ -230,11 +228,8 @@ export function SchedulePickupDialog({ orderIds, onClose, onDone, prefer = 'choo
                         </button>
                       </div>
                       <div className="flex shrink-0 flex-col items-end gap-2">
-                        {prefer === 'choose' && (
-                          <BookingChoiceControl choice={choice} onChange={setChoice} candidates={candidates}
-                            shipments={g.orders.length} ftl={!!g.vehicle}
-                            labelOf={(p) => `${p.number} · ${windowLabel(p)} · ${plural(p.orderIds.length, 'order')}`}
-                            note={target ? <>Joins {target.number} (pickup rules).</> : undefined} />
+                        {prefer === 'choose' && target && candidates.some((p) => p.id === target.id) && (
+                          <p className="max-w-[260px] text-right text-[12px] text-ink-3">Joins {target.number} — the pickup rules.</p>
                         )}
                         {prefer === 'existing' && (candidates.length ? (
                           <div className="w-[300px]">

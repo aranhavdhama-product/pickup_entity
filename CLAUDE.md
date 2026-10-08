@@ -759,8 +759,14 @@ effects (a cancelled/rescheduled PR leaving its trip) flow through `onPickupRequ
   console's layout) and Grow keeps Tags + Order Category in the draft (they were dropped before); Vehicle Details rows start on the vehicle
   that FITS the load (`fitVehicle`), follow the hub's fleet, and the card shows in the Grow builder while editing; the checkout reads the
   builder's Dropdown / Grid / List choice (it ignored Dropdown); the builder's Width reaches every package field and a Grow override back
-  to S persists. Checkout (Grow step 2) = Service Type on the left (one-line options, "Lowest" tag, carrier said once) and, on the right,
-  the order summary + ONE Payment card holding the totals, **How you pay** and the Place order button. The Schedule pickup dialog is one
+  to S persists. **Checkout (Grow step 2)** (owner, 2026-10-07): Service Type on the left as CARDS, one per row at the full width (radio, name, carrier,
+  rate; builder choice Cards | Dropdown — the old "List" reads as Cards); on the right the **Payment Summary comes FIRST** (price, **How you pay**
+  in compact method cards, and the Place order button in a footer that stays in view; the rail scrolls by itself on a short screen), then the
+  order summary. **Grow has no Payment card** on step 1 (no Payment Mode, COD amount or remarks — every Grow order is Prepaid;
+  `MERCHANT_OFF`). In the builder the four address choices (Layout · Ship From · Ship To · RTO) are ONE row. **Separate SKU list**: every
+  package has **Add SKU to this package** (a package could not get its first SKU before). The console **Schedule pickup** dialog has NO
+  New / Add to existing / Split options — it always makes a new request per booking (the store may still join one under the pickup rules, said
+  on the card); Add to existing pickup request and Split pickup request are their own actions. The Schedule pickup dialog is one
   meta line per booking, calendars in one line, the date beside the driver note. Pending For Planning (All / First Mile): rows are ordered
   by what is DUE first (a pickup's window start, a consignment's ship-by) unless a column sort is chosen, with an **Exception** column
   and **Due** (a pickup's day + slot). Open from the audit: form-setup sync starts only after a successful first pull, SKU-based goods

@@ -3531,7 +3531,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
           </span>
         )}
         <div className={SKU_COLS} style={skuColsStyle}>
-          <span className="flex h-8 items-center text-[13px] text-ink-3">{n + 1}</span>
+          <span className="flex h-8 items-center text-[13px] text-ink-3" title={separateLayout && parcels.length > 1 ? `In Package ${i + 1}` : undefined}>{n + 1}</span>
           <SkuCode item={it} skus={masters.skus} onPick={(sk) => { if (!preview) pickSku(i, k, sk) }} onUnlink={() => upd({ skuCode: null })}
             onCustom={(code) => upd({ skuCode: code })} autoFocus={!preview && focusLine?.i === i && focusLine.k === k} />
           {/* a master SKU's name comes with it; a typed one is yours to name */}
@@ -3769,19 +3769,27 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   const packPicker = (p: Parcel, i: number) => {
     const mine = skusOf(p)
     const names = mine.map((it) => it.skuCode || it.name).join(', ')
+    /* every package can ADD a SKU to itself (owner, 2026-10-07: "in this package I cannot add a SKU line item") — it is listed in the
+       SKU list above with its number, and ticked in this package; the first package also holds every SKU nobody else took */
     if (parcels.length === 1 || i === 0) return (
-      <p className="mt-4 text-[13px] text-ink-2">
-        <span className="font-bold text-ink">{parcels.length === 1 ? 'Holds every SKU' : 'Holds every SKU not put in another package'}</span>
-        {names ? ` — ${names}` : packable.length ? '' : ' — list the SKUs above'}
-      </p>
+      <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2">
+        <p className="text-[13px] text-ink-2">
+          <span className="font-bold text-ink">{parcels.length === 1 ? 'Holds every SKU' : 'Holds every SKU not put in another package'}</span>
+          {names ? ` — ${names}` : ''}
+        </p>
+        <AddRowLink label="Add SKU to this package" onClick={() => addItem(i)} />
+      </div>
     )
     return (
       <div className="mt-5 lg:w-1/2">
         <p className="mb-1.5 field-label">SKUs in this package</p>
         <MultiSelectDropdown options={packable.map(({ it }) => packLabel(it))} values={mine.map(packLabel)} noun="SKUs" searchPlaceholder="Search the SKUs above"
-          placeholder={packable.length ? 'Pick the SKUs packed in it' : 'List the SKUs above first'}
+          placeholder={packable.length ? 'Pick the SKUs packed in it' : 'No SKUs yet — add one below'}
           onChange={(vals) => packInto(i, vals.map((v) => packable.find(({ it }) => packLabel(it) === v)?.it).filter((x): x is ParcelItem => !!x))} />
-        <p className="mt-1 text-[12px] text-ink-3">A SKU you take out goes back to Package 1.</p>
+        <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1">
+          <AddRowLink label="Add SKU to this package" onClick={() => addItem(i)} />
+          <p className="text-[12px] text-ink-3">A SKU you take out goes back to Package 1.</p>
+        </div>
       </div>
     )
   }

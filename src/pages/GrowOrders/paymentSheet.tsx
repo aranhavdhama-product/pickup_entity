@@ -72,14 +72,17 @@ export interface PaymentChoice { method: PayMethod; last4?: string; ready: boole
  * One method card. `check` = a checkbox card (tick any number of them) instead of a radio; `aside` is
  * shown at the right of the header while the card is on (the split sheet's amount field).
  */
-function MethodCard({ on, icon, title, sub, onClick, children, check, aside }: {
+function MethodCard({ on, icon, title, sub, onClick, children, check, aside, dense }: {
   on: boolean; icon: React.ReactNode; title: string; sub: React.ReactNode; onClick: () => void; children?: React.ReactNode
   check?: boolean; aside?: React.ReactNode
+  /** compact (checkout's right rail): a card that is NOT ticked is one line — its explanation shows once it is ticked */
+  dense?: boolean
 }) {
   return (
     <div className={`rounded-md border transition-colors ${on ? 'border-ink bg-warm-50' : 'border-line bg-surface hover:border-warm-300'}`}>
       <div className="flex items-start">
-        <button type="button" role={check ? 'checkbox' : 'radio'} aria-checked={on} onClick={onClick} className="flex min-w-0 flex-1 items-start gap-3 px-4 py-3 text-left">
+        <button type="button" role={check ? 'checkbox' : 'radio'} aria-checked={on} onClick={onClick} title={dense && !on ? String(typeof sub === 'string' ? sub : '') || undefined : undefined}
+          className={`flex min-w-0 flex-1 items-start gap-3 px-4 text-left ${dense ? 'py-2.5' : 'py-3'}`}>
           {check ? (
             <span className={`mt-0.5 inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[3px] border ${on ? 'border-brand-500 bg-brand-500 text-white' : 'border-warm-300 bg-surface'}`}>
               {on && <Check size={11} strokeWidth={3} />}
@@ -92,10 +95,10 @@ function MethodCard({ on, icon, title, sub, onClick, children, check, aside }: {
           <span className="text-ink-3">{icon}</span>
           <span className="min-w-0 flex-1">
             <span className={`block text-[13px] text-ink ${on ? 'font-bold' : ''}`}>{title}</span>
-            <span className="block text-[12px] text-ink-3">{sub}</span>
+            {(!dense || on) && <span className="block text-[12px] text-ink-3">{sub}</span>}
           </span>
         </button>
-        {on && aside && <div className="shrink-0 pr-4 pt-2.5">{aside}</div>}
+        {on && aside && <div className="shrink-0 pr-4 pt-2">{aside}</div>}
       </div>
       {on && children && <div className="px-4 pb-4 pl-[52px]">{children}</div>}
     </div>
@@ -190,7 +193,7 @@ export function PaymentSheet({ amount, currency, allowCod = false, allowPayLater
  * cover the whole payable amount; the Card shows the demo form (masked number, name, MM/YY). Under the
  * cards one line says what is still to assign.
  */
-export function SplitPaymentSheet({ split }: { split: SplitPayment }) {
+export function SplitPaymentSheet({ split, compact = false }: { split: SplitPayment; compact?: boolean }) {
   const { currency, payable, balance, allowed, ticked, choice, card } = split
   const [recharging, setRecharging] = useState(false)
   const short = Math.max(0, Math.round((payable - balance) * 100) / 100)
@@ -204,8 +207,8 @@ export function SplitPaymentSheet({ split }: { split: SplitPayment }) {
   const covered = choice.left === 0
   return (
     <div>
-      <div role="group" aria-label="Ways to pay" className="flex flex-col gap-2">
-        <MethodCard check on={on('Wallet')} onClick={() => split.toggle('Wallet')} icon={<Wallet size={17} />} title="Wallet balance"
+      <div role="group" aria-label="Ways to pay" className={`flex flex-col ${compact ? 'gap-1.5' : 'gap-2'}`}>
+        <MethodCard check dense={compact} on={on('Wallet')} onClick={() => split.toggle('Wallet')} icon={<Wallet size={17} />} title="Wallet balance"
           sub={<>Balance <b className="text-ink">{money(balance, currency)}</b></>} aside={amountField('Wallet', 'Wallet')}>
           {short > 0 && (
             <div className="flex flex-wrap items-center gap-3">
@@ -214,7 +217,7 @@ export function SplitPaymentSheet({ split }: { split: SplitPayment }) {
             </div>
           )}
         </MethodCard>
-        <MethodCard check on={on('Card')} onClick={() => split.toggle('Card')} icon={<CreditCard size={17} />} title="Card / online"
+        <MethodCard check dense={compact} on={on('Card')} onClick={() => split.toggle('Card')} icon={<CreditCard size={17} />} title="Card / online"
           sub="Demo only — no card is charged and the number is never stored" aside={amountField('Card', 'Card')}>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_110px]">
             <MField label="Card number" required>
@@ -225,15 +228,15 @@ export function SplitPaymentSheet({ split }: { split: SplitPayment }) {
           </div>
         </MethodCard>
         {allowed.includes('Pay later') && (
-          <MethodCard check on={on('Pay later')} onClick={() => split.toggle('Pay later')} icon={<CalendarClock size={17} />} title="Pay later / credit"
+          <MethodCard check dense={compact} on={on('Pay later')} onClick={() => split.toggle('Pay later')} icon={<CalendarClock size={17} />} title="Pay later / credit"
             sub="Postpaid account — added to this month's invoice, shown as Due in Billing" aside={amountField('Pay later', 'Pay later')} />
         )}
         {allowed.includes('COD') && (
-          <MethodCard check on={on('COD')} onClick={() => split.toggle('COD')} icon={<Banknote size={17} />} title="Cash on delivery"
+          <MethodCard check dense={compact} on={on('COD')} onClick={() => split.toggle('COD')} icon={<Banknote size={17} />} title="Cash on delivery"
             sub="Shipping charges collected with the COD amount at delivery" aside={amountField('COD', 'Cash on delivery')} />
         )}
       </div>
-      <p role="status" className={`mt-3 text-[13px] font-bold ${covered ? 'text-success-fg' : 'text-danger-fg'}`}>
+      <p role="status" className={`${compact ? 'mt-2' : 'mt-3'} text-[13px] font-bold ${covered ? 'text-success-fg' : 'text-danger-fg'}`}>
         {covered ? 'Fully covered' : choice.left > 0 ? `${money(choice.left, currency)} left to assign` : `${money(-choice.left, currency)} too much — lower an amount`}
       </p>
       {recharging && <RechargeDialog currency={currency} suggested={short} onClose={() => setRecharging(false)} />}

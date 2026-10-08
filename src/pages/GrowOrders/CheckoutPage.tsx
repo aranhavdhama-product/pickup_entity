@@ -98,7 +98,7 @@ export default function CheckoutPage() {
   const payable = Math.round((rate + taxes) * 100) / 100
   /* how it is paid — the amount follows the chosen service (typed amounts reset when it changes) */
   const split = useSplitPayment({ amount: payable, currency: cur, allowCod: payment === 'COD' })
-  const { parts, left, ready, reason } = split.choice
+  const { parts, ready, reason } = split.choice
   const paidNow = paidNowOf(parts)
   /* no draft = nothing to pay for; clear any sidecar the abandoned form left,
      so the next order is never silently attached to that pickup or scan.
@@ -259,50 +259,46 @@ export default function CheckoutPage() {
                 {quotes.length ? (
                   <ServiceTypeChooser hideMode vehiclesElsewhere ready mode={ftl ? 'ftl' : 'ltl'} onMode={() => undefined}
                     quotes={quotes} selected={chosen?.code ?? ''} onSelect={setPicked} currency={rc} fleet={[]} counts={{}}
-                    onCount={() => undefined} fleetNote="" showErrors={false} layout={side?.layout ?? 'menu'} carrier={carrier} />
+                    onCount={() => undefined} fleetNote="" showErrors={false} layout={side?.layout ?? 'grid'} carrier={carrier} />
                 ) : <p className="text-[13px] text-ink-3">No service can be booked on this route — please contact support.</p>}
               </div>
             </Panel>
           )}
         </div>
-        <div>
-          <div className="flex flex-col gap-4 lg:sticky lg:top-4">
-            <CheckoutSummary rail draft={draft} onEdit={backToForm} linked={linked}
-              service={chosen ? `${chosen.name} · ${carrier}` : undefined}
-              payment={payment === 'COD' ? `Cash on delivery${cod ? ` · ${money(cod, cur)} collected from the receiver` : ''}` : 'Prepaid'}
-              remarks={remarks} />
-            <Panel title="Payment Summary">
-              <div className="px-5 pb-5">
-                <div className="space-y-2 text-[13px] text-ink">
-                  <div className="flex justify-between"><span className="text-ink-3">Total Shipments</span><span>1</span></div>
+        <div className="min-w-0">
+          {/* the right rail: PAYMENT FIRST (owner, 2026-10-07: "payment summary on top, without scrolling") — the price, how you pay and the
+              button in one card whose footer stays in view — then the order it is for. The rail scrolls on its own when the screen is short. */}
+          <div className="flex flex-col gap-4 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:pb-1">
+            <section aria-label="Payment summary" className="rounded-xl border border-line bg-surface shadow-ds-1">
+              <div className="flex items-baseline justify-between px-5 pb-1 pt-4">
+                <h2 className="text-[15px] font-bold text-ink">Payment Summary</h2>
+                <span className="text-[12px] text-ink-3">1 shipment</span>
+              </div>
+              <div className="px-5 pb-4">
+                <div className="space-y-1.5 text-[13px] text-ink">
                   <div className="flex justify-between"><span className="text-ink-3">Shipping charges</span><span>{dash(rate)}</span></div>
                   <div className="flex justify-between"><span className="text-ink-3">Taxes</span><span>{dash(taxes)}</span></div>
-                  <div className="mt-3 flex justify-between border-t border-line pt-3 text-[15px] font-bold"><span>Payable Amount</span><span>{dash(payable)}</span></div>
+                  <div className="flex justify-between border-t border-line pt-2 text-[15px] font-bold"><span>Payable Amount</span><span>{dash(payable)}</span></div>
                 </div>
                 {/* how you pay — in the same card as the price it pays (one or more ways; the split must add up) */}
-                <div className="mt-4 border-t border-line pt-4">
+                <div className="mt-3 border-t border-line pt-3">
                   <p className="text-[13px] font-bold text-ink">How you pay</p>
                   {chosen ? (
-                    <>
-                      <p className="mb-3 mt-0.5 text-[12px] text-ink-3">Choose one or more ways to pay the {money(payable, cur)}.</p>
-                      <SplitPaymentSheet split={split} />
-                      {parts.length > 0 && (
-                        <div className="mt-3 flex justify-between gap-3 border-t border-line pt-3 text-[13px] font-bold">
-                          <span className="text-ink-3">{left < 0 ? 'Too much' : 'Remaining'}</span>
-                          <span className={`tabular-nums ${left === 0 ? 'text-success-fg' : 'text-danger-fg'}`}>{money(Math.abs(left), cur)}</span>
-                        </div>
-                      )}
-                    </>
+                    <div className="mt-2"><SplitPaymentSheet split={split} compact /></div>
                   ) : <p className="mt-0.5 text-[12px] text-ink-3">Choose a service to see what you pay.</p>}
                 </div>
-                <div className="mt-5 flex [&>button]:w-full">
+              </div>
+              <div className="sticky bottom-0 rounded-b-xl border-t border-line bg-surface px-5 py-3">
+                <div className="flex [&>button]:w-full">
                   <Button disabled={!!blocked} onClick={proceed}>{paidNow > 0 ? `Pay ${money(paidNow, cur)} and place order` : 'Place order'}</Button>
                 </div>
-                <p className="mt-2 text-center text-[12px] text-ink-3">
+                <p className="mt-1.5 text-center text-[12px] text-ink-3">
                   {blocked || (paidNow > 0 ? `${money(paidNow, cur)} is taken when you place the order.` : 'Nothing is taken now.')}
                 </p>
               </div>
-            </Panel>
+            </section>
+            <CheckoutSummary rail draft={draft} onEdit={backToForm} linked={linked}
+              service={chosen ? `${chosen.name} · ${carrier}` : undefined} />
           </div>
         </div>
       </div>
