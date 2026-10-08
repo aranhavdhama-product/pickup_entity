@@ -16,6 +16,7 @@ import {
   GOODS_SETTING_KEY_V1, LAYOUT_GROW_KEY, LAYOUT_KEY, ORDER_GROW_KEY, ORDER_KEY, SUMMARY_GROW_KEY, SUMMARY_KEY,
 } from './formSetup'
 import { BEHAVIOR_KEY, FIELD_CONFIG_KEY } from '../ConsignmentAdd/fieldConfig'
+import { PFP_COLUMNS_CONSIGNMENT_KEY, PFP_COLUMNS_PICKUP_KEY, PFP_VIEW_KEY } from '../LocalPFP/viewSetup'
 
 /** what a stored value must look like — a server copy with anything else is not used */
 type Kind = 'object' | 'array' | 'goods'
@@ -31,12 +32,14 @@ export const SETUP_KEYS: Record<string, Kind> = {
   [CUSTOM_FIELDS_KEY]: 'array',
   /* the account's shared config the v2 forms also read (the Form Fields tab's hides / Required, relabels) */
   [BEHAVIOR_KEY]: 'object', [FIELD_CONFIG_KEY]: 'object',
+  /* Pending For Planning: how each tab opens (View + Group by) and its columns — one demo, the same page for every visitor */
+  [PFP_VIEW_KEY]: 'object', [PFP_COLUMNS_PICKUP_KEY]: 'array', [PFP_COLUMNS_CONSIGNMENT_KEY]: 'array',
 }
 const isSetupKey = (k: string) => Object.hasOwn(SETUP_KEYS, k)
 const VERSION = 1
 const API = '/api/form-setup'
 /** the pages that show a form the setup changes — they wait for the server copy before the app renders */
-export const FORM_SETUP_PATHS = /^\/(local\/consignments|local\/settings\/consignment-order|grow\/orders)(\/|$)/
+export const FORM_SETUP_PATHS = /^\/(local\/consignments|local\/settings\/consignment-order|local\/pending-for-planning|grow\/orders)(\/|$)/
 
 /** null = the key is not set (the reader's default) */
 type Snapshot = Record<string, string | null>

@@ -31,7 +31,8 @@ import { toast } from '../../nueva/toast'
    scratchpad/split/pixel-diff-log.md */
 import { ClearFilters, ColumnChooser, DateRange, FilterLine, LocalTabs, SearchBox } from '../../local/chrome'
 import { useColumnPrefs } from '../../local/columnPrefs'
-import { Columns3, ChevronDown as OpenChevron, ChevronRight as ClosedChevron, Layers, Package as PackageIcon, Truck } from 'lucide-react'
+import { PFP_COLUMNS_CONSIGNMENT_KEY, PFP_COLUMNS_PICKUP_KEY, useViewSetup } from './viewSetup'
+import { Columns3, Rows3, ChevronDown as OpenChevron, ChevronRight as ClosedChevron, Layers, Package as PackageIcon, Truck } from 'lucide-react'
 import { useGrowOrders, growOrderActions } from '../../growOrders/store'
 import type { PrAction } from '../../growOrders/prActions'
 import { PrActionDialogs } from '../LocalPickup/prSelectionActions'
@@ -254,7 +255,7 @@ const TAB_ICON: Record<TabKey, typeof Layers> = { all: Layers, 'last-mile': Pack
 
 type ModalKind = 'schedule' | 'rto' | 'plan' | 'close' | 'exception' | 'cancel'
   | 'cancelMixed' | null
-type PopKind = 'state' | 'prStatus' | 'funnel' | 'settings' | 'pagesize' | null
+type PopKind = 'state' | 'prStatus' | 'funnel' | 'settings' | 'pagesize' | 'view' | null
 
 /**
  * `variant`:
@@ -374,17 +375,23 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
   /* an unknown value reads as All. With the module off there are no tabs: the
      queue holds only consignments, all of them, on the staging column set. */
   const tab: TabKey = pickupsOn ? parseTab(params.get('tab')) : 'all'
-  /* owner, 2026-09-29: First Mile lists PICKUP REQUESTS only — no Group by (a stale `?group=none` is ignored) */
-  /* owner, 2026-10-08: First Mile can ALSO be read as consignments — `?view=consignments`, grouped under their pickup
-     request (`?group=none` = one flat list). Pickup requests stay the default. */
-  /* 2026-10-08 (2): the SAME switch on All and First Mile — **Pickup requests | Consignments**. On All the default is
-     Consignments: every first-mile consignment under its pickup request, then the last-mile ones — both legs on the first page,
-     each request's consignments together. On First Mile the default stays Pickup requests. */
-  const consView = pickupsOn && !fixture && tab === 'all'
-  const grouped = consView && params.get('group') !== 'none'
+  /* what each tab opens as (owner, 2026-10-08): the saved View setup — kept on the server for every visitor — or, for one visit,
+     a `?view=` / `?group=` in the URL. All: its consignments (default) · the pickup requests. First Mile: the pickup requests
+     (default) · their consignments. Consignments sit under their pickup request unless Group by is off. */
+  const [vs, setVs] = useViewSetup()
+  const urlView = params.get('view')
+  const consFor = (t: TabKey, useUrl: boolean): boolean => {
+    if (!pickupsOn || fixture) return false
+    if (t === 'all') return useUrl && urlView ? urlView !== 'pickups' : vs.all === 'consignments'
+    if (t === 'first-mile') return useUrl && urlView ? urlView === 'consignments' : vs.firstMile === 'consignments'
+    return false
+  }
+  const consView = consFor(tab, true)
+  const urlGroup = params.get('group')
+  const grouped = consView && (urlGroup ? urlGroup !== 'none' : vs.grouped)
   const group: GroupBy = consView ? 'none' : 'pr'
   const viewFor = (t: TabKey, g: GroupBy, cons: boolean): ColumnView =>
-    cons ? 'firstMileConsignment' : viewOf(t, g)
+    cons ? 'firstMileConsignment' : t === 'all' ? 'pickup' : viewOf(t, g)
   const view: ColumnView = fixture || !pickupsOn ? 'consignment' : viewFor(tab, group, consView)
   /* owner, 2026-09-25: the filter line follows the tab's ROW KIND — pickup
      requests get the Pickup page's grammar, consignments the staging set, All
@@ -392,7 +399,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
   const filterMode: FilterMode = filterModeOf(view)
   const tabRows = useMemo(
     () => (!pickupsOn ? all
-      : tab === 'all' && consView ? all.filter((r) => !isPickupRow(r))        // every consignment, first mile included
+      : tab === 'all' ? (consView ? all.filter((r) => !isPickupRow(r)) : all.filter(isPickupRow))   // every consignment, or the pickup requests
         : all.filter((r) => inTab(tab, group, r))), [all, tab, group, pickupsOn, consView])
   /** what the pickup-request and All cells read */
   const cellCtx = useMemo<ExtraCtx>(() => ({
@@ -506,7 +513,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
   const tabCounts = useMemo(() => {
     const needle = q.trim().toLowerCase()
     const base = (r: UnifiedRow) => (!funnel.Merchant || r.merchant === funnel.Merchant) && (!needle || matchesSearch(r, needle))
-    const count = (t: TabKey) => (t === tab && !consView ? filtered.length : all.filter((r) => inTab(t, 'pr', r) && base(r)).length)
+    const count = (t: TabKey) => (t === tab && tab !== 'all' && !consView ? filtered.length : all.filter((r) => inTab(t, 'pr', r) && base(r)).length)
     return { 'first-mile': count('first-mile'), 'last-mile': count('last-mile'), all: count('all') }
   }, [all, filtered, tab, group, q, funnel.Merchant])
 
@@ -676,13 +683,12 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
 
   /* A tab change clears the selection: rows picked on another tab would stay
      selected out of sight, and the panel would act on rows nobody can see. */
-  const switchTab = (next: TabKey, opts?: { flat?: boolean }) => {
-    const nextCons = next === 'all'
+  const switchTab = (next: TabKey, opts?: { cons?: boolean }) => {
+    const nextCons = opts?.cons ?? consFor(next, false)
     setParams((p) => {
       const n = new URLSearchParams(p)
       if (next === 'all') n.delete('tab'); else n.set('tab', next)
       n.delete('group'); n.delete('view')
-      if (nextCons && opts?.flat) n.set('group', 'none')
       return n
     }, { replace: true })
     clearSelection()
@@ -731,8 +737,8 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
   const dataOf = (cols: typeof PR_VIEW_COLUMNS) => cols.filter((c) => c.key !== '_select' && c.key !== '_flags' && c.key !== '_pad')
   const prData = useMemo(() => dataOf(PR_VIEW_COLUMNS), [])
   const consData = useMemo(() => dataOf(tabColumns), [tabColumns])
-  const [prPick, setPrPick] = useColumnPrefs('pfp-columns-pickup-v1', prData.map((c) => c.key), prData.map((c) => c.key))
-  const [consPick, setConsPick] = useColumnPrefs('pfp-columns-consignment-v1', CONSIGNMENT_TAB_COLUMNS.filter((c) => !['_select', '_flags', '_pad'].includes(c.key)).map((c) => c.key), CONSIGNMENT_TAB_COLUMNS.map((c) => c.key))
+  const [prPick, setPrPick] = useColumnPrefs(PFP_COLUMNS_PICKUP_KEY, prData.map((c) => c.key), prData.map((c) => c.key))
+  const [consPick, setConsPick] = useColumnPrefs(PFP_COLUMNS_CONSIGNMENT_KEY, CONSIGNMENT_TAB_COLUMNS.filter((c) => !['_select', '_flags', '_pad'].includes(c.key)).map((c) => c.key), CONSIGNMENT_TAB_COLUMNS.map((c) => c.key))
   const pick = (cols: typeof PR_VIEW_COLUMNS, keep: string[]) =>
     cols.filter((c) => c.key === '_select' || c.key === '_flags' || c.key === '_pad' || keep.includes(c.key))
   const columns = view === 'pickup' ? pick(PR_VIEW_COLUMNS, prPick)
@@ -905,6 +911,47 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
       <Download size={16} />
     </button>
   )
+
+  /* the View switch — a quiet icon, not a bar (owner, 2026-10-08). What it sets is the saved View setup, so it is the page every
+     visitor opens (kept on the server with the form setup). */
+  const viewControl = !fixture && pickupsOn && (tab === 'all' || tab === 'first-mile') ? (
+    <div style={{ position: 'relative' }} onClick={(e) => e.stopPropagation()}>
+      <button type="button" className="pfp-iconbtn" title="View — pickup requests or consignments" aria-label="View"
+        onClick={() => setPop(pop === 'view' ? null : 'view')}>
+        <Rows3 size={16} />
+      </button>
+      {pop === 'view' && (
+        <div className="pfp-pop" style={{ top: 36, right: 0, width: 280 }}>
+          <p className="lc-pop-group">Show</p>
+          {([['pickups', 'Pickup requests'], ['consignments', 'Consignments']] as const).map(([k, label]) => (
+            <button key={k} type="button" className="pfp-pop-option" onClick={() => { setVs(tab === 'all' ? { all: k } : { firstMile: k }); switchTab(tab, { cons: k === 'consignments' }) }}>
+              <input type="radio" readOnly checked={(k === 'consignments') === consView} tabIndex={-1} />
+              <span>{label}</span>
+            </button>
+          ))}
+          {consView && (<>
+            <p className="lc-pop-group">Consignments</p>
+            <button type="button" className="pfp-pop-option" onClick={() => { setVs({ grouped: !grouped }); setParams((p) => { const n = new URLSearchParams(p); n.delete('group'); return n }, { replace: true }) }}>
+              <input type="checkbox" readOnly checked={grouped} tabIndex={-1} />
+              <span>Group by pickup request</span>
+            </button>
+            {grouped && (() => {
+              const keys = [...new Set(display.map((x) => cellCtx.byId.get(x.orderId)?.pickupRequestId ?? ''))]
+              const allShut = keys.length > 0 && keys.every((k) => collapsedGroups.has(k))
+              return (
+                <button type="button" className="pfp-pop-option" onClick={() => setCollapsedGroups(allShut ? new Set() : new Set(keys))}>
+                  <span>{allShut ? 'Expand all groups' : 'Collapse all groups'}</span>
+                </button>
+              )
+            })()}
+          </>)}
+          <p style={{ margin: 0, padding: '8px 16px 10px', fontSize: 12, color: 'var(--pfp-ink-hint)' }}>
+            Saved for everyone — the page opens this way for every visitor.
+          </p>
+        </div>
+      )}
+    </div>
+  ) : null
 
   const columnsControl = !fixture && pickupsOn && (isPickupGrid || isConsGrid) ? (
     <ColumnChooser title={isPickupGrid ? 'Pickup request columns' : 'Consignment columns'}
@@ -1087,6 +1134,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
               {selected.size ? `${selected.size} selected` : 'Select orders for more action'}
             </span>
             {downloadControl}
+            {viewControl}
             {columnsControl}
             {settingsControl}
             {selectionPanel}
@@ -1133,6 +1181,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
             </span>
 
             {downloadControl}
+            {viewControl}
             {columnsControl}
             {settingsControl}
             {selectionPanel}
@@ -1147,28 +1196,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
             <LocalTabs
               tabs={tabs.map((t) => ({ id: t.key, label: t.label, count: tabCounts[t.key], icon: TAB_ICON[t.key] }))}
               active={tab} onChange={(id) => switchTab(id as TabKey)}
-              right={(
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 12 }}>
-                  {/* All lists the consignments; this folds each pickup request's consignments together (owner, 2026-10-08) */}
-                  {grouped && (() => {
-                    const keys = [...new Set(display.map((x) => cellCtx.byId.get(x.orderId)?.pickupRequestId ?? ''))]
-                    const allShut = keys.length > 0 && keys.every((k) => collapsedGroups.has(k))
-                    return (
-                      <button type="button" onClick={() => setCollapsedGroups(allShut ? new Set() : new Set(keys))}
-                        style={{ border: 0, background: 'none', cursor: 'pointer', color: 'var(--pfp-brand)', fontWeight: 700, whiteSpace: 'nowrap' }}>
-                        {allShut ? 'Expand all' : 'Collapse all'}
-                      </button>
-                    )
-                  })()}
-                  {consView && (
-                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, cursor: 'pointer', color: 'var(--pfp-ink-muted)', whiteSpace: 'nowrap' }}>
-                      <input type="checkbox" checked={grouped} onChange={() => switchTab('all', { flat: grouped })} />
-                      Group by pickup request
-                    </label>
-                  )}
-                  {canCreatePickup ? <CreatePickupButton onPick={setCreating} /> : null}
-                </span>
-              )} />
+              right={canCreatePickup ? <CreatePickupButton onPick={setCreating} /> : undefined} />
           )}
 
           {/* ----------------------------------------------- row 2: the strip */}

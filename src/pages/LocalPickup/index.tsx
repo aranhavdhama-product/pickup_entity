@@ -263,7 +263,7 @@ function PickupRequestsList() {
           <Panel>
             <EmptyState
               title={filtersOn ? 'Nothing matches these filters' : tab === ATTENTION_REQUIRED ? 'No exceptions' : `No pickup requests under ${tab}`}
-              hint={filtersOn ? 'Clear the filters to see the whole list again.' : tab === ATTENTION_REQUIRED ? undefined : 'Use Create pickup to book one.'} />
+              hint={filtersOn ? 'Clear the filters to see the whole list again.' : tab === ATTENTION_REQUIRED ? undefined : 'Use Blind pickup to book one.'} />
           </Panel>
         ) : (
           <>

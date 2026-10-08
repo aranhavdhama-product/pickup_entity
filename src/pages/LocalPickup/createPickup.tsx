@@ -47,7 +47,8 @@ export function CreatePickupButton({ onPick }: { onPick: (k: CreatePickupKind) =
   const cfg = usePickupModuleConfig()
   /* ONE button (owner, 2026-10-08: "remove this option"): it opens the Blind pickup request; with blind pickups off it opens
      the Pickup request for the consignments already waiting */
-  return <Button icon={<Plus size={15} />} onClick={() => onPick(blindPickupsAllowed(cfg) ? 'blind' : 'request')}>Create pickup</Button>
+  const blind = blindPickupsAllowed(cfg)
+  return <Button icon={<Plus size={15} />} onClick={() => onPick(blind ? 'blind' : 'request')}>{blind ? 'Blind pickup' : 'Create pickup'}</Button>
 }
 
 /** Mount once per page: renders the popup the button picked. `onCreated` gets every request made. */
