@@ -721,6 +721,13 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
     ? CONSIGNMENT_TAB_COLUMNS.filter((c) => c.key === '_select' || c.key === '_flags' || c.key === '_pad' || !hidden.has(c.key))
       /* All reads both legs, so Active Leg comes back beside State (owner, 2026-10-08) */
       .flatMap((c) => (tab === 'all' && c.key === 'state' ? [c, LEG_COLUMN] : [c]))
+      /* … and Carrier follows Secondary State (owner, 2026-10-08) */
+      .reduce<StagingColumn[]>((out, c, _i, all2) => {
+        if (tab !== 'all') return [...out, c]
+        if (c.key === 'carrier') return out
+        const carrier = all2.find((x) => x.key === 'carrier')
+        return c.key === 'secondaryState' && carrier ? [...out, c, carrier] : [...out, c]
+      }, [])
     : stagingColumns
   const columns = view === 'pickup' ? PR_VIEW_COLUMNS
     : view === 'common' ? COMMON_COLUMNS
