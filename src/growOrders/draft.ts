@@ -257,7 +257,7 @@ export function readCheckoutSidecar(): CheckoutSidecar | null {
     if (!v || !Array.isArray(v.services)) return null
     return {
       services: v.services.filter((s): s is string => typeof s === 'string' && !!s), locked: !!v.locked,
-      layout: v.layout === 'list' || v.layout === 'grid' ? v.layout : 'menu',
+      layout: v.layout === 'menu' ? 'menu' : 'grid',
       label: typeof v.label === 'string' && v.label.trim() ? v.label : 'Service Type',
       back: typeof v.back === 'string' && v.back.startsWith('/grow/orders/add') ? v.back : '/grow/orders/add',
     }

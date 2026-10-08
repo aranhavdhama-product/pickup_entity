@@ -207,8 +207,8 @@ export const FORM_TIER_KEY = 'console-consignment-form-v2-tier'
  *   shipFrom · shipTo · rto   each address on its own:
  *             'cards'  = a saved-address picker read back as a card, Add / Edit in a popup (the form until now)
  *             'inline' = the fields on the form itself, under a search of the saved addresses
- *   services  (Grow) 'menu' = ONE compact dropdown with the carrier and the rate on each line (default since 2026-10-07) ·
- *             'grid' = the lane's services as compact cards, two per row · 'list' = one full-width card each
+ *   services  (Grow) 'grid' = Cards: the lane's services as cards, ONE PER ROW at the full width — radio, name, carrier, rate (default,
+ *             owner 2026-10-07) · 'menu' = ONE compact dropdown. ('list' is retired and reads as Cards.)
  *   skuList   'under' = each package with its SKUs under it (default) · 'separate' = the SKU list first, then the packages,
  *             each package picking the SKUs packed in it (owner, 2026-10-07: back as a builder choice)
  *   addresses  'side' = Ship From | Ship To side by side (default; they still stack when the card is narrow) ·
@@ -222,7 +222,7 @@ export type SkuListLayout = 'under' | 'separate'
 export type AddressRole = 'shipFrom' | 'shipTo' | 'rto'
 export const ADDRESS_ROLES: AddressRole[] = ['shipFrom', 'shipTo', 'rto']
 export interface FormLayout { shipFrom: AddressEntry; shipTo: AddressEntry; rto: AddressEntry; services: ServiceLayout; addresses: AddressArrangement; skuList: SkuListLayout }
-export const DEFAULT_LAYOUT: FormLayout = { shipFrom: 'cards', shipTo: 'cards', rto: 'cards', services: 'menu', addresses: 'side', skuList: 'under' }
+export const DEFAULT_LAYOUT: FormLayout = { shipFrom: 'cards', shipTo: 'cards', rto: 'cards', services: 'grid', addresses: 'side', skuList: 'under' }
 export const LAYOUT_KEY = 'fe-consignment-form-v2-layout'
 export const LAYOUT_GROW_KEY = 'fe-consignment-form-v2-layout-grow'
 const isEntry = (v: unknown): v is AddressEntry => v === 'cards' || v === 'inline'
@@ -233,7 +233,9 @@ const asLayout = (raw: unknown): Partial<FormLayout> => {
   /* the first version stored one choice for every address */
   if (isEntry(r.address)) for (const k of ADDRESS_ROLES) out[k] = r.address
   for (const k of ADDRESS_ROLES) if (isEntry(r[k])) out[k] = r[k] as AddressEntry
-  if (r.services === 'menu' || r.services === 'grid' || r.services === 'list') out.services = r.services
+  /* 'list' (one big collapsing card) was retired 2026-10-07 — it reads as Cards, one per row */
+  if (r.services === 'menu') out.services = 'menu'
+  else if (r.services === 'grid' || r.services === 'list') out.services = 'grid'
   if (r.addresses === 'side' || r.addresses === 'stack') out.addresses = r.addresses
   if (r.skuList === 'under' || r.skuList === 'separate') out.skuList = r.skuList
   return out

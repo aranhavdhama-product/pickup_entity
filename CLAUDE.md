@@ -711,7 +711,7 @@ effects (a cancelled/rescheduled PR leaving its trip) flow through `onPickupRequ
   cards in lifecycle order: **1 Create** (Manual | Automatic; Automatic = "create it when the consignment is Created · Label
   Generated · Ready To Ship" — the exact FarEye event stays under More options; Shipper chooses the time; Manual = book before
   consignments exist; a link to Schedules) · **2 Book the time** (Book up to N days ahead · Same-day cut-off · More: pickup days,
-  Holiday master) · **Pick up and hand over** (Advanced only since 2026-10-07: **Wait for the hub handover** `manifestRequired`, default ON — it only decides whether a completed pickup waits for its handover; hub inward scanning is the Inbound page and is NOT switched here; Who scans Driver | Hub | Both = `scanMode`, also in Base Modules; proof signature, photo, one-time code, parcels not on the request) · **4 If a pickup goes wrong** (try
+  Holiday master) · **Pick up and hand over** (Advanced only since 2026-10-07: **Wait for the hub handover** `manifestRequired`, default ON — it only decides whether a completed pickup waits for its handover; hub inward scanning is the Inbound page and is NOT switched here; WHO scans (`scanMode`) is NOT on this page — it is Base Modules → Pilot Driver App → Handover scan mode; proof signature, photo, one-time code, parcels not on the request) · **4 If a pickup goes wrong** (try
   again automatically, Reason Policy; More: merchants change/cancel until, consignments added until). `manifestRequired` OFF =
   `store.ts stamp()` closes the handover the moment a request completes (no scan to reconcile).
 - **No Start time / End time on any pickup request form** (`SlotWindowFields timeFields={false}`: Schedule pickup, Create / Blind

@@ -70,9 +70,9 @@ function ServiceChoice({ q, carrier, selected, inert, onClick, currency }: {
       onKeyDown={(e) => { if (!inert && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onClick() } }}
       className={`flex min-w-0 items-center gap-4 rounded-lg bg-surface text-left transition-colors
         focus:outline-none focus-visible:ring-[3px] focus-visible:ring-brand-500/20
-        ${selected ? 'cursor-pointer border-2 border-brand-500 px-[19px] py-[15px]'
-          : inert ? 'cursor-default border border-line px-5 py-4 opacity-60'
-          : 'cursor-pointer border border-line px-5 py-4 hover:border-warm-400'}`}>
+        ${selected ? 'cursor-pointer border-2 border-brand-500 px-[15px] py-[11px]'
+          : inert ? 'cursor-default border border-line px-4 py-3 opacity-60'
+          : 'cursor-pointer border border-line px-4 py-3 hover:border-warm-400'}`}>
       <span className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${selected ? 'border-brand-500' : 'border-warm-400'}`}>
         {selected && <span className="h-2.5 w-2.5 rounded-full bg-brand-500" />}
       </span>
@@ -184,7 +184,7 @@ export function ServiceTypeChooser({
             ) : grid ? (
               /* inside the form's own card (hideMode) the cards sit on it directly — no second frame */
               <div className={hideMode ? '' : 'mt-4 rounded-xl border border-line p-5'}>
-                <div className="grid gap-4 lg:grid-cols-2" role="radiogroup" aria-label="Service Type">
+                <div className="grid gap-2.5" role="radiogroup" aria-label="Service Type">
                   {quotes.map((q) => (
                     <ServiceChoice key={q.code} q={q} carrier={carrier} currency={currency} selected={ready && q.code === selected} inert={!ready}
                       onClick={() => pick(q.code)} />

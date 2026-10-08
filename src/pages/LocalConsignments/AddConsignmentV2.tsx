@@ -1481,8 +1481,10 @@ const ADDRESS_LAYOUT_ROWS: { key: 'addresses' | 'shipFrom' | 'shipTo' | 'rto'; l
 /** Grow (merchant portal): the carrier's / ops' fields never render — the merchant is the header ⇄, the carrier
     allocates the carrier, ops set the loading time, vehicle, coordinates and pallet space. (The load type is Grow's
     own Handling question; owner 2026-09-29: the Handling categories and tags show on Grow too.) */
+/* 2026-10-07 (owner: "remove this from the Grow portal"): Grow has no Payment card — every order is Prepaid, with no COD amount and no
+   remarks (how it is paid is the checkout's one question) */
 const MERCHANT_OFF = new Set(['merchant', 'consignmentNumber', 'totalLoadingTime', 'vehicleType',
-  'addrCoordinates', 'pkgPalletSpace'])
+  'addrCoordinates', 'pkgPalletSpace', 'paymentMode', 'orderAmount', 'remarks'])
 /** the console form never has these (Grow's own Payment card asks them) */
 const CONSOLE_OFF = new Set(['remarks'])
 /**
@@ -2268,9 +2270,8 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     : [...vehicleReq, !!(isFtl ? consoleFtl : consoleService), ...needOk('labelFormat', !!c.labelFormat),
       ...needOk('totalLoadingTime', (c.totalLoadingTime ?? 0) > 0)]
   const handlingReq = [...needOk('tags', (c.tags ?? []).length > 0), ...customReq('sec-handling')]
-  /* Grow's Payment card: a COD order says how much to collect (unless the builder hides the amount) */
-  const paymentReq = merchantMode ? [...needOk('paymentMode', true), ...(codAsked ? [(c.orderAmount ?? 0) > 0] : []),
-    ...needOk('remarks', filled(c.remarks)), fmtOk('remarks', c.remarks)] : []
+  /* no Payment card on Grow any more (2026-10-07) and none on the console: nothing here to require */
+  const paymentReq: boolean[] = []
   const extrasReq = [...vasReq, ...needOk('specialInstructions', filled(c.specialInstructions)), fmtOk('specialInstructions', c.specialInstructions),
     /* Grow asks Label Format in its Service & instructions card */
     ...(merchantMode ? needOk('labelFormat', !!c.labelFormat) : []),
@@ -2587,7 +2588,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   const sumSec: string[] = []
   /* Grow: no Service Type card on step 1 — it is chosen at checkout; the builder previews it after the cards, unmovable */
   const sections = merchantMode ? ['sec-consignment', 'sec-parties', 'sec-packages', 'sec-handling', ...((mode === 'ftl' || editing) && vehicleCard ? ['sec-vehicle'] : []),
-    'sec-extras', 'sec-payment', ...sumSec]
+    'sec-extras', ...sumSec]
     : simple ? ['sec-consignment', 'sec-parties', isFtl ? 'sec-vehicle' : 'sec-packages', 'sec-carrier'] : isFtl
     ? ['sec-consignment', 'sec-parties', ...svcSec, ...(vehicleCard ? ['sec-vehicle'] : []), ...(handlingVisible ? ['sec-handling'] : []), 'sec-carrier', ...sumSec]
     : ['sec-consignment', 'sec-parties', 'sec-packages', ...(handlingVisible ? ['sec-handling'] : []), ...svcSec, 'sec-carrier', ...sumSec]
@@ -3190,10 +3191,12 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   const addressLayoutPanel = editing && (
     <div className="mb-6 rounded-lg border border-dashed border-warm-300 p-4">
       <p className="mb-3 text-[13px] font-bold text-ink">How addresses are shown <span className="font-normal text-ink-3">— the same on every consignment</span></p>
-      <div className="grid gap-3">
+      {/* ONE row (owner, 2026-10-07: "in the form builder can it be in one row"): Layout · Ship From · Ship To · RTO address, wrapping
+          only when the card is too narrow for them all */}
+      <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
         {ADDRESS_LAYOUT_ROWS.map((row) => (
-          <div key={row.key} className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <span className="flex w-28 shrink-0 items-center gap-1.5 text-[13px] text-ink-2">
+          <div key={row.key} className="flex items-center gap-2.5">
+            <span className="flex shrink-0 items-center gap-1.5 text-[13px] text-ink-2">
               {row.label}
               {consoleLayout && draftLayout[row.key] !== consoleLayout[row.key] && (
                 <Tip text="Changed for Grow — the console form differs"><span className={`${CHIP} bg-brand-50 font-bold text-brand-600`}>Grow</span></Tip>
@@ -4160,12 +4163,11 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
       count={layout.services === 'grid' && quotes.length > 1 ? quotes.length : undefined}
       action={editing ? (
         <LayoutSeg label="Show as" value={layout.services} onChange={(v) => setDraftLayout((l) => ({ ...l, services: v }))} options={[
+          { value: 'grid', label: 'Cards', tip: 'One full-width card per service — radio, name, carrier, rate' },
           { value: 'menu', label: 'Dropdown', tip: 'One compact dropdown — the shortest step' },
-          { value: 'grid', label: 'Grid', tip: 'Two services per row — less scrolling' },
-          { value: 'list', label: 'List', tip: 'One full-width card per service' },
         ]} />
       ) : undefined}
-      caption={`Merchants pick it on the next step (Service & payment), with the estimated rate for this route. ${layout.services === 'menu' ? 'One dropdown.' : layout.services === 'grid' ? 'Two per row.' : 'One per row.'} Dedicate Truck is in Handling.`}>
+      caption={`Merchants pick it on the next step (Service & payment), with the estimated rate for this route. ${layout.services === 'menu' ? 'One dropdown.' : 'One card per row.'} Dedicate Truck is in Handling.`}>
       {editing ? <Configurable fieldKey="serviceType">{serviceChooser}</Configurable> : serviceChooser}
       {showErrors && !ready && (
         <ErrLine className="mt-3">Add {[!laneReady(sender) && 'a Ship From address', !allDrops.every(laneReady) && 'a Ship To address',
@@ -4597,7 +4599,6 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
       'tags', ...(merchantMode ? ['dedicateTruck', 'vehicleDetails'] : []), ...customKeys('sec-handling')] },
     { id: 'sec-service', title: 'Service & instructions', keys: ['serviceType', ...(merchantMode ? [] : ['dedicateTruck', 'vehicleType', 'vehicleDetails']),
       'labelFormat', 'totalLoadingTime', 'specialInstructions', 'vas', ...customKeys('sec-service')] },
-    ...(merchantMode ? [{ id: 'sec-payment', title: 'Payment', keys: ['paymentMode', 'orderAmount', 'remarks'] }] : []),
   ].map((g) => ({ ...g, keys: g.keys.filter((k) => known(k) && !(merchantMode ? MERCHANT_OFF : CONSOLE_OFF).has(k)) }))
   /** a field's name as the form shows it */
   const fieldName = (k: string) => (k === 'dedicateTruck' ? custom('dedicateTruck', 'Dedicate Truck', 'Load type')

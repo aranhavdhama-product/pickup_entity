@@ -138,11 +138,6 @@ const STATE_HINT: Record<AutoPickupAfterState, string> = {
 const SCAN_LABEL: Record<PickupModuleConfig['scanMode'], string> = {
   driver: 'The driver, at pickup', hub: 'The hub, on arrival', both: 'Both — they must match',
 }
-const SCAN_HINT: Record<PickupModuleConfig['scanMode'], string> = {
-  driver: "The driver's scan is the manifest; the hub does not need to match it.",
-  hub: 'Nothing is scanned at pickup; the hub counts the parcels on arrival.',
-  both: 'The driver scans at pickup, the hub scans on arrival; the request closes when they match.',
-}
 const POD_LABEL: Record<PodLevel, string> = { required: 'Required', optional: 'Optional', off: 'Off' }
 const OVERAGE_LABEL: Record<PickupModuleConfig['overagePolicy'], string> = { hold: 'Hold for review', 'auto-create': 'Create an order', reject: 'Reject' }
 const STAGE_LABEL: Record<PickupModuleConfig['merchantCancelUntil'], string> = { Requested: 'It is requested', Planned: 'It is planned', Assigned: 'A driver is assigned' }
@@ -157,7 +152,7 @@ interface Draft {
   bookingHorizonDays: string
   sameDayCutoff: string
   pickupDaysSource: PickupDaysSource
-  manifestRequired: boolean; scanMode: PickupModuleConfig['scanMode']
+  manifestRequired: boolean
   signature: PodLevel; photo: PodLevel; otp: boolean; overagePolicy: PickupModuleConfig['overagePolicy']
   autoRescheduleOnFail: boolean
   merchantCancelUntil: PickupModuleConfig['merchantCancelUntil']; allowAddToExistingUntil: PickupModuleConfig['allowAddToExistingUntil']
@@ -166,7 +161,7 @@ const draftOf = (c: PickupModuleConfig): Draft => ({
   enabled: c.enabled, mode: c.mode, triggerEvent: c.autoPickup.triggerEvent, slotConfirmation: c.autoPickup.slotConfirmation,
   blindAllowed: c.manualPickup.blindAllowed, userSelectsWindow: c.autoPickup.userSelectsWindow,
   bookingHorizonDays: String(c.bookingHorizonDays), sameDayCutoff: c.sameDayCutoff, pickupDaysSource: c.pickupDaysSource,
-  manifestRequired: c.manifestRequired, scanMode: c.scanMode,
+  manifestRequired: c.manifestRequired,
   signature: c.podRequirements.signature, photo: c.podRequirements.photo, otp: c.podRequirements.otp, overagePolicy: c.overagePolicy,
   autoRescheduleOnFail: c.autoRescheduleOnFail,
   merchantCancelUntil: c.merchantCancelUntil, allowAddToExistingUntil: c.allowAddToExistingUntil,
@@ -206,7 +201,7 @@ export default function PickupSettings() {
       manualPickup: { ...stored.manualPickup, blindAllowed: v.blindAllowed },
       /* shared by both modes — top-level (autoPickup.maxDaysAhead is derived from it) */
       bookingHorizonDays: v.bookingHorizonDays, sameDayCutoff: v.sameDayCutoff, pickupDaysSource: v.pickupDaysSource,
-      manifestRequired: v.manifestRequired, scanMode: v.scanMode,
+      manifestRequired: v.manifestRequired,
       podRequirements: { signature: v.signature, photo: v.photo, otp: v.otp }, overagePolicy: v.overagePolicy,
       autoRescheduleOnFail: v.autoRescheduleOnFail, merchantCancelUntil: v.merchantCancelUntil, allowAddToExistingUntil: v.allowAddToExistingUntil })
     set({ bookingHorizonDays: String(v.bookingHorizonDays), sameDayCutoff: v.sameDayCutoff })   // show the clamped values
@@ -220,7 +215,7 @@ export default function PickupSettings() {
   /* the fold opens by itself when something in it is not at its default — a changed setting is never hidden */
   const D = DEFAULT_PICKUP_MODULE_CONFIG
   const advancedChanged = draft.userSelectsWindow || draft.slotConfirmation || !EVENT_AFTER_STATE[draft.triggerEvent] || !draft.blindAllowed
-    || !draft.manifestRequired || draft.pickupDaysSource !== D.pickupDaysSource || draft.scanMode !== D.scanMode || draft.signature !== D.podRequirements.signature
+    || !draft.manifestRequired || draft.pickupDaysSource !== D.pickupDaysSource || draft.signature !== D.podRequirements.signature
     || draft.photo !== D.podRequirements.photo || draft.otp !== D.podRequirements.otp || draft.overagePolicy !== D.overagePolicy
     || draft.autoRescheduleOnFail !== D.autoRescheduleOnFail || draft.merchantCancelUntil !== D.merchantCancelUntil
     || draft.allowAddToExistingUntil !== D.allowAddToExistingUntil
@@ -233,7 +228,7 @@ export default function PickupSettings() {
     { title: 'Create', caption: auto ? `Automatic — when a consignment is ${state}` : `Manual — merchants and ops book${draft.blindAllowed ? ', even before consignments exist' : ''}` },
     { title: 'Book', caption: `Up to ${plural(would.bookingHorizonDays, 'day')} ahead; same-day until ${would.sameDayCutoff}` },
     { title: 'Pick up', caption: draft.manifestRequired
-      ? `Handover: ${SCAN_LABEL[draft.scanMode].toLowerCase()}${proof.length ? ` · proof: ${proof.join(', ')}` : ''}`
+      ? `Handover: ${SCAN_LABEL[stored.scanMode].toLowerCase()}${proof.length ? ` · proof: ${proof.join(', ')}` : ''}`
       : `Closes when picked up${proof.length ? ` · proof: ${proof.join(', ')}` : ''}` },
     { title: 'If it goes wrong', caption: `${draft.autoRescheduleOnFail ? 'Tries again automatically; ' : ''}the Reason Policy decides` },
   ]
@@ -313,21 +308,13 @@ export default function PickupSettings() {
                 </Row>
                 <GroupLabel>Pick up and hand over</GroupLabel>
                 {/* what this switch really is (owner, 2026-10-07: "inward scanning is controlled elsewhere"): hub inward scanning lives on the
-                    Inbound page and is not turned off here — this only decides whether a completed pickup WAITS for its handover */}
+                    Inbound page, and WHO scans (driver / hub / both) is the Handover scan mode in Base Modules → Pilot Driver App — neither is
+                    set here; this only decides whether a completed pickup WAITS for its handover */}
                 <Row label="Wait for the hub handover" hint={draft.manifestRequired
                   ? 'A completed pickup stays open until its scans match. Hub inward scanning is on the Inbound page.'
                   : 'A completed pickup closes at once — nothing waits to be matched at the hub.'}>
                   <ToggleField checked={draft.manifestRequired} onChange={(on) => set({ manifestRequired: on })} label="Wait for the hub handover" />
                 </Row>
-                {draft.manifestRequired && (
-                  <Row label="Who scans the parcels" hint={SCAN_HINT[draft.scanMode]}>
-                    <div className="w-full">
-                      <MenuSelect value={draft.scanMode} options={['both', 'driver', 'hub']}
-                        labels={(m) => SCAN_LABEL[m as PickupModuleConfig['scanMode']] ?? m}
-                        onChange={(m) => set({ scanMode: m as PickupModuleConfig['scanMode'] })} />
-                    </div>
-                  </Row>
-                )}
                 <Row label="Proof — signature" hint="The shipper signs on the driver's phone.">
                   <div className="w-full">
                     <MenuSelect value={draft.signature} options={['required', 'optional', 'off']} labels={(pl) => POD_LABEL[pl as PodLevel] ?? pl}
