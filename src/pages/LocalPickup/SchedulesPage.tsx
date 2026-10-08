@@ -1,5 +1,5 @@
 /**
- * Pickup Schedules (`/local/pickup/schedules`) — the roster (milk run) master, Skynet First Mile (2026-10-07).
+ * Merchant master (`/local/settings/merchant-master`; was Pickup Schedules at `/local/pickup/schedules`, which redirects) — the roster (milk run) master, Skynet First Mile (2026-10-07).
  *
  * A schedule says WHICH merchant location is collected, on WHICH days, in WHICH runs (time windows). Every operating day the
  * daily job turns each active run into ONE pickup request (source "Schedule") — whether or not an order has arrived —
@@ -13,8 +13,8 @@
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { CalendarClock, CircleAlert, CircleCheck, Pause, Play, Plus, RefreshCw, Trash2, X } from 'lucide-react'
-import { Button, DataTable, EmptyState, Field, Input, MenuSelect, Modal, Panel, StatusPill, type SelectionAction } from '../../nueva/components'
-import { IconBtn, LocalPage, LocalTabs, SearchBox } from '../../local/chrome'
+import { Button, DataTable, EmptyState, Field, Input, MenuSelect, Modal, PageHeader, Panel, StatusPill, type SelectionAction } from '../../nueva/components'
+import { IconBtn, LocalPage, SearchBox } from '../../local/chrome'
 import { toast } from '../../nueva/toast'
 import { useGrowOrders } from '../../growOrders/store'
 import { INBOUND_HUBS, hubName, inboundHubFor } from '../../growOrders/hubs'
@@ -196,9 +196,10 @@ export default function SchedulesPage() {
 
   return (
     <LocalPage>
-      <LocalTabs
-        tabs={[{ id: 'requests', label: 'Pickup requests' }, { id: 'schedules', label: 'Schedules', count: st.schedules.length }]}
-        active="schedules" onChange={(id) => { if (id === 'requests') nav('/local/pickup') }}
+      {/* the MERCHANT MASTER (owner, 2026-10-08: "do not redirect to the pickup page — call it merchant master"): a settings page of its
+          own, not a tab of the Pickup page */}
+      <PageHeader title="Merchant master" subtitle="Merchant locations collected on set days — one pickup request per run, with or without orders"
+        onBack={() => nav('/local/settings/pickup')}
         right={<>
           <SearchBox value={q} onChange={setQ} placeholder="Search schedules" />
           <IconBtn title="Generate now" onClick={generate}><RefreshCw size={16} /></IconBtn>

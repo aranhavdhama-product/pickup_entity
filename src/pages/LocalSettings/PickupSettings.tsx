@@ -267,7 +267,7 @@ export default function PickupSettings() {
                 safe default and waits in ONE fold. Nothing here needs touching for the module to work. */}
             <Card n={1} icon={<Workflow size={16} />} title="Pickup settings"
               caption="The defaults already work — change only what is different for you.">
-              <Row label="How pickup requests are created" hint={auto ? 'Created for you as soon as a consignment is ready — booking buttons are hidden.' : 'Merchants and ops book each pickup. Add Schedules for regular collections.'}>
+              <Row label="How pickup requests are created" hint={auto ? 'Created for you as soon as a consignment is ready — booking buttons are hidden.' : 'Merchants and ops book each pickup. Add regular collections in the Merchant master.'}>
                 <Seg<PickupMode> label="How pickup requests are created" value={draft.mode} onChange={(m) => set({ mode: m })}
                   options={[{ value: 'manual', label: 'Manual' }, { value: 'auto', label: 'Automatic' }]} />
               </Row>
@@ -309,8 +309,8 @@ export default function PickupSettings() {
                   </Row>
                 )}
               </>)}
-              <Row label="Scheduled pickups (rosters)" hint={`A merchant location collected on set days, with or without orders — ${schedules.filter((x) => x.status === 'Active').length} active.`}>
-                <Button variant="outline" icon={<CalendarClock size={13} />} onClick={() => navigate('/local/pickup/schedules')}>Schedules ({schedules.length})</Button>
+              <Row label="Merchant master" hint={`Merchant locations collected on set days, with or without orders — ${schedules.filter((x) => x.status === 'Active').length} active.`}>
+                <Button variant="outline" icon={<CalendarClock size={13} />} onClick={() => navigate('/local/settings/merchant-master')}>Merchant master ({schedules.length})</Button>
               </Row>
               <Row label={auto ? 'Pickup date limits' : 'Booking window'}
                 hint={auto ? 'An automatic pickup is never placed further out than this; after the cut-off, today\'s consignments go to the next pickup day.'

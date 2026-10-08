@@ -720,8 +720,7 @@ effects (a cancelled/rescheduled PR leaving its trip) flow through `onPickupRequ
 - **ONE blind-pickup dialog on both portals** — "Blind pickup request": Parcels (LTL) | Full vehicle (FTL), Pickup address, window,
   note. Console adds a Merchant (OPTIONAL — an ad-hoc request); Grow has none (it is inside one merchant). A full vehicle books ONE
   vehicle: Service Type | Vehicle side by side (no Add vehicle, no count, no per-vehicle address map; one optional Drop address).
-- **Pickup Schedules (rosters, Skynet First Mile)** — `/local/pickup/schedules` (button "Schedules (n)" on the Pickup page and a row
-  in the settings). `growOrders/scheduleModel.ts` (pure: shape, `validateSchedule`, `scheduleKey` = schedule + run + date,
+- **Pickup Schedules (rosters, Skynet First Mile)** — `/local/settings/merchant-master` (the **Merchant master**, owner 2026-10-08 — a Settings page of its own, no longer a tab of the Pickup page; `/local/pickup/schedules` redirects to it; a button on the Pickup page, a row in the pickup settings and a card on the Settings landing open it). `growOrders/scheduleModel.ts` (pure: shape, `validateSchedule`, `scheduleKey` = schedule + run + date,
   `pickRunPr`, `staleScheduleRequests`; store `pickup-schedules-v1`, seeded PAUSED so the demo does not move), `pickupSchedules.ts`
   (save/pause/delete with a change log, `runGenerator`, `ensureDailyRun` called once a day from `LocalLayout`). A schedule = a
   merchant location + days + runs (windows) + servicing hub + dates + Active | Paused. The generator makes ONE request per active

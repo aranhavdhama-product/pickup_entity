@@ -11,7 +11,7 @@
  * Masters pages on local sample rows. Nothing here touches the auth module or the staging proxy.
  */
 import { useNavigate } from 'react-router-dom'
-import { Box, Columns3, Package, SlidersHorizontal, Truck, Barcode } from 'lucide-react'
+import { Box, Columns3, Package, SlidersHorizontal, Store, Truck, Barcode } from 'lucide-react'
 import { ListCard, PageHeader } from '../../nueva/components'
 
 export default function LocalSettings() {
@@ -26,6 +26,9 @@ export default function LocalSettings() {
         <ListCard icon={<Truck size={18} />} title="Pickup module"
           desc="Turn pickups on or off, choose who books them and set the booking rules."
           onClick={() => navigate('/local/settings/pickup')} />
+        <ListCard icon={<Store size={18} />} title="Merchant master"
+          desc="Merchant locations collected on set days — the pickup schedules (runs, days, hub)."
+          onClick={() => navigate('/local/settings/merchant-master')} />
         <ListCard icon={<SlidersHorizontal size={18} />} title="General Settings"
           desc="Account-wide defaults: order view, splitting, scanning, task type and inbound stage."
           onClick={() => navigate('/local/settings/general')} />

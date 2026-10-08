@@ -140,7 +140,8 @@ export default function AppRoutes() {
         <Route path="/local/consignments/:id" element={<LocalConsignments />} />
         {/* first-mile pickup: requests → trips (Control Tower) → handover (Inbound) */}
         <Route path="/local/pickup" element={<LocalPickup />} />
-        <Route path="/local/pickup/schedules" element={<LocalPickupSchedules />} />
+        <Route path="/local/pickup/schedules" element={<Navigate to="/local/settings/merchant-master" replace />} />
+        <Route path="/local/settings/merchant-master" element={<LocalPickupSchedules />} />
         {/* the list with a request's drawer over it (same element — the list stays mounted) */}
         <Route path="/local/pickup/view/:prId" element={<LocalPickup />} />
         {/* the request = a slide-over over the list (owner, 2026-09-25) */}

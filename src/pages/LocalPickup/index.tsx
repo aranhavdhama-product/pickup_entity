@@ -231,12 +231,12 @@ function PickupRequestsList() {
         right={<>
           {/* the daily roster job failed, or has not run today (FR-03.4) — red, where dispatchers work */}
           {(schedules.lastRun?.status === 'Failed' || (schedules.schedules.some((x) => x.status === 'Active') && schedules.lastDailyDate !== ymd(now))) && (
-            <button type="button" onClick={() => nav('/local/pickup/schedules')} title={schedules.lastRun?.status === 'Failed' ? schedules.lastRun.message : 'Pickup requests for today have not been made yet'}
+            <button type="button" onClick={() => nav('/local/settings/merchant-master')} title={schedules.lastRun?.status === 'Failed' ? schedules.lastRun.message : 'Pickup requests for today have not been made yet'}
               className="inline-flex h-8 items-center gap-1.5 rounded-md bg-danger-bg px-2.5 text-[12px] font-bold text-danger-fg">
               <CircleAlert size={13} />{schedules.lastRun?.status === 'Failed' ? 'Schedule run failed' : "Today's schedules not run"}
             </button>
           )}
-          <Button variant="outline" icon={<CalendarClock size={14} />} onClick={() => nav('/local/pickup/schedules')}>Schedules ({schedules.schedules.length})</Button>
+          <Button variant="outline" icon={<CalendarClock size={14} />} onClick={() => nav('/local/settings/merchant-master')}>Merchant master ({schedules.schedules.length})</Button>
           <IconBtn title="Pickup settings" onClick={() => nav('/local/settings/pickup')}><Settings size={16} /></IconBtn>
           {cfg.mode === 'auto'
             ? <span className="inline-flex h-8 items-center gap-1.5 rounded-md border border-info-bg bg-info-bg px-2.5 text-[12px] text-ink" title="Pickup requests are raised automatically when a consignment is created — Settings → Pickup Request.">
