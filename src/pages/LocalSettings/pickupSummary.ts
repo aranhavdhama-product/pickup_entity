@@ -99,7 +99,7 @@ export function pickupSummary(i: PickupSummaryInput): string[] {
     ]
   }
   return [
-    `Merchants and ops book pickups themselves.${i.blindAllowed ? ' They can also book one before its consignments exist.' : ''}`,
+    `Merchants and ops book pickups themselves.${i.blindAllowed ? ' They can also book one without consignments, when it is not known what will be picked up.' : ''}`,
     `Pickups can be booked ${ahead}; same-day bookings close at ${i.sameDayCutoff}.`,
     ...days, failed,
   ]

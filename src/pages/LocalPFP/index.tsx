@@ -375,7 +375,11 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
      queue holds only consignments, all of them, on the staging column set. */
   const tab: TabKey = pickupsOn ? parseTab(params.get('tab')) : 'all'
   /* owner, 2026-09-29: First Mile lists PICKUP REQUESTS only — no Group by (a stale `?group=none` is ignored) */
-  const group: GroupBy = 'pr'
+  /* owner, 2026-10-08: First Mile can ALSO be read as consignments — `?view=consignments`, grouped under their pickup
+     request (`?group=none` = one flat list). Pickup requests stay the default. */
+  const fmCons = pickupsOn && tab === 'first-mile' && params.get('view') === 'consignments'
+  const grouped = fmCons && params.get('group') !== 'none'
+  const group: GroupBy = fmCons ? 'none' : 'pr'
   const view: ColumnView = fixture || !pickupsOn ? 'consignment' : viewOf(tab, group)
   /* owner, 2026-09-25: the filter line follows the tab's ROW KIND — pickup
      requests get the Pickup page's grammar, consignments the staging set, All
@@ -511,16 +515,26 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
         : due(a) === due(b) ? Number(isPickupRow(b)) - Number(isPickupRow(a)) : due(a) < due(b) ? -1 : 1))
       : filtered
     const rows = ordered.map((r) => toDisplay(r, cellCtx))
-    if (!sort) return rows
+    /* consignments under their pickup request: groups in the order they first appear, a consignment with no request last */
+    const byRequest = (xs: DisplayRow[]) => {
+      if (!grouped) return xs
+      const g = new Map<string, DisplayRow[]>()
+      for (const r of xs) {
+        const k = cellCtx.byId.get(r.orderId)?.pickupRequestId ?? ''
+        g.set(k, [...(g.get(k) ?? []), r])
+      }
+      return [...g.entries()].sort(([a], [b]) => Number(a === '') - Number(b === '')).flatMap(([, v]) => v)
+    }
+    if (!sort) return byRequest(rows)
     const { key, dir } = sort
-    return [...rows].sort((a, b) => {
+    return byRequest([...rows].sort((a, b) => {
       const x = a.cells[key] ?? '', y = b.cells[key] ?? ''
       const n = Number(x), m = Number(y)
       const cmp = Number.isFinite(n) && Number.isFinite(m) && x !== '' && y !== ''
         ? n - m : x.localeCompare(y)
       return dir === 'asc' ? cmp : -cmp
-    })
-  }, [fixture, filtered, sort, cellCtx, tab])
+    }))
+  }, [fixture, filtered, sort, cellCtx, tab, grouped])
 
   /* The fixture is ONE page of staging's 101 rows, so its pager must be
      staging's — five numbered buttons and an enabled next arrow. Deriving the
@@ -643,6 +657,14 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
     return next
   })
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  /* a booked consignment as the Last Mile grid shows it — independent of the queue filters */
+  const childRow = (orderId: string): DisplayRow | null => {
+    const o = cellCtx.byId.get(orderId)
+    return o ? toDisplay(toConsignmentRow(o, db, {
+      secondaryState: plan.secondaryState[o.id], schedule: plan.scheduleOverrides[o.id], exception: plan.exceptions[o.id],
+      ...executionOverlay(o, plan.trips),
+    }), cellCtx) : null
+  }
   const toggleExpanded = (id: string) => setExpanded((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n })
 
   /* the header checkbox ticks one kind only: the pickups on the page when there are any, else the deliveries */
@@ -652,11 +674,13 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
 
   /* A tab change clears the selection: rows picked on another tab would stay
      selected out of sight, and the panel would act on rows nobody can see. */
-  const switchTab = (next: TabKey, nextGroup: GroupBy = group) => {
+  const switchTab = (next: TabKey, nextGroup: GroupBy = group, fm?: { cons?: boolean; flat?: boolean }) => {
     setParams((p) => {
       const n = new URLSearchParams(p)
       if (next === 'all') n.delete('tab'); else n.set('tab', next)
-      n.delete('group')
+      n.delete('group'); n.delete('view')
+      if (fm?.cons) n.set('view', 'consignments')
+      if (fm?.cons && fm.flat) n.set('group', 'none')
       return n
     }, { replace: true })
     clearSelection()
@@ -1098,6 +1122,20 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
               right={canCreatePickup ? <CreatePickupButton onPick={setCreating} /> : undefined} />
           )}
 
+          {/* First Mile reads two ways (owner, 2026-10-08): the pickup requests, or their consignments grouped under each request */}
+          {tab === 'first-mile' && !fixture && pickupsOn && (
+            <div className="pfp-tabs" role="group" aria-label="First Mile view" style={{ gap: 8, alignItems: 'center' }}>
+              <span style={{ color: 'var(--pfp-ink-hint)' }}>Show</span>
+              <button type="button" className="pfp-chip" aria-pressed={!fmCons} onClick={() => switchTab('first-mile', 'pr')}>Pickup requests</button>
+              <button type="button" className="pfp-chip" aria-pressed={fmCons} onClick={() => switchTab('first-mile', 'none', { cons: true })}>Consignments</button>
+              {fmCons && (<>
+                <span style={{ color: 'var(--pfp-ink-hint)', marginLeft: 16 }}>Group by</span>
+                <button type="button" className="pfp-chip" aria-pressed={grouped} onClick={() => switchTab('first-mile', 'none', { cons: true })}>Pickup request</button>
+                <button type="button" className="pfp-chip" aria-pressed={!grouped} onClick={() => switchTab('first-mile', 'none', { cons: true, flat: true })}>None</button>
+              </>)}
+            </div>
+          )}
+
           {/* ----------------------------------------------- row 2: the strip */}
           {filterMode !== 'consignment' ? null : quickOpen ? quickStrip : stripOpen ? (
             /* Carriers / Categories as ONE compact chip line (owner request) —
@@ -1167,23 +1205,53 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
               const sectioned = tab === 'all' && !fixture
               const first = sectioned && (ix === 0 || pickupIdSet.has(paged[ix - 1].id) !== isPick)
               const pr = isPick ? cellCtx.prById.get(r.id) : undefined
-              const kids = pr ? pr.orderIds.map((id) => cellCtx.byId.get(id)).filter((o): o is NonNullable<typeof o> => !!o) : []
-              const open = expanded.has(r.id)
+              const open = params.get('expand') === '1' || expanded.has(r.id)   // ?expand=1 = every pickup open (deep link)
+              /* a consignment under its pickup request (First Mile → Consignments, grouped) */
+              const prId = grouped ? cellCtx.byId.get(r.orderId)?.pickupRequestId ?? '' : ''
+              const groupFirst = grouped && (ix === 0 || (cellCtx.byId.get(paged[ix - 1].orderId)?.pickupRequestId ?? '') !== prId)
+              const groupPr = groupFirst && prId ? cellCtx.prById.get(prId) : undefined
+              const groupIds = groupFirst ? display.filter((x) => (cellCtx.byId.get(x.orderId)?.pickupRequestId ?? '') === prId).map((x) => x.id) : []
+              const groupRow = groupPr ? toPickupRow(groupPr, db) : undefined
               return (
                 <Fragment key={r.id}>
                   {first && (
                     <tr>
                       <td colSpan={columns.length} style={{ background: 'var(--pfp-brand-tint)', fontWeight: 700, padding: '8px 16px' }}>
                         {isPick ? `First mile · Pickups to plan (${peekPicks.length})` : `Last mile · Deliveries to plan (${peekCons.length})`}
-                        <span style={{ fontWeight: 400, color: 'var(--pfp-ink-hint)', marginLeft: 12 }}>
-                          {isPick ? 'A driver collects from the merchant — plan the pickup; its consignments ride on it.' : 'A driver delivers parcels to customers.'}
-                        </span>
                         {(isPick ? peekPicks.length : peekCons.length) > PEEK && (
                           <button type="button" onClick={() => switchTab(isPick ? 'first-mile' : 'last-mile')}
                             style={{ border: 0, background: 'none', cursor: 'pointer', fontWeight: 700, color: 'var(--pfp-brand)', marginLeft: 16 }}>
                             Show all {isPick ? peekPicks.length : peekCons.length} →
                           </button>
                         )}
+                      </td>
+                    </tr>
+                  )}
+                  {groupFirst && (
+                    <tr>
+                      <td colSpan={columns.length} style={{ background: 'var(--pfp-brand-tint)', padding: '8px 16px' }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 12 }}>
+                          {groupRow && (
+                            <input type="checkbox" aria-label={`Select the consignments of ${groupRow.reference}`}
+                              checked={groupIds.every((id) => selected.has(id))}
+                              onChange={() => setSelected((s) => {
+                                const n = new Set(s)
+                                if (groupIds.every((id) => n.has(id))) groupIds.forEach((id) => n.delete(id)); else groupIds.forEach((id) => n.add(id))
+                                return n
+                              })} />
+                          )}
+                          {groupRow ? (
+                            <>
+                              <button type="button" className="pfp-order" onClick={() => nav(`${basePath}/pickup/${groupRow.id}${search}`)}>
+                                <ArrowRight size={16} />{groupRow.reference}
+                              </button>
+                              <span style={{ fontWeight: 700 }}>{groupRow.state}</span>
+                              <span>{groupRow.merchant}</span>
+                              <span>{groupRow.windowLabel}</span>
+                              <span style={{ color: 'var(--pfp-ink-hint)' }}>{groupIds.length} consignment{groupIds.length === 1 ? '' : 's'}</span>
+                            </>
+                          ) : <b>No pickup request <span style={{ fontWeight: 400, color: 'var(--pfp-ink-hint)' }}>· {groupIds.length} consignment{groupIds.length === 1 ? '' : 's'}</span></b>}
+                        </span>
                       </td>
                     </tr>
                   )}
@@ -1199,28 +1267,18 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
                           else if (r.orderId) nav(`${basePath}/${r.orderId}${search}`)
                         }}
                         extra={LINK_COLUMNS.has(c.key) && isPick ? (
-                          <button type="button" title={open ? 'Hide its consignments' : `Show its ${kids.length} consignment${kids.length === 1 ? '' : 's'}`}
+                          <button type="button" title={open ? 'Hide its consignments' : 'Show its consignments'}
                             aria-expanded={open} onClick={() => toggleExpanded(r.id)}
-                            style={{ border: 0, background: 'none', cursor: 'pointer', marginLeft: 8, fontSize: 12, color: 'var(--pfp-ink-hint)' }}>{open ? '▾' : '▸'} {kids.length}</button>
+                            style={{ border: 0, background: 'none', cursor: 'pointer', marginLeft: 8, fontSize: 12, color: 'var(--pfp-ink-hint)' }}>
+                            {open ? '▾' : '▸'} {pr?.orderIds.length ?? 0}
+                          </button>
                         ) : undefined} />
                     ))}
                   </tr>
-                  {isPick && open && (
+                  {isPick && open && pr && (
                     <tr>
-                      <td colSpan={columns.length} style={{ background: 'rgb(250, 250, 250)', padding: '6px 16px 10px 56px' }}>
-                        {kids.length === 0 ? <span style={{ color: 'var(--pfp-ink-hint)' }}>No consignments yet — added when the driver scans at the pickup.</span> : (
-                          <table style={{ width: '100%' }}>
-                            <tbody>
-                              {kids.map((o) => (
-                                <tr key={o.id} style={{ cursor: 'pointer' }} onClick={() => nav(`${basePath}/${o.id}${search}`)}>
-                                  <td style={{ width: 130, fontWeight: 700 }}>{o.orderNumber}</td>
-                                  <td>{o.receiver.name}{o.receiver.line1 ? ` · ${o.receiver.line1}` : ''}</td>
-                                  <td style={{ width: 160 }}>{o.status}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        )}
+                      <td colSpan={columns.length} style={{ background: 'rgb(250, 250, 250)', padding: '8px 16px 12px 40px' }}>
+                        <PickupConsignments orderIds={pr.orderIds} build={childRow} onOpen={(orderId) => nav(`${basePath}/${orderId}${search}`)} />
                       </td>
                     </tr>
                   )}
@@ -1364,6 +1422,32 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
  * `cells.tsx` (the configurable-column renderer) is deliberately NOT used here:
  * it renders this app's own cell grammar, and this route replicates staging's.
  */
+/** The consignments of ONE pickup request, under its row: the Last Mile grid's own columns (owner, 2026-10-08). */
+function PickupConsignments({ orderIds, build, onOpen }: {
+  orderIds: string[]; build: (orderId: string) => DisplayRow | null; onOpen: (orderId: string) => void
+}) {
+  const cols = CONSIGNMENT_TAB_COLUMNS.filter((c) => c.key !== '_select' && c.key !== '_pad')
+  const rows = orderIds.map((id) => build(id)).filter((r): r is DisplayRow => !!r)
+  if (!rows.length) return <span style={{ color: 'var(--pfp-ink-hint)' }}>No consignments yet — added when the driver scans at the pickup.</span>
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table className="pfp-table" style={{ width: widthOf(cols) }}>
+        <colgroup>{cols.map((c) => <col key={c.key} style={{ width: c.width }} />)}</colgroup>
+        <thead>
+          <tr>{cols.map((c) => <th key={c.key}>{c.key === '_flags' ? <ListGlyph size={20} /> : <span className="pfp-th-inner">{c.label}</span>}</th>)}</tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.id}>
+              {cols.map((c) => <Cell key={c.key} col={c.key} row={r} selected={false} onToggle={() => undefined} onOpen={() => onOpen(r.orderId)} />)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 function Cell({ col, row, selected, onToggle, onOpen, extra }: {
   col: string; row: DisplayRow; selected: boolean; onToggle: () => void; onOpen: () => void; extra?: ReactNode
 }) {

@@ -225,7 +225,7 @@ export default function PickupSettings() {
   const proof = [draft.signature !== 'off' && `signature ${POD_LABEL[draft.signature].toLowerCase()}`,
     draft.photo !== 'off' && `photo ${POD_LABEL[draft.photo].toLowerCase()}`, draft.otp && 'code'].filter(Boolean)
   const flow = [
-    { title: 'Create', caption: auto ? `Automatic — when a consignment is ${state}` : `Manual — merchants and ops book${draft.blindAllowed ? ', even before consignments exist' : ''}` },
+    { title: 'Create', caption: auto ? `Automatic — when a consignment is ${state}` : `Manual — merchants and ops book${draft.blindAllowed ? ', even when it is not known what will be picked up' : ''}` },
     { title: auto ? 'Date' : 'Book', caption: auto ? `Placed within ${plural(would.bookingHorizonDays, 'day')}; same-day until ${would.sameDayCutoff}` : `Up to ${plural(would.bookingHorizonDays, 'day')} ahead; same-day until ${would.sameDayCutoff}` },
     { title: 'Pick up', caption: draft.manifestRequired
       ? `Handover: ${SCAN_LABEL[stored.scanMode].toLowerCase()}${proof.length ? ` · proof: ${proof.join(', ')}` : ''}`
@@ -294,8 +294,8 @@ export default function PickupSettings() {
                     </div>
                   </Row>
                 </>) : (
-                  <Row label="Book before its consignments exist" hint="Adds Create Pickup (Add in Grow) — a blind pickup.">
-                    <ToggleField checked={draft.blindAllowed} onChange={(on) => set({ blindAllowed: on })} label="Book before its consignments exist" />
+                  <Row label="Book a pickup without consignments" hint="For when you don't know what will be picked up — the driver scans what is collected.">
+                    <ToggleField checked={draft.blindAllowed} onChange={(on) => set({ blindAllowed: on })} label="Book a pickup without consignments" />
                   </Row>
                 )}
                 <GroupLabel>Booking</GroupLabel>
