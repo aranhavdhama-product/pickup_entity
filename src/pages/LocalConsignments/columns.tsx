@@ -18,6 +18,7 @@ import { ColumnChooser } from '../../local/chrome'
 import { useColumnPrefs } from '../../local/columnPrefs'
 import { stateTone, type LocalConsignmentRow } from '../LocalPFP/adapter'
 import { stamp } from '../LocalPFP/overlayFormat'
+import { CategoryIcons } from './categoryIcons'
 import { consignmentModuleSaved, readConsignmentModuleConfig } from '../../config/consignmentModule'
 
 export interface ConsignmentColumnDef {
@@ -38,6 +39,8 @@ const mono = (v: string, strong = false) => (
 )
 
 export const CONSIGNMENT_COLUMN_DEFS: ConsignmentColumnDef[] = [
+  /* the category icons (owner, 2026-10-08), first like Pending For Planning's icon column */
+  { key: 'flags', label: 'Category', width: 112, defaultOn: true, value: (r) => r.flags.join(', '), cell: (r) => <CategoryIcons flags={r.flags} /> },
   /* ---- staging's default set, in its order ---- */
   { key: 'consignmentNumber', label: 'Order Number', width: 150, defaultOn: true,
     value: (r) => r.consignmentNumber || '', cell: (r) => mono(r.consignmentNumber || '', true) },
@@ -88,7 +91,7 @@ const STAGING_TO_LOCAL: Record<string, string> = {
   exceptionReason: 'exception', originFacilityCode: 'origin', destinationFacilityCode: 'destination',
 }
 /* local-only columns with no staging counterpart — the mirror never names them */
-const LOCAL_ONLY = ['activeLeg', 'pickupRequest', 'type']
+const LOCAL_ONLY = ['flags', 'activeLeg', 'pickupRequest', 'type']
 
 /**
  * The default set, in order. Once Settings → Consignment Order has been saved
@@ -108,7 +111,7 @@ function mirrorDefaultKeys(): string[] {
     /* slot it in after the default column it followed */
     const prev = DEFAULT_KEYS[DEFAULT_KEYS.indexOf(k) - 1]
     const at = prev ? out.indexOf(prev) : -1
-    out.splice(at < 0 ? out.length : at + 1, 0, k)
+    out.splice(at < 0 ? (prev ? out.length : 0) : at + 1, 0, k)
   }
   return out.length ? out : DEFAULT_KEYS
 }

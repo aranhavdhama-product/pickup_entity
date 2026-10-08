@@ -202,7 +202,7 @@ export default function LocalConsignments() {
   /* ---------------------------------------------------------- the columns -- */
 
   /* staging's default 18 + the ⚙ chooser; persists per browser */
-  const { columns, chooser } = useConsignmentColumns('local-consignments-columns-v2')
+  const { columns, chooser } = useConsignmentColumns('local-consignments-columns-v3')
 
   /* ----------------------------------------------------------- the actions - */
 

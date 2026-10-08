@@ -32,6 +32,7 @@ import { StatusPill, type Column } from '../../nueva/components'
 import { ColumnChooser } from '../../local/chrome'
 import { fmtDate, fmtDateTime, money, useColumnPrefs } from './utils'
 import { stateChipTone, type ShipmentRow } from './shipmentRows'
+import { CategoryIcons } from '../LocalConsignments/categoryIcons'
 
 /** Big numbers read compact in the grid (25.3M mm³, 40K kg); the exact value rides on the tooltip. */
 const compact = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 })
@@ -63,6 +64,8 @@ function tagsCell(tags: string[]): ReactNode {
 }
 
 const COLUMNS: Col[] = [
+  /* the category icons — the console grid's first column too (owner, 2026-10-08) */
+  { key: 'flags', label: 'Category', width: 112, value: (r) => r.flags.join(', '), cell: (r) => <CategoryIcons flags={r.flags} /> },
   { key: 'orderNumber', label: 'Order Number', width: 150, value: (r) => r.orderNumber,
     cell: (r) => (
       <span className="flex min-w-0 items-center gap-1" title={`${r.orderNumber} · ${r.orderTypeLabel}`}>
@@ -142,7 +145,7 @@ const COLUMNS: Col[] = [
 
 /* the console's default 18, in staging's order */
 const DEFAULT_KEYS = [
-  'orderNumber', 'referenceNumber', 'state', 'secondaryState', 'exception', 'activeLeg', 'weight', 'volume', 'palletSpace', 'sku',
+  'flags', 'orderNumber', 'referenceNumber', 'state', 'secondaryState', 'exception', 'activeLeg', 'weight', 'volume', 'palletSpace', 'sku',
   'serviceTime', 'shipByDate', 'shipToName', 'shipToAddress', 'merchant', 'assignedDriver', 'orderType',
   'createdAt', 'ageing', 'attempts',
 ]
