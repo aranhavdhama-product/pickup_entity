@@ -321,7 +321,13 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
   const quickFromUrl = () => new URLSearchParams(window.location.search).get('quick') === 'pickup'
   const [quick, setQuick] = useState<QuickKey | ''>(() => (quickFromUrl() ? 'pickup' : ''))
   /* the STAGING-REPLICA layout keeps its own Quick Filter button; the local page shows the cards permanently */
-  const [quickOpen, setQuickOpen] = useState(false)
+  /* the exception cards are folded away until the Quick Filter button opens them (owner, 2026-10-08); the choice is remembered per browser */
+  const [quickOpen, setQuickOpenRaw] = useState(() => { try { return localStorage.getItem('pfp-quick-open') === '1' } catch { return false } })
+  const setQuickOpen = (v: boolean | ((x: boolean) => boolean)) => setQuickOpenRaw((cur) => {
+    const next = typeof v === 'function' ? v(cur) : v
+    try { localStorage.setItem('pfp-quick-open', next ? '1' : '0') } catch { /* private mode */ }
+    return next
+  })
   const [typeSel, setTypeSel] = useState('')
   /* whether the Carriers / Categories strip is shown, remembered per browser —
      an operator who hides it wants it hidden tomorrow too. OWNER-REQUESTED
@@ -1125,6 +1131,13 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
       ))}
       {/* NOT an exception: consignments nobody has booked a pickup for are an action queue — picked here, they appear, get selected
           and planned (Schedule Pickup); otherwise they are not in the list */}
+      {/* an exception filter that is ON stays visible while its cards are folded away */}
+      {quick && quick !== 'pickup' && !quickOpen && (
+        <button type="button" className="pfp-chip" data-size="sm" aria-pressed="true" title="Remove this exception filter"
+          onClick={() => { setQuick(''); setPage(1) }}>
+          {QUICK_FILTERS.find((f) => f.key === quick)?.label} ✕
+        </button>
+      )}
       <span className="pfp-chipbar-sep" aria-hidden />
       <button type="button" className="pfp-chip" data-size="sm" aria-pressed={quick === 'pickup'}
         title="Consignments waiting for a pickup request — select them and Schedule Pickup"
@@ -1235,6 +1248,11 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
 
             {/* the icon tools as ONE quiet bar (owner, 2026-10-08: "looks cluttered — without removing any option"): filters · actions · view */}
             <div className="pfp-iconbar">
+              <button type="button" className="pfp-iconbtn pfp-toggle" onClick={() => setQuickOpen((v) => !v)}
+                aria-pressed={quickOpen} aria-label="Quick Filter" title={quickOpen ? 'Hide the exception filters' : 'Show the exception filters (Failed, Inbound Pending …)'}>
+                <WarningCircle size={18} style={{ color: 'rgb(199, 40, 32)' }} />
+              </button>
+              <span className="pfp-iconbar-sep" aria-hidden />
               {downloadControl}
               <span className="pfp-iconbar-sep" aria-hidden />
               {viewControl}
@@ -1265,7 +1283,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
               </div>
             </div>
           </>)}
-          {!fixture && quickStrip}
+          {!fixture && quickOpen && quickStrip}
         </>
       )}
 
