@@ -12,7 +12,7 @@
  * the grid scrolls sideways inside its card, as staging's does.
  */
 import { useState, type ReactNode } from 'react'
-import { Settings2 } from 'lucide-react'
+import { ArrowRight, CornerUpLeft, Settings2 } from 'lucide-react'
 import { StatusPill, type Column } from '../../nueva/components'
 import { ColumnChooser } from '../../local/chrome'
 import { useColumnPrefs } from '../../local/columnPrefs'
@@ -40,7 +40,16 @@ const mono = (v: string, strong = false) => (
 export const CONSIGNMENT_COLUMN_DEFS: ConsignmentColumnDef[] = [
   /* ---- staging's default set, in its order ---- */
   { key: 'consignmentNumber', label: 'Order Number', width: 150, defaultOn: true,
-    value: (r) => r.consignmentNumber || '', cell: (r) => mono(r.consignmentNumber || '', true) },
+    value: (r) => r.consignmentNumber || '',
+    /* forward → / reverse ↩ before the number, exactly as Grow's Consignment Order grid (owner, 2026-10-08) */
+    cell: (r) => (
+      <span className="flex min-w-0 items-center gap-1" title={`${r.consignmentNumber || ''} · ${r.orderTypeLabel}`}>
+        {r.orderTypeLabel === 'Reverse'
+          ? <CornerUpLeft size={14} className="shrink-0 text-ink-3" aria-label="Reverse" />
+          : <ArrowRight size={14} className="shrink-0 text-ink-3" aria-label="Forward" />}
+        {mono(r.consignmentNumber || '', true)}
+      </span>
+    ) },
   { key: 'referenceNumber', label: 'Reference Number', width: 140, defaultOn: true,
     value: (r) => r.referenceNumber || '', cell: (r) => mono(r.referenceNumber || '') },
   { key: 'state', label: 'State', width: 130, defaultOn: true,
