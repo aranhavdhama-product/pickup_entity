@@ -111,7 +111,8 @@ export default function PickupRequestsPage() {
   const manualPickup = pickupOn && pickupCfg.mode === 'manual'
 
   /* the tab lives in the URL (`?tab=` slug); Eligible consignments exists only in manual mode */
-  const tabs = manualPickup ? TAB_ORDER : TAB_ORDER.filter((t) => t !== CONSIGNMENTS_TO_BOOK)
+  /* owner, 2026-10-08: no Eligible consignments tab on Grow either — a shipment is booked from Shipments → Schedule Pickup */
+  const tabs: LocalPrTab[] = TAB_ORDER.filter((t) => t !== CONSIGNMENTS_TO_BOOK)
   const slug = params.get('tab')
   const wanted = localPrTabFromSlug(slug ? OLD_SLUG[slug] ?? slug : slug)
   const tab: LocalPrTab = tabs.includes(wanted) ? wanted : ATTENTION_REQUIRED
@@ -330,7 +331,7 @@ export default function PickupRequestsPage() {
               title={filtersOn ? 'Nothing matches these filters' : eligibleView ? TO_BOOK_EMPTY
                 : tab === ATTENTION_REQUIRED ? 'No exceptions' : `No pickup requests under ${tab}`}
               hint={filtersOn ? 'Clear the filters to see the whole list again.'
-                : eligibleView || tab === ATTENTION_REQUIRED ? undefined : 'Open Eligible consignments and Schedule Pickup, or Add a pickup request.'} />
+                : eligibleView || tab === ATTENTION_REQUIRED ? undefined : 'Select shipments on Shipments and Schedule Pickup, or Add a pickup request.'} />
           </Panel>
         ) : (
           <>

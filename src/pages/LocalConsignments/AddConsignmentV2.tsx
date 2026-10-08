@@ -834,7 +834,7 @@ function FieldChips({ k, className = '', hideHidden = false, overlay = false }: 
   if (overlay) return <FieldTools k={k} />
   return (
     <span className={`inline-flex shrink-0 items-center gap-1 ${className}`}>
-      {b.overridden(k) && <span className={`${CHIP} bg-brand-50 font-bold text-brand-600`}>Grow</span>}
+      {b.overridden(k) && <span className={`${CHIP} bg-brand-50 font-bold text-brand-600`}>Merchant</span>}
       {b.isHidden(k) ? !hideHidden && <span className={`${CHIP} bg-warm-100 text-ink-3`}>Hidden</span>
         : b.inMore(k) && <span className={`${CHIP} bg-warm-100 text-ink-2`}>More</span>}
       {f && <Tip text={formatSummary(f)}><span className={`${CHIP} bg-warm-100 text-ink-2`}>Format</span></Tip>}
@@ -874,9 +874,9 @@ function FieldTools({ k }: { k: string }) {
   return (
     <span className="absolute -top-[15px] right-1 z-20 inline-flex items-center gap-1">
       {b.overridden(k) && (
-        <Tip text="Changed for Grow — click to use the console setting again">
+        <Tip text="Changed for merchants — click to use the operations setting again">
           <button type="button" onClick={(e) => { e.stopPropagation(); b.revert(k) }}
-            className={`${CHIP} gap-1 border border-brand-100 bg-brand-50 font-bold text-brand-600 hover:border-brand-300`}>Grow<RotateCcw size={10} /></button>
+            className={`${CHIP} gap-1 border border-brand-100 bg-brand-50 font-bold text-brand-600 hover:border-brand-300`}>Merchant<RotateCcw size={10} /></button>
         </Tip>
       )}
       {lock
@@ -1775,7 +1775,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
     setSavedLayout(loadLayout(formPortal)); setSavedOrder(loadOrder(formPortal)); setSavedSummary(loadSummary(formPortal))
     setSelKey(null); setEditing(false)
     /* formSync sends the saved setup to the server, so every device and user gets it (owner, 2026-10-06) */
-    toast.success(growSetup ? 'Grow portal form saved — merchants see it on Create Order, on every device' : 'Console form saved — every device shows it')
+    toast.success(growSetup ? 'Merchant form saved — merchants see it on Create Order, on every device' : 'Operations form saved — every device shows it')
     if (then) then(); else leaveSetup()
   }
   /* the builder's Console | Grow portal switch — unsaved changes are saved or dropped first */
@@ -3199,7 +3199,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
             <span className="flex shrink-0 items-center gap-1.5 text-[13px] text-ink-2">
               {row.label}
               {consoleLayout && draftLayout[row.key] !== consoleLayout[row.key] && (
-                <Tip text="Changed for Grow — the console form differs"><span className={`${CHIP} bg-brand-50 font-bold text-brand-600`}>Grow</span></Tip>
+                <Tip text="Changed for merchants — the operations form differs"><span className={`${CHIP} bg-brand-50 font-bold text-brand-600`}>Merchant</span></Tip>
               )}
             </span>
             <LayoutSeg label="" value={draftLayout[row.key]}
@@ -4310,7 +4310,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
       <h2 className="pb-3 text-[15px] font-bold text-ink">{summaryTitle}</h2>
       {editing && (
         <div className="mb-3 rounded-lg bg-warm-50 px-3 py-2">
-          <Tip text={`Show the summary on the ${formPortal === 'grow' ? 'Grow portal' : 'console'} form`}>
+          <Tip text={`Show the summary on the ${formPortal === 'grow' ? 'merchant' : 'operations'} form`}>
             <InlineSwitch label={summaryCfg.enabled ? 'Shown on this form' : 'Not shown'} checked={summaryCfg.enabled} onChange={setSummaryOn} />
           </Tip>
         </div>
@@ -4488,8 +4488,8 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   const portalSwitch = (
     <div role="radiogroup" aria-label="Which form" className="inline-flex shrink-0 gap-1 rounded-lg border border-line bg-surface p-1">
       {([
-        ['console', 'Console form', Monitor, 'What ops see on Add Consignment'],
-        ['grow', 'Grow portal form', Store, 'What merchants see on Create Order'],
+        ['console', 'Operations form', Monitor, 'What ops see on Add Consignment'],
+        ['grow', 'Merchant form', Store, 'What merchants see on Create Order'],
       ] as const).map(([p, label, Icon, hint]) => (
         <Tip key={p} text={hint}>
           <button type="button" role="radio" aria-checked={formPortal === p} onClick={() => switchPortal(p)}
@@ -4525,12 +4525,12 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
           </span>
           <div className="min-w-0">
             <p className="flex items-center gap-1.5 text-[15px] font-bold text-ink">
-              {growSetup ? 'Editing the Grow portal form' : 'Editing the console form'}
+              {growSetup ? 'Editing the merchant form' : 'Editing the operations form'}
               <InfoTip text="Click a field to open its settings, or use the small icons on it: ✱ required · ☰ under More · .* what can be typed · eye show / hide. A lit icon = set; a lock = needed by the system. Move card moves a whole card up or down; drag a field to move it inside its card. All fields lists everything, hidden ones too." />
             </p>
             <p className="text-[13px] text-ink-2">
               {growSetup
-                ? 'What merchants see on Create Order. It follows the console form — changes here are for Grow only.'
+                ? 'What merchants see on Create Order. It follows the operations form — changes here are for merchants only.'
                 : 'What ops see on Add Consignment. Grow follows it, unless Grow has its own setting.'}
             </p>
           </div>
@@ -4555,7 +4555,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
             ? <Button variant="ghost" size="sm" icon={<RotateCcw size={13} />}
                 disabled={changedForGrow === 0 && JSON.stringify(draftLayout) === JSON.stringify(loadLayout('console'))
                   && JSON.stringify(draftOrder) === JSON.stringify(loadOrder('console'))}
-                onClick={() => { setDraftRules({}); setDraftLayout(loadLayout('console')); setDraftOrder(loadOrder('console')) }}>Match console form</Button>
+                onClick={() => { setDraftRules({}); setDraftLayout(loadLayout('console')); setDraftOrder(loadOrder('console')) }}>Match operations form</Button>
             : <Button variant="ghost" size="sm" icon={<RotateCcw size={13} />}
                 onClick={() => { setDraftRules({}); setDraftLayout(DEFAULT_LAYOUT); setDraftOrder({}); setDraftSummary(DEFAULT_SUMMARY.console) }}>Reset to default</Button>}
         </div>
@@ -4745,7 +4745,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
         {growSetup && !!draftRules[k] && (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-brand-50 px-3 py-2.5">
             <span className="text-[12px] font-bold text-brand-600">Changed for Grow</span>
-            <Button variant="ghost" size="sm" icon={<RotateCcw size={13} />} onClick={() => setDraftRules((r) => withoutKeys(r, [k]))}>Use the console setting</Button>
+            <Button variant="ghost" size="sm" icon={<RotateCcw size={13} />} onClick={() => setDraftRules((r) => withoutKeys(r, [k]))}>Use the operations setting</Button>
           </div>
         )}
         {cdef && (
@@ -4785,7 +4785,7 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
   /* All fields — every field by card, a show / hide switch on each, the picked one's settings beside the list */
   const allFieldsDialog = (
     <Modal open={editing && allOpen} wide title="All fields"
-      subtitle={`Every field on the ${growSetup ? 'Grow portal' : 'console'} form. Switch one off to hide it, or click its name to change more.`}
+      subtitle={`Every field on the ${growSetup ? 'merchant' : 'operations'} form. Switch one off to hide it, or click its name to change more.`}
       onClose={() => setAllOpen(false)}
       footer={<>
         <span className="mr-auto"><AddRowLink label="Add field" onClick={() => setAddCard(null)} /></span>
@@ -4969,8 +4969,8 @@ function AddConsignmentV2({ portal = 'console', setup = false }: {
           }} />
       )}
       </BuilderCtx.Provider>
-      <Modal open={!!switchTo} title={`Save your changes to the ${growSetup ? 'Grow portal' : 'console'} form?`}
-        subtitle={`You are switching to the ${switchTo === 'grow' ? 'Grow portal' : 'console'} form.`}
+      <Modal open={!!switchTo} title={`Save your changes to the ${growSetup ? 'merchant' : 'operations'} form?`}
+        subtitle={`You are switching to the ${switchTo === 'grow' ? 'merchant' : 'operations'} form.`}
         onClose={() => setSwitchTo(null)}
         footer={<>
           <Button variant="ghost" onClick={() => setSwitchTo(null)}>Keep editing</Button>
@@ -5180,7 +5180,7 @@ function AddFieldDialog({ card, portal, taken, onAdd, onClose }: {
   const options = [...new Set(choices.split(/[\n,]/).map((x) => x.trim()).filter(Boolean))]
   const nameErr = !label.trim() ? 'Give the field a name' : taken.includes(label.trim().toLowerCase()) ? 'A field with this name already exists' : null
   const listErr = kind === 'list' && options.length < 2 ? 'Add at least two choices' : null
-  const other = portal === 'grow' ? 'console' : 'Grow portal'
+  const other = portal === 'grow' ? 'operations' : 'merchant'
   const add = () => {
     setTried(true)
     if (nameErr || listErr) return
@@ -5229,7 +5229,7 @@ function AddFieldDialog({ card, portal, taken, onAdd, onClose }: {
         )}
         <div className="grid gap-3">
           {kind !== 'yesno' && <InlineSwitch label="Required" title="It must be filled before the consignment can be added" checked={required} onChange={setRequired} />}
-          <InlineSwitch label={`Also show it on the ${other} form`} title={`Off: only on the ${portal === 'grow' ? 'Grow portal' : 'console'} form`}
+          <InlineSwitch label={`Also show it on the ${other} form`} title={`Off: only on the ${portal === 'grow' ? 'merchant' : 'operations'} form`}
             checked={alsoOther} onChange={setAlsoOther} />
         </div>
       </div>

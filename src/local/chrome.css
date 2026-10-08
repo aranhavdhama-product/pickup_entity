@@ -329,16 +329,18 @@
 /* the funnel panel: padded, 8px between full-width selects, and a max-height
    whose scroll sits INSIDE the padding (the padded box scrolls, not the rows).
    `.pfp-pop.pfp-funnel-pop` outranks `.pfp-pop` whatever order the sheets load. */
-.pfp-pop.pfp-funnel-pop { width: 280px; padding: 12px 16px; }
+.pfp-pop.pfp-funnel-pop { width: 468px; max-width: calc(100vw - 32px); padding: 12px 16px; }
 .pfp-funnel-pop .pfp-pop-scroll {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  /* two columns (owner, 2026-10-08): the filters read side by side, not one long list */
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
   max-height: 360px;
   overflow-y: auto;
   margin: 0 -8px;
   padding: 0 8px;
 }
+@media (max-width: 520px) { .pfp-funnel-pop .pfp-pop-scroll { grid-template-columns: minmax(0, 1fr); } }
 .pfp-funnel-pop .pfp-select { width: 100%; flex: none; }
 
 .lc-pop-search { padding: 0 8px 6px; border-bottom: 1px solid var(--pfp-line); margin-bottom: 4px; }

@@ -179,11 +179,11 @@ export default function ConsignmentOrderSettings() {
 
             {tab === 4 && (
               <SectionCard title="Customise the forms" hint="Open a form to rename, require or hide its fields, check what is typed (Format) and add your own fields.">
-                <SettingRow label="Console form" hint={`What ops see on Add Consignment${formSetup.custom ? ` · ${formSetup.custom} own field${formSetup.custom === 1 ? '' : 's'}` : ''}`}>
-                  <Button variant="outline" onClick={() => navigate('/local/consignments/new?edit=console')}>Edit console form</Button>
+                <SettingRow label="Operations form" hint={`What ops see on Add Consignment${formSetup.custom ? ` · ${formSetup.custom} own field${formSetup.custom === 1 ? '' : 's'}` : ''}`}>
+                  <Button variant="outline" onClick={() => navigate('/local/consignments/new?edit=console')}>Edit operations form</Button>
                 </SettingRow>
-                <SettingRow label="Grow portal form" hint={`What merchants see on Create Order — follows the console form${formSetup.growChanges ? ` · ${formSetup.growChanges} field${formSetup.growChanges === 1 ? '' : 's'} changed for Grow` : ' unless you change it for Grow'}`}>
-                  <Button variant="outline" onClick={() => navigate('/local/consignments/new?edit=grow')}>Edit Grow portal form</Button>
+                <SettingRow label="Merchant form" hint={`What merchants see on Create Order — follows the operations form${formSetup.growChanges ? ` · ${formSetup.growChanges} field${formSetup.growChanges === 1 ? '' : 's'} changed for Grow` : ' unless you change it for Grow'}`}>
+                  <Button variant="outline" onClick={() => navigate('/local/consignments/new?edit=grow')}>Edit merchant form</Button>
                 </SettingRow>
               </SectionCard>
             )}

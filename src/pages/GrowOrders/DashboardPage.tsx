@@ -316,7 +316,7 @@ export default function GrowDashboardPage() {
         </div>
         <div>
           <KpiTile label="Schedule Pickup" value={toSchedule} icon={<CalendarClock size={18} />}
-            hint={pickupPages ? view(() => nav('/grow/orders/pickups?tab=eligible')) : 'Shipments awaiting a pickup booking'} />
+            hint={pickupPages ? view(() => nav('/grow/orders')) : 'Shipments awaiting a pickup booking'} />
         </div>
         <div>
           <KpiTile label="On Time Performance" value={`${otp}%`} icon={<Gauge size={18} />}
