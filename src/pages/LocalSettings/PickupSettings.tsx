@@ -28,10 +28,10 @@ import { CalendarClock, ChevronRight, ExternalLink, Play, Workflow } from 'lucid
 import { Button, Input, MenuSelect, PageHeader, Toggle } from '../../nueva/components'
 import { toast } from '../../nueva/toast'
 import {
-  AUTO_AFTER_STATES, DEFAULT_PICKUP_MODULE_CONFIG, PICKUP_DAYS_SOURCES, usePickupModuleConfig, writePickupModuleConfig,
+  DEFAULT_PICKUP_MODULE_CONFIG, PICKUP_DAYS_SOURCES, usePickupModuleConfig, writePickupModuleConfig,
   type AutoPickupAfterState, type PickupDaysSource, type PickupMode, type PickupModuleConfig, type PodLevel,
 } from '../../config/pickupModule'
-import { AUTO_PICKUP_TRIGGER_CODES, EVENT_AFTER_STATE, LEGACY_AFTER_STATE_EVENT } from '../../growOrders/fareyeEvents'
+import { AUTO_PICKUP_TRIGGER_CODES, EVENT_AFTER_STATE } from '../../growOrders/fareyeEvents'
 import { MoreOptions } from './settingsRows'
 import { useSchedules } from '../../growOrders/scheduleModel'
 import { DAYS_SOURCE_HINT, askWindowHint, triggerHint, triggerOptionLabel } from './pickupSummary'
@@ -71,6 +71,16 @@ function Row({ label, hint, children }: { label: string; hint: ReactNode; childr
         <p className="mt-0.5 text-[12px] text-ink-3">{hint}</p>
       </div>
       <div className="flex w-[260px] shrink-0 justify-end">{children}</div>
+    </div>
+  )
+}
+
+/** one labelled control inside a merged row (small label left, control right) */
+function Mini({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex w-full items-center justify-between gap-3">
+      <span className="w-[92px] shrink-0 text-[12px] text-ink-3">{label}</span>
+      <div className="min-w-0 flex-1">{children}</div>
     </div>
   )
 }
@@ -134,11 +144,6 @@ function FlowStrip({ steps }: { steps: { title: string; caption: string }[] }) {
 const DAYS_SOURCE_LABEL: Record<PickupDaysSource, string> = {
   'merchant-then-hub': 'Pickup address and hub',
   hub: 'Hub only',
-}
-const STATE_HINT: Record<AutoPickupAfterState, string> = {
-  Created: 'As soon as the consignment exists (not a draft, not cancelled).',
-  'Label Generated': 'Once the consignment is paid and its label is generated.',
-  'Ready To Ship': 'Once it is paid, has no errors and is marked Ready To Ship.',
 }
 const SCAN_LABEL: Record<PickupModuleConfig['scanMode'], string> = {
   driver: 'The driver, at pickup', hub: 'The hub, on arrival', both: 'Both — they must match',
@@ -259,13 +264,24 @@ export default function PickupSettings() {
                 <Seg<PickupMode> label="How pickup requests are created" value={draft.mode} onChange={(m) => set({ mode: m })}
                   options={[{ value: 'manual', label: 'Manual' }, { value: 'auto', label: 'Automatic' }]} />
               </Row>
-              {auto && (
-                <Row label="Create it when the consignment is" hint={<>{STATE_HINT[state]} FarEye event <EventCode code={draft.triggerEvent} /></>}>
-                  <Seg<AutoPickupAfterState> label="Create it when the consignment is" value={state}
-                    onChange={(st) => set({ triggerEvent: LEGACY_AFTER_STATE_EVENT[st] })}
-                    options={AUTO_AFTER_STATES.map((st) => ({ value: st, label: st }))} />
+              {auto && (<>
+                {/* ONE row for "when": the real FarEye events, by name and code (owner, 2026-10-08: merge the setting and its advanced twin) */}
+                <Row label="Create it when" hint={<>{triggerHint(draft.triggerEvent)} FarEye event <EventCode code={draft.triggerEvent} /></>}>
+                  <div className="w-full">
+                    <MenuSelect value={draft.triggerEvent} options={AUTO_PICKUP_TRIGGER_CODES} labels={triggerOptionLabel}
+                      onChange={(e) => set({ triggerEvent: e })} />
+                  </div>
                 </Row>
-              )}
+                {/* shipper chooses + confirms the time = ONE choice */}
+                <Row label="Pickup time" hint={askWindowHint(facts)}>
+                  <div className="w-full">
+                    <MenuSelect value={!draft.userSelectsWindow ? 'rule' : draft.slotConfirmation ? 'confirm' : 'choose'}
+                      options={['rule', 'choose', 'confirm']}
+                      labels={(v) => ({ rule: 'Set by the rule', choose: 'Shipper chooses', confirm: 'Shipper chooses, then confirms' } as Record<string, string>)[v] ?? v}
+                      onChange={(v) => set({ userSelectsWindow: v !== 'rule', slotConfirmation: v === 'confirm' })} />
+                  </div>
+                </Row>
+              </>)}
               <Row label="Scheduled pickups (rosters)" hint={`A merchant location collected on set days, with or without orders — ${schedules.filter((x) => x.status === 'Active').length} active.`}>
                 <Button variant="outline" icon={<CalendarClock size={13} />} onClick={() => navigate('/local/pickup/schedules')}>Schedules ({schedules.length})</Button>
               </Row>
@@ -273,46 +289,36 @@ export default function PickupSettings() {
                 hint={auto ? 'An automatic pickup is never placed further out than this; after the cut-off, today\'s consignments go to the next pickup day.'
                   : 'How far ahead people can book, and until when today\'s pickups can still be booked.'}>
                 <div className="flex items-center gap-2">
-                  <span className="text-[13px] text-ink-2">{auto ? 'Within' : 'Up to'}</span>
                   <div className="w-16"><Input type="number" value={draft.bookingHorizonDays} onChange={(n) => set({ bookingHorizonDays: n })} /></div>
-                  <span className="text-[13px] text-ink-2">{auto ? 'days · today\'s until' : 'days ahead · today\'s until'}</span>
+                  <span className="whitespace-nowrap text-[13px] text-ink-2">days · until</span>
                   <div className="w-[92px]"><Input type="time" value={draft.sameDayCutoff} onChange={(t) => set({ sameDayCutoff: t })} /></div>
                 </div>
               </Row>
               <Row label="If a pickup fails" hint="Each reason decides: try again, hold for review or cancel.">
-                <Button variant="outline" icon={<ExternalLink size={13} />}
-                  onClick={() => navigate('/local/settings/masters/service_order/reason-master?tab=reason-policy')}>Reason Policy</Button>
+                <div className="flex w-full flex-col items-end gap-2">
+                  <ToggleField checked={draft.autoRescheduleOnFail} onChange={(on) => set({ autoRescheduleOnFail: on })}
+                    label="Try again automatically" on="Try again automatically" off="Do not try again" />
+                  <Button variant="outline" icon={<ExternalLink size={13} />}
+                    onClick={() => navigate('/local/settings/masters/service_order/reason-master?tab=reason-policy')}>Reason Policy</Button>
+                </div>
               </Row>
               <MoreOptions label="Advanced settings" defaultOpen={advancedChanged}>
-                <GroupLabel>Creating</GroupLabel>
-                {auto ? (<>
-                  <Row label="Shipper chooses the pickup time" hint={askWindowHint(facts)}>
-                    <ToggleField checked={draft.userSelectsWindow} onChange={(on) => set({ userSelectsWindow: on })} label="Shipper chooses the pickup time" />
-                  </Row>
-                  <Row label="Shipper confirms the time" hint="Ops can plan the pickup only after the shipper confirms its time.">
-                    <ToggleField checked={draft.slotConfirmation} onChange={(on) => set({ slotConfirmation: on })} label="Shipper confirms the time" />
-                  </Row>
-                  <Row label="Exact event" hint={<>{triggerHint(draft.triggerEvent)} <EventCode code={draft.triggerEvent} /></>}>
-                    <div className="w-full">
-                      <MenuSelect value={draft.triggerEvent} options={AUTO_PICKUP_TRIGGER_CODES} labels={triggerOptionLabel}
-                        onChange={(e) => set({ triggerEvent: e })} />
-                    </div>
-                  </Row>
-                </>) : (
+                {!auto && <GroupLabel>Creating</GroupLabel>}
+                {!auto && (
                   <Row label="Book a pickup without consignments" hint="For when you don't know what will be picked up — the driver scans what is collected.">
                     <ToggleField checked={draft.blindAllowed} onChange={(on) => set({ blindAllowed: on })} label="Book a pickup without consignments" />
                   </Row>
                 )}
                 <GroupLabel>Booking</GroupLabel>
-                <Row label="Pickup days" hint={DAYS_SOURCE_HINT[draft.pickupDaysSource]}>
-                  <div className="w-full">
-                    <MenuSelect value={draft.pickupDaysSource} options={PICKUP_DAYS_SOURCES}
-                      labels={(src) => DAYS_SOURCE_LABEL[src as PickupDaysSource] ?? src} onChange={(src) => set({ pickupDaysSource: src as PickupDaysSource })} />
+                <Row label="Pickup days" hint={`${DAYS_SOURCE_HINT[draft.pickupDaysSource]} Hub holidays always block pickups.`}>
+                  <div className="flex w-full flex-col items-end gap-2">
+                    <div className="w-full">
+                      <MenuSelect value={draft.pickupDaysSource} options={PICKUP_DAYS_SOURCES}
+                        labels={(src) => DAYS_SOURCE_LABEL[src as PickupDaysSource] ?? src} onChange={(src) => set({ pickupDaysSource: src as PickupDaysSource })} />
+                    </div>
+                    <Button variant="outline" icon={<ExternalLink size={13} />}
+                      onClick={() => navigate('/local/settings/masters/service_order/holiday-master')}>Holiday master</Button>
                   </div>
-                </Row>
-                <Row label="Hub holidays" hint="Holidays always block pickups. Weekly offs and holidays are set per hub.">
-                  <Button variant="outline" icon={<ExternalLink size={13} />}
-                    onClick={() => navigate('/local/settings/masters/service_order/holiday-master')}>Holiday master</Button>
                 </Row>
                 <GroupLabel>Pick up and hand over</GroupLabel>
                 {/* what this switch really is (owner, 2026-10-07: "inward scanning is controlled elsewhere"): hub inward scanning lives on the
@@ -323,20 +329,20 @@ export default function PickupSettings() {
                   : 'A completed pickup closes at once — nothing waits to be matched at the hub.'}>
                   <ToggleField checked={draft.manifestRequired} onChange={(on) => set({ manifestRequired: on })} label="Wait for the hub handover" />
                 </Row>
-                <Row label="Proof — signature" hint="The shipper signs on the driver's phone.">
-                  <div className="w-full">
-                    <MenuSelect value={draft.signature} options={['required', 'optional', 'off']} labels={(pl) => POD_LABEL[pl as PodLevel] ?? pl}
-                      onChange={(pl) => set({ signature: pl as PodLevel })} />
+                <Row label="Proof of pickup" hint="What the driver collects at the door: the shipper's signature, a photo, a one-time code.">
+                  <div className="flex w-full flex-col gap-2">
+                    <Mini label="Signature">
+                      <MenuSelect value={draft.signature} options={['required', 'optional', 'off']} labels={(pl) => POD_LABEL[pl as PodLevel] ?? pl}
+                        onChange={(pl) => set({ signature: pl as PodLevel })} />
+                    </Mini>
+                    <Mini label="Photo">
+                      <MenuSelect value={draft.photo} options={['required', 'optional', 'off']} labels={(pl) => POD_LABEL[pl as PodLevel] ?? pl}
+                        onChange={(pl) => set({ photo: pl as PodLevel })} />
+                    </Mini>
+                    <Mini label="One-time code">
+                      <ToggleField checked={draft.otp} onChange={(on) => set({ otp: on })} label="One-time code" />
+                    </Mini>
                   </div>
-                </Row>
-                <Row label="Proof — photo" hint="A photo of the collected parcels.">
-                  <div className="w-full">
-                    <MenuSelect value={draft.photo} options={['required', 'optional', 'off']} labels={(pl) => POD_LABEL[pl as PodLevel] ?? pl}
-                      onChange={(pl) => set({ photo: pl as PodLevel })} />
-                  </div>
-                </Row>
-                <Row label="Proof — one-time code" hint="The shipper confirms the pickup with a code.">
-                  <ToggleField checked={draft.otp} onChange={(on) => set({ otp: on })} label="One-time code" />
                 </Row>
                 <Row label="Parcels not on the request" hint="What happens to a parcel the driver scans that was never booked.">
                   <div className="w-full">
@@ -345,20 +351,17 @@ export default function PickupSettings() {
                       onChange={(pl) => set({ overagePolicy: pl as PickupModuleConfig['overagePolicy'] })} />
                   </div>
                 </Row>
-                <GroupLabel>When it goes wrong</GroupLabel>
-                <Row label="Try again automatically" hint="After a failed pickup, a new request is made for the next pickup day.">
-                  <ToggleField checked={draft.autoRescheduleOnFail} onChange={(on) => set({ autoRescheduleOnFail: on })} label="Try again automatically" />
-                </Row>
-                <Row label="Merchants can change or cancel until" hint="After this, only ops can reschedule, cancel or split the pickup.">
-                  <div className="w-full">
-                    <MenuSelect value={draft.merchantCancelUntil} options={[...STAGES]} labels={(x) => STAGE_LABEL[x as typeof STAGES[number]] ?? x}
-                      onChange={(x) => set({ merchantCancelUntil: x as typeof STAGES[number] })} />
-                  </div>
-                </Row>
-                <Row label="Consignments can be added until" hint="After this, a new consignment needs a new pickup request.">
-                  <div className="w-full">
-                    <MenuSelect value={draft.allowAddToExistingUntil} options={[...STAGES]} labels={(x) => STAGE_LABEL[x as typeof STAGES[number]] ?? x}
-                      onChange={(x) => set({ allowAddToExistingUntil: x as typeof STAGES[number] })} />
+                <GroupLabel>Changes after booking</GroupLabel>
+                <Row label="Who can change it, until when" hint="After these points only ops can reschedule, cancel or split a pickup, or add consignments to it.">
+                  <div className="flex w-full flex-col gap-2">
+                    <Mini label="Merchants">
+                      <MenuSelect value={draft.merchantCancelUntil} options={[...STAGES]} labels={(x) => STAGE_LABEL[x as typeof STAGES[number]] ?? x}
+                        onChange={(x) => set({ merchantCancelUntil: x as typeof STAGES[number] })} />
+                    </Mini>
+                    <Mini label="Adding parcels">
+                      <MenuSelect value={draft.allowAddToExistingUntil} options={[...STAGES]} labels={(x) => STAGE_LABEL[x as typeof STAGES[number]] ?? x}
+                        onChange={(x) => set({ allowAddToExistingUntil: x as typeof STAGES[number] })} />
+                    </Mini>
                   </div>
                 </Row>
               </MoreOptions>
