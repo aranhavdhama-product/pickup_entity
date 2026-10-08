@@ -220,7 +220,7 @@ export default function PickupSettings() {
   /* the fold opens by itself when something in it is not at its default — a changed setting is never hidden */
   const D = DEFAULT_PICKUP_MODULE_CONFIG
   const advancedChanged = draft.userSelectsWindow || draft.slotConfirmation || !EVENT_AFTER_STATE[draft.triggerEvent] || !draft.blindAllowed
-    || draft.pickupDaysSource !== D.pickupDaysSource || draft.scanMode !== D.scanMode || draft.signature !== D.podRequirements.signature
+    || !draft.manifestRequired || draft.pickupDaysSource !== D.pickupDaysSource || draft.scanMode !== D.scanMode || draft.signature !== D.podRequirements.signature
     || draft.photo !== D.podRequirements.photo || draft.otp !== D.podRequirements.otp || draft.overagePolicy !== D.overagePolicy
     || draft.autoRescheduleOnFail !== D.autoRescheduleOnFail || draft.merchantCancelUntil !== D.merchantCancelUntil
     || draft.allowAddToExistingUntil !== D.allowAddToExistingUntil
@@ -233,8 +233,8 @@ export default function PickupSettings() {
     { title: 'Create', caption: auto ? `Automatic — when a consignment is ${state}` : `Manual — merchants and ops book${draft.blindAllowed ? ', even before consignments exist' : ''}` },
     { title: 'Book', caption: `Up to ${plural(would.bookingHorizonDays, 'day')} ahead; same-day until ${would.sameDayCutoff}` },
     { title: 'Pick up', caption: draft.manifestRequired
-      ? `Manifest: ${SCAN_LABEL[draft.scanMode].toLowerCase()}${proof.length ? ` · proof: ${proof.join(', ')}` : ''}`
-      : `No manifest — it closes when picked up${proof.length ? ` · proof: ${proof.join(', ')}` : ''}` },
+      ? `Handover: ${SCAN_LABEL[draft.scanMode].toLowerCase()}${proof.length ? ` · proof: ${proof.join(', ')}` : ''}`
+      : `Closes when picked up${proof.length ? ` · proof: ${proof.join(', ')}` : ''}` },
     { title: 'If it goes wrong', caption: `${draft.autoRescheduleOnFail ? 'Tries again automatically; ' : ''}the Reason Policy decides` },
   ]
 
@@ -276,11 +276,6 @@ export default function PickupSettings() {
                   <div className="w-[92px]"><Input type="time" value={draft.sameDayCutoff} onChange={(t) => set({ sameDayCutoff: t })} /></div>
                 </div>
               </Row>
-              <Row label="Pickup manifest required" hint={draft.manifestRequired
-                ? 'Parcels are scanned into a manifest; the request closes when it matches.'
-                : 'No manifest — the request closes the moment the pickup is completed.'}>
-                <ToggleField checked={draft.manifestRequired} onChange={(on) => set({ manifestRequired: on })} label="Pickup manifest required" on="Required" off="Not required" />
-              </Row>
               <Row label="If a pickup fails" hint="Each reason decides: try again, hold for review or cancel.">
                 <Button variant="outline" icon={<ExternalLink size={13} />}
                   onClick={() => navigate('/local/settings/masters/service_order/reason-master?tab=reason-policy')}>Reason Policy</Button>
@@ -317,6 +312,13 @@ export default function PickupSettings() {
                     onClick={() => navigate('/local/settings/masters/service_order/holiday-master')}>Holiday master</Button>
                 </Row>
                 <GroupLabel>Pick up and hand over</GroupLabel>
+                {/* what this switch really is (owner, 2026-10-07: "inward scanning is controlled elsewhere"): hub inward scanning lives on the
+                    Inbound page and is not turned off here — this only decides whether a completed pickup WAITS for its handover */}
+                <Row label="Wait for the hub handover" hint={draft.manifestRequired
+                  ? 'A completed pickup stays open until its scans match. Hub inward scanning is on the Inbound page.'
+                  : 'A completed pickup closes at once — nothing waits to be matched at the hub.'}>
+                  <ToggleField checked={draft.manifestRequired} onChange={(on) => set({ manifestRequired: on })} label="Wait for the hub handover" />
+                </Row>
                 {draft.manifestRequired && (
                   <Row label="Who scans the parcels" hint={SCAN_HINT[draft.scanMode]}>
                     <div className="w-full">
