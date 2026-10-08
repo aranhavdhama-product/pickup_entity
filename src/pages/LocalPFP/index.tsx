@@ -769,6 +769,9 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
   const prItems = useMemo(() => prSelectionItems(selectedPickups.map((r) => r.request), {
     cfg: pickupCfg, db, openDialog: setPrDialog, clear: clearSelection,
   }), [selectedPickups, pickupCfg, db])
+  /* the selected pickup requests that can be routed (the one "Plan For Routing" item of the pickup menu) */
+  const planPickupItem = prItems.find((i) => i.id === 'planCollection')
+  const pickupRoutable = planPickupItem && !planPickupItem.disabled ? selectedPickups.length : 0
 
   const clearAll = () => {
     setFrom(''); setTo(''); setStateSel([]); setPrStatusSel([]); setFunnel({}); setQ(''); setTypeSel('')
@@ -1099,6 +1102,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
       count={selected.size}
       metrics={selMetrics}
       routable={routable.length}
+      pickupRoutable={pickupRoutable}
       profile={profile}
       pickupMetrics={pickupMetrics}
       prItems={prItems}
@@ -1121,6 +1125,8 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
         if (kind === 'bookPickup') { setScheduling(bookable.map((r) => r.orderId)); return }
         if (kind === 'addToExisting') { setJoining(bookable.map((r) => r.orderId)); return }
         /* an action runs on the rows it applies to; the selection narrows to them so nothing is acted on out of sight */
+        /* a selection with pickup requests routes them too: consignments first (their own route), then the pickups' dialog */
+        if (kind === 'plan' && routable.length === 0 && planPickupItem && !planPickupItem.disabled) { planPickupItem.onClick?.(); return }
         const lastMileRows = selectedRows.filter((r) => r.activeLeg === 'Last Mile')
         const narrowTo = (rows: LocalConsignmentRow[]) => { if (rows.length !== selectedAll.length) setSelected(new Set(rows.map((r) => r.id))) }
         if (kind === 'ready') {
@@ -1524,7 +1530,8 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
         <PlanRouteModal rows={routable} onClose={() => setModal(null)} onApply={() => {
           const trip = planningActions.planForRouting(
             routable.map((r) => ({ orderId: r.orderId, orderNumber: r.orderNumber, address: r.address })))
-          done(`${trip.stops.length} shipments planned on ${trip.id} (Un-assigned) — assign a driver in Control Tower.`)
+          const msg = `${trip.stops.length} shipments planned on ${trip.id} (Un-assigned) — assign a driver in Control Tower.`
+          if (planPickupItem && !planPickupItem.disabled) { toast.success(msg); setModal(null); planPickupItem.onClick?.() } else done(msg)
         }} />
       )}
       {modal === 'close' && (
@@ -1749,10 +1756,12 @@ const PR_GLYPH: Partial<Record<PrAction, React.JSX.Element>> = {
   merge: <Stack size={16} />, printLabel: <Download size={16} />, cancel: <Trash size={16} />, downloadCsv: <Download size={16} />,
 }
 
-function SelectionPanel({ count, metrics, routable, profile, pickupMetrics, prItems, onClose, onAction }: {
+function SelectionPanel({ count, metrics, routable, pickupRoutable, profile, pickupMetrics, prItems, onClose, onAction }: {
   count: number
   metrics: { weight: number; volume: number; pallets: number }
   routable: number
+  /** pickup requests in the selection that Plan For Routing can take (a mixed selection routes both kinds) */
+  pickupRoutable: number
   profile: {
     total: number; consignments: number; pickups: number
     forward: number; reverse: number; reserved: number; ftl: number; mixed: boolean; awaiting: number; lastMile: number; forwardLastMile: number
@@ -1809,7 +1818,7 @@ function SelectionPanel({ count, metrics, routable, profile, pickupMetrics, prIt
     /* the two routing entries are ALWAYS listed — greyed, with the reason on hover, when nothing qualifies */
     { key: 'bestRoute', label: 'Add To Best Route', icon: <Sparkles size={16} />, eligible: routable, kind: 'consignment',
       scope: 'Shipments that are at the facility and have a delivery window.' },
-    { key: 'plan', label: 'Plan For Routing', icon: <RoutePath size={16} />, eligible: routable, kind: 'consignment',
+    { key: 'plan', label: 'Plan For Routing', icon: <RoutePath size={16} />, eligible: routable + pickupRoutable, kind: 'consignment',
       scope: 'Shipments that are at the facility and have a delivery window.' },
     { key: 'ready', label: 'Mark Ready for Planning', icon: <CalendarCheck size={16} />, eligible: profile.lastMile, kind: 'consignment',
       blocked: 'Only consignments at the facility (last mile).' },
