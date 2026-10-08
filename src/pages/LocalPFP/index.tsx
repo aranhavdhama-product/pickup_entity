@@ -1101,7 +1101,14 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
       onAction={(kind) => {
         /* staging actions with no local implementation (owner, 2026-09-25: the
            consignment panel carries staging's exact list) */
-        if (kind === 'modify' || kind === 'carrier' || kind === 'storage' || kind === 'driver' || kind === 'bestRoute') {
+        if (kind === 'modify' && selectedRows[0]) { nav(`/local/consignments/new?draft=${selectedRows[0].orderId}`); return }
+        if (kind === 'bestRoute') {
+          /* the best open route for these shipments — today a new Un-assigned route (the planner assigns the driver in Control Tower) */
+          const trip = planningActions.planForRouting(routable.map((r) => ({ orderId: r.orderId, orderNumber: r.orderNumber, address: r.address })))
+          done(`${trip.stops.length} shipment${trip.stops.length === 1 ? '' : 's'} added to the best route ${trip.id} (Un-assigned) — assign a driver in Control Tower.`)
+          return
+        }
+        if (kind === 'carrier' || kind === 'storage' || kind === 'driver') {
           toast.info('Not available in the prototype.')
           return
         }
@@ -1771,6 +1778,8 @@ function SelectionPanel({ count, metrics, routable, profile, pickupMetrics, prIt
     /** the matrix's reason when the action is blocked for this selection */
     blocked?: string
     danger?: boolean
+    /** production lists some actions for ONE selected consignment only (Modify …, Schedule, Assign To Driver, Add To Best Route) */
+    only?: 'single' | 'multi'
   }[] = [
     /* ---- consignment actions: EXACTLY staging's list, in staging's order
             (owner, 2026-09-25). The five with no local implementation say so
@@ -1781,27 +1790,23 @@ function SelectionPanel({ count, metrics, routable, profile, pickupMetrics, prIt
       blocked: 'Only consignments waiting for a pickup request — pick the "No Pickup Request" chip — with the pickup module in Manual mode.' },
     { key: 'addToExisting', label: 'Add to existing pickup request', icon: <Truck size={16} />, eligible: profile.awaiting, kind: 'consignment',
       blocked: 'Only consignments waiting for a pickup request — pick the "No Pickup Request" chip — with the pickup module in Manual mode.' },
-    { key: 'schedule', label: 'Schedule delivery', icon: <Clock size={16} />, eligible: profile.lastMile, kind: 'consignment',
+    { key: 'modify', label: 'Modify Consignment Details', icon: <NotePencil size={16} />, eligible: c, kind: 'consignment', only: 'single' },
+    { key: 'schedule', label: 'Schedule', icon: <Clock size={16} />, eligible: profile.lastMile, kind: 'consignment', only: 'single',
       blocked: 'Only consignments at the facility (last mile). A consignment waiting for a pickup is scheduled with Schedule Pickup.' },
+    { key: 'rto', label: 'Initiate Return to Origin', icon: <ArrowUturnLeft size={16} />, eligible: profile.forwardLastMile,
+      kind: 'consignment', blocked: 'Forward consignments at the facility only — a reverse order is already returning, and one not yet collected has nothing to return.' },
+    { key: 'carrier', label: 'Modify Carrier', icon: <PackageGlyph size={16} />, eligible: c, kind: 'consignment', only: 'single' },
+    { key: 'storage', label: 'Modify Storage Location', icon: <MapPin size={16} />, eligible: c, kind: 'consignment', only: 'single' },
+    { key: 'driver', label: 'Assign To Driver', icon: <Send size={16} />, eligible: c, kind: 'consignment', only: 'single' },
+    { key: 'bestRoute', label: 'Add To Best Route', icon: <Sparkles size={16} />, eligible: routable, kind: 'consignment', only: 'single',
+      scope: 'Shipments that are at the facility and have a delivery window.' },
     { key: 'plan', label: 'Plan For Routing', icon: <RoutePath size={16} />, eligible: routable, kind: 'consignment',
       scope: 'Shipments that are at the facility and have a delivery window.' },
     { key: 'ready', label: 'Mark Ready for Planning', icon: <CalendarCheck size={16} />, eligible: profile.lastMile, kind: 'consignment',
       blocked: 'Only consignments at the facility (last mile).' },
-    { key: 'rto', label: 'Initiate Return to Origin', icon: <ArrowUturnLeft size={16} />, eligible: profile.forwardLastMile,
-      kind: 'consignment', blocked: 'Forward consignments at the facility only — a reverse order is already returning, and one not yet collected has nothing to return.' },
-    { key: 'close', label: 'Close Consignment', icon: <ListChecks size={16} />, eligible: profile.lastMile, kind: 'consignment',
-      blocked: 'Only consignments at the facility (last mile).' },
-    { key: 'exception', label: 'Raise Exception', icon: <WarningTriangle size={16} />, eligible: c, kind: 'consignment' },
-    /* staging's other five have no local implementation — they sit folded, never as live-looking buttons */
-    { key: 'modify', label: 'Modify Order Details', icon: <NotePencil size={16} />, eligible: 0, kind: 'consignment', blocked: 'Not available in the prototype.' },
-    { key: 'carrier', label: 'Modify Carrier', icon: <PackageGlyph size={16} />, eligible: 0, kind: 'consignment', blocked: 'Not available in the prototype.' },
-    { key: 'storage', label: 'Modify Storage Location', icon: <MapPin size={16} />, eligible: 0, kind: 'consignment', blocked: 'Not available in the prototype.' },
-    { key: 'driver', label: 'Assign To Driver', icon: <Send size={16} />, eligible: 0, kind: 'consignment', blocked: 'Not available in the prototype.' },
-    { key: 'bestRoute', label: 'Add To Best Route', icon: <Sparkles size={16} />, eligible: 0, kind: 'consignment', blocked: 'Not available in the prototype.' },
     { key: 'csv', label: 'Download CSV', icon: <Download size={16} />, eligible: c, kind: 'both',
       scope: 'Exports the consignment rows.' },
-    { key: 'exception', label: 'Raise Exception', icon: <WarningTriangle size={16} />, eligible: c, kind: 'consignment' },
-    { key: 'cancel', label: 'Cancel Order', icon: <Trash size={16} />, eligible: c, kind: 'consignment', danger: true },
+    { key: 'cancel', label: 'Cancel Consignment', icon: <Trash size={16} />, eligible: c, kind: 'consignment', danger: true },
     /* a MIXED selection's cancel: calls off the pickups AND cancels the consignments */
     { key: 'cancelMixed', label: 'Cancel', icon: <Trash size={16} />, eligible: profile.total, kind: 'mixed', danger: true,
       scope: 'Cancels the selected consignments and calls off the selected pickup requests.' },
@@ -1826,6 +1831,9 @@ function SelectionPanel({ count, metrics, routable, profile, pickupMetrics, prIt
     if (profile.mixed) return MIXED_KEYS.has(a.key)
     if (a.kind === 'mixed') return false
     if (a.kind === 'both') return true
+    if (a.only === 'single' && c !== 1) return false
+    if (a.only === 'multi' && c < 2) return false
+    if ((a.key === 'bookPickup' || a.key === 'addToExisting') && profile.awaiting === 0) return false
     return a.kind === 'consignment' && c > 0
   })
   /* a pickups-only selection: the shared 16-item pickup-request menu instead */

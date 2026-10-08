@@ -32,8 +32,18 @@ export interface PrSelectionItem {
   onClick?: () => void
 }
 
-/** The label of the routing action on a pickup request (owner, 2026-09-25). */
+/** The label of the routing action on a pickup request (owner, 2026-09-25) — now the dialog's tab; the list says "Plan For Routing". */
 export const PLAN_PR_LABEL = 'Plan pickup request for routing'
+
+/** the single "Plan For Routing" entry: enabled when either way is (plan a new collection / add to a route) */
+function routingItem(sel: GrowPickupRequest[], ctx: Parameters<typeof prBulkState>[2], openDialog: (d: PrDialog) => void, clear: () => void): PrSelectionItem {
+  const plan = prBulkState('planCollection', sel, ctx), add = prBulkState('addToRoute', sel, ctx)
+  const enabled = plan.enabled || add.enabled
+  return {
+    id: 'planCollection', label: 'Plan For Routing', disabled: !enabled, reason: enabled ? undefined : plan.reason ?? add.reason,
+    onClick: enabled ? () => { openDialog({ kind: plan.enabled ? 'plan' : 'route', prs: sel }); clear() } : undefined,
+  }
+}
 
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
 
@@ -60,8 +70,9 @@ export function prSelectionItems(sel: GrowPickupRequest[], { cfg, db, openDialog
     clear()
   }
   return [
-    item('planCollection', PLAN_PR_LABEL, open('plan')),
-    item('addToRoute', 'Add to route', open('route')),
+    /* ONE routing item (owner, 2026-10-08): "Plan For Routing" opens the dialog whose tabs are Add to best route · Manual · Plan pickup
+       request for routing — they are no longer separate list entries */
+    routingItem(sel, ctx, openDialog, clear),
     item('assignCarrier', 'Assign carrier', open('carrier')),
     item('switchToFleet', 'Switch to fleet', each((p) => { growOrderActions.clearCarrier(p.id); return true },
       (n) => `${plural(n, 'request')} taken back from the carrier — add ${n === 1 ? 'it' : 'them'} to a route.`)),
