@@ -559,22 +559,29 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
       }
       return [...g.entries()].sort(([a], [b]) => Number(a === '') - Number(b === '')).flatMap(([, v]) => v)
     }
-    /* All, no column sort: every page is a MIX of both legs (owner, 2026-10-08: "page one needs a mix of both") — half the page
-       from the first-mile consignments (grouped under their pickup request), half from the last-mile deliveries; when one leg
-       runs short the other fills the page. A group that straddles a page repeats its header on the next. */
+    /* All, no column sort: pickups and deliveries are MIXED TOGETHER (owner, 2026-10-08), evenly — never a block of one then a block
+       of the other. The two kinds are interleaved in proportion to how many there are (a pickup request, or a pickup's group of
+       consignments, counts as ONE unit so a group stays whole). */
     const mixLegs = (xs: DisplayRow[]) => {
       if (tab !== 'all') return xs
       const firstMile = (r: DisplayRow) => (consView ? r.cells.activeLeg === 'First Mile' : r.rowType !== 'Consignment')
-      const fm = xs.filter(firstMile), lm = xs.filter((r) => !firstMile(r))
-      if (!fm.length || !lm.length) return xs
-      const half = Math.ceil(pageSize / 2), out: DisplayRow[] = []
+      /* units: a first-mile unit = the rows of one pickup request (or one pickup row); a delivery unit = one row */
+      const fmUnits: DisplayRow[][] = [], lmUnits: DisplayRow[][] = []
+      let prevKey = '\u0000'
+      for (const r of xs) {
+        if (firstMile(r)) {
+          const key = consView && grouped ? cellCtx.byId.get(r.orderId)?.pickupRequestId ?? r.id : r.id
+          if (key === prevKey && fmUnits.length) fmUnits[fmUnits.length - 1].push(r); else fmUnits.push([r])
+          prevKey = key
+        } else { lmUnits.push([r]); prevKey = '\u0000' }
+      }
+      if (!fmUnits.length || !lmUnits.length) return xs
+      const out: DisplayRow[] = []
       let i = 0, j = 0
-      while (i < fm.length || j < lm.length) {
-        let takeFm = Math.min(half, fm.length - i)
-        const takeLm = Math.min(pageSize - takeFm, lm.length - j)
-        if (takeFm + takeLm < pageSize) takeFm = Math.min(pageSize - takeLm, fm.length - i)
-        out.push(...fm.slice(i, i + takeFm), ...lm.slice(j, j + takeLm))
-        i += takeFm; j += takeLm
+      while (i < fmUnits.length || j < lmUnits.length) {
+        /* take from the kind that is further behind its share */
+        const takeFm = j >= lmUnits.length || (i < fmUnits.length && i / fmUnits.length <= j / lmUnits.length)
+        out.push(...(takeFm ? fmUnits[i++] : lmUnits[j++]))
       }
       return out
     }
@@ -587,7 +594,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
         ? n - m : x.localeCompare(y)
       return dir === 'asc' ? cmp : -cmp
     }))
-  }, [fixture, filtered, sort, cellCtx, tab, grouped, consView, pageSize])
+  }, [fixture, filtered, sort, cellCtx, tab, grouped, consView])
 
   /* The fixture is ONE page of staging's 101 rows, so its pager must be
      staging's — five numbered buttons and an enabled next arrow. Deriving the
@@ -959,16 +966,18 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
 
   /* the View switch — a quiet icon, not a bar (owner, 2026-10-08). What it sets is the saved View setup, so it is the page every
      visitor opens (kept on the server with the form setup). */
-  const viewControl = !fixture && pickupsOn && (tab === 'all' || tab === 'first-mile') ? (
+  const showViews = pickupsOn && (tab === 'all' || tab === 'first-mile')
+  const viewControl = !fixture ? (
     <div style={{ position: 'relative' }} onClick={(e) => e.stopPropagation()}>
-      <button type="button" className="pfp-iconbtn" title="View — pickup requests or consignments" aria-label="View"
+      <button type="button" className="pfp-iconbtn" title={showViews ? 'View and table settings' : 'Table settings'} aria-label="View and table settings"
         onClick={() => setPop(pop === 'view' ? null : 'view')}>
         <Rows3 size={16} />
       </button>
       {pop === 'view' && (
         <div className="pfp-pop" style={{ top: 36, right: 0, width: 280 }}>
+          {showViews && (<>
           <p className="lc-pop-group">Show</p>
-          {([['pickups', 'Pickup requests'], ['consignments', 'Consignments']] as const).map(([k, label]) => (
+          {([['pickups', tab === 'all' ? 'Pickup requests + deliveries' : 'Pickup requests'], ['consignments', tab === 'all' ? 'Consignments by pickup' : 'Consignments']] as const).map(([k, label]) => (
             <button key={k} type="button" className="pfp-pop-option" onClick={() => { setVs(tab === 'all' ? { all: k } : { firstMile: k }); switchTab(tab, { cons: k === 'consignments' }) }}>
               <input type="radio" readOnly checked={(k === 'consignments') === consView} tabIndex={-1} />
               <span>{label}</span>
@@ -992,9 +1001,22 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
               </button>
             )
           })()}
-          <p style={{ margin: 0, padding: '8px 16px 10px', fontSize: 12, color: 'var(--pfp-ink-hint)' }}>
+          <p style={{ margin: 0, padding: '4px 16px 8px', fontSize: 12, color: 'var(--pfp-ink-hint)' }}>
             Saved for everyone — the page opens this way for every visitor.
           </p>
+          </>)}
+          {/* the table settings that lived behind a separate ⚙ button */}
+          <p className="lc-pop-group">Table</p>
+          <button type="button" className="pfp-pop-option" onClick={() => setDensity(density === 'Default' ? 'Compact' : 'Default')}>
+            <span className="pfp-menu-row" style={{ width: '100%' }}>Table Density <span data-value>{density}</span></span>
+          </button>
+          <button type="button" className="pfp-pop-option" onClick={() => setWrapping(wrapping === 'Default' ? 'Wrap' : 'Default')}>
+            <span className="pfp-menu-row" style={{ width: '100%' }}>Table Wrapping <span data-value>{wrapping}</span></span>
+          </button>
+          <button type="button" className="pfp-pop-option" onClick={() => { setDensity('Default'); setWrapping('Default'); setSort(null); setPop(null) }}>
+            Reset To Default
+          </button>
+          <button type="button" className="pfp-pop-option" onClick={() => nav('/local/columns')}>Resequence Columns</button>
         </div>
       )}
     </div>
@@ -1103,6 +1125,13 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
         <button key={k} type="button" className="pfp-chip" data-size="sm" aria-pressed={tab === k && !awaitingMode}
           onClick={() => switchTab(tab === k ? 'all' : k)}>{label}<span className="pfp-chip-count">{tabCounts[k]}</span></button>
       ))}
+      {/* a quick filter that is ON stays visible here even when its cards are folded away (it silently narrowed the list before) */}
+      {quick && (
+        <button type="button" className="pfp-chip" data-size="sm" aria-pressed="true" title="Remove this quick filter"
+          onClick={() => { setQuick(''); setPage(1) }}>
+          {QUICK_FILTERS.find((f) => f.key === quick)?.label} ✕
+        </button>
+      )}
     </>
   ) : null
 
@@ -1205,50 +1234,44 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
                 the icon actions on the right */}
             {searchControl}
 
-            {/* Show / Hide cards and Quick Filter — icon-only (owner request),
-                the label moves to the tooltip; pressed = the section is open */}
-            {filterMode === 'consignment' && <button type="button" className="pfp-iconbtn pfp-toggle" onClick={toggleStrip}
-              aria-pressed={stripOpen}
-              aria-label={stripOpen ? 'Hide the Carriers and Categories chips' : 'Show the Carriers and Categories chips'}
-              title={stripOpen ? 'Hide carriers & categories' : 'Show carriers & categories'}>
-              <GridFour size={16} />
-            </button>}
-
-            {filterMode === 'consignment' && <button type="button" className="pfp-iconbtn pfp-toggle" onClick={() => setQuickOpen((v) => !v)}
-              aria-pressed={quickOpen} aria-label="Quick Filter" title="Quick Filter">
-              <WarningCircle size={18} style={{ color: 'rgb(199, 40, 32)' }} />
-            </button>}
-
-            {/* the bulk-actions affordance: disabled until rows are picked — the
-                old "Select orders for more action" hint is now its tooltip */}
-            <span className="pfp-iconbtn pfp-bulk" role="img" data-disabled={!selected.size || undefined}
-              aria-label={selected.size ? `${selected.size} selected` : 'Select orders for more action'}
-              title={selected.size ? `${selected.size} selected — actions in the panel` : 'Select orders for more action'}>
-              <ListChecks size={16} />
-              {selected.size > 0 && <span className="pfp-bulk-count">{selected.size}</span>}
-            </span>
-
-            {downloadControl}
-            {canCreatePickup && <CreatePickupButton onPick={setCreating} />}
-            {viewControl}
-            {columnsControl}
-            {settingsControl}
+            {/* the icon tools as ONE quiet bar (owner, 2026-10-08: "looks cluttered — without removing any option"): filters · actions · view */}
+            <div className="pfp-iconbar">
+              {/* Show / Hide cards and Quick Filter — icon-only, the label is the tooltip; pressed = the section is open */}
+              {filterMode === 'consignment' && <button type="button" className="pfp-iconbtn pfp-toggle" onClick={toggleStrip}
+                aria-pressed={stripOpen}
+                aria-label={stripOpen ? 'Hide the Carriers and Categories chips' : 'Show the Carriers and Categories chips'}
+                title={stripOpen ? 'Hide carriers & categories' : 'Show carriers & categories'}>
+                <GridFour size={16} />
+              </button>}
+              {filterMode === 'consignment' && <button type="button" className="pfp-iconbtn pfp-toggle" onClick={() => setQuickOpen((v) => !v)}
+                aria-pressed={quickOpen} aria-label="Quick Filter" title="Quick Filter">
+                <WarningCircle size={18} style={{ color: 'rgb(199, 40, 32)' }} />
+              </button>}
+              {filterMode === 'consignment' && <span className="pfp-iconbar-sep" aria-hidden />}
+              {downloadControl}
+              <span className="pfp-iconbar-sep" aria-hidden />
+              {viewControl}
+              {columnsControl}
+            </div>
             {selectionPanel}
           </FilterLine>
 
           {/* ----------------------------------------------- row 2: the strip */}
-          {/* ONE chip line: Leg · Carriers · Categories (the last two only on the consignment grids); the quick-filter cards sit below it */}
-          {(legChips || (filterMode === 'consignment' && stripOpen && !quickOpen)) && (
-            <div className="pfp-chipbar">
-              {legChips}
-              {legChips && filterMode === 'consignment' && stripOpen && !quickOpen && <span className="pfp-chipbar-sep" aria-hidden />}
-              {filterMode === 'consignment' && stripOpen && !quickOpen && (<>
-                <span className="pfp-chipbar-label">Carriers:</span>
-                {carriers.map((c) => carrierChip(c, 'sm'))}
-                <span className="pfp-chipbar-sep" aria-hidden />
-                <span className="pfp-chipbar-label">Categories:</span>
-                {categories.map((c) => categoryChip(c, 'sm'))}
-              </>)}
+          {/* ONE scope line: Leg · Carriers · Categories on the left, the Blind pickup action on the right; the quick-filter cards sit below */}
+          {(legChips || canCreatePickup || (filterMode === 'consignment' && stripOpen && !quickOpen)) && (
+            <div className="pfp-scope">
+              <div className="pfp-chipbar">
+                {legChips}
+                {legChips && filterMode === 'consignment' && stripOpen && !quickOpen && <span className="pfp-chipbar-sep" aria-hidden />}
+                {filterMode === 'consignment' && stripOpen && !quickOpen && (<>
+                  <span className="pfp-chipbar-label">Carriers:</span>
+                  {carriers.map((c) => carrierChip(c, 'sm'))}
+                  <span className="pfp-chipbar-sep" aria-hidden />
+                  <span className="pfp-chipbar-label">Categories:</span>
+                  {categories.map((c) => categoryChip(c, 'sm'))}
+                </>)}
+              </div>
+              {canCreatePickup && <CreatePickupButton onPick={setCreating} />}
             </div>
           )}
           {filterMode === 'consignment' && quickOpen && quickStrip}
@@ -1428,9 +1451,6 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
           </button>
         </nav>
 
-        <button type="button" className="pfp-refresh" onClick={() => { setPage(1); toast.info('Queue refreshed.') }}>
-          <Refresh size={22} /> Refresh
-        </button>
       </div>
 
       {/* ------------------------------------------------------------ popups */}

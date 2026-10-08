@@ -399,6 +399,17 @@
   white-space: nowrap;
   scrollbar-width: thin;
 }
+.pfp-scope { display: flex; align-items: center; gap: 16px; margin-top: 12px; min-width: 0; }
+.pfp-scope > .pfp-chipbar { margin-top: 0; flex: 1 1 auto; min-width: 0; }
+/* the unselected chips are quiet text; a selected one is the only filled thing on the line */
+.pfp-chipbar .pfp-chip:not([aria-pressed='true']) { background: transparent; border-color: transparent; }
+.pfp-chipbar .pfp-chip:not([aria-pressed='true']):hover { background: var(--pfp-canvas); border-color: var(--pfp-line); }
+/* the icon tools as one bordered bar */
+.pfp-iconbar { display: inline-flex; align-items: center; flex: none; height: 34px; padding: 0 2px; border: 1px solid var(--pfp-line); border-radius: 10px; background: var(--pfp-surface); }
+.pfp-iconbar .pfp-iconbtn { height: 30px; min-width: 32px; border: 0; border-radius: 8px; }
+.pfp-iconbar .pfp-toggle { width: 32px; border: 0; background: transparent; border-radius: 8px; }
+.pfp-iconbar .pfp-toggle[aria-pressed='true'] { background: var(--pfp-brand-tint); color: var(--pfp-brand); }
+.pfp-iconbar-sep { flex: none; align-self: stretch; width: 1px; margin: 7px 3px; background: var(--pfp-line); }
 .pfp-chipbar-label { flex: none; font-size: 13px; font-weight: 600; color: var(--pfp-ink-hint); }
 .pfp-chipbar-sep { flex: none; width: 1px; height: 20px; margin: 0 4px; background: var(--pfp-line); }
 .lc-chipbar-spacer { flex: 1 0 8px; }

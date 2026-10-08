@@ -2,7 +2,7 @@
  * Pending For Planning — how each tab opens (owner, 2026-10-08: "a toggle hidden discreetly … what I save is saved on the
  * server and visible to all, this demo is seen by a lot of people").
  *
- *   all        — what All lists: its consignments (default) or the pickup requests
+ *   all        — what All lists: the pickup requests WITH the deliveries, mixed (default) or the consignments under their pickup request
  *   firstMile  — what First Mile lists: the pickup requests (default) or their consignments
  *   grouped    — consignments under a header row per pickup request
  *
@@ -12,7 +12,8 @@
  */
 import { useState } from 'react'
 
-export const PFP_VIEW_KEY = 'pfp-view-setup-v1'
+/* v2 (2026-10-08): All now opens on the MIXED table — pickup requests and deliveries together — so every saved v1 choice starts over */
+export const PFP_VIEW_KEY = 'pfp-view-setup-v2'
 export const PFP_COLUMNS_PICKUP_KEY = 'pfp-columns-pickup-v1'
 export const PFP_COLUMNS_CONSIGNMENT_KEY = 'pfp-columns-consignment-v2'
 
@@ -21,7 +22,7 @@ export interface PfpViewSetup {
   firstMile: 'pickups' | 'consignments'
   grouped: boolean
 }
-export const DEFAULT_VIEW_SETUP: PfpViewSetup = { all: 'consignments', firstMile: 'pickups', grouped: true }
+export const DEFAULT_VIEW_SETUP: PfpViewSetup = { all: 'pickups', firstMile: 'pickups', grouped: true }
 
 export function readViewSetup(): PfpViewSetup {
   try {
@@ -29,7 +30,7 @@ export function readViewSetup(): PfpViewSetup {
     const v = raw ? (JSON.parse(raw) as Partial<PfpViewSetup>) : null
     if (v && typeof v === 'object') {
       return {
-        all: v.all === 'pickups' ? 'pickups' : 'consignments',
+        all: v.all === 'consignments' ? 'consignments' : 'pickups',
         firstMile: v.firstMile === 'consignments' ? 'consignments' : 'pickups',
         grouped: v.grouped !== false,
       }
