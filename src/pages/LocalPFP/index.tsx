@@ -1095,19 +1095,17 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
       }} />
   )
 
-  const awaitingCount = useMemo(() => all.filter(awaitingPickup).length, [all])
-
   const quickStrip = (
     <div className="lc-exceptions">
       <div className="pfp-strip" data-quick="true">
-        {QUICK_FILTERS.map((f) => {
+        {QUICK_FILTERS.filter((f) => f.key !== 'pickup').map((f) => {
           const Icon = QUICK_ICON[f.key]
           return (
             <button key={f.key} type="button" className="pfp-exception-card" data-tone={f.tone}
               aria-pressed={quick === f.key}
               onClick={() => { setQuick(quick === f.key ? '' : f.key); setPage(1) }}>
               <span className="lc-ex-head"><span className="lc-ex-icon"><Icon size={20} /></span><h4>{f.label}</h4></span>
-              <p>{f.key === 'pickup' ? `${awaitingCount} consignment${awaitingCount === 1 ? '' : 's'} waiting for a pickup request` : f.hint}</p>
+              <p>{f.hint}</p>
             </button>
           )
         })}
@@ -1117,6 +1115,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
   )
 
   /* LEG (owner, 2026-10-08: "remove the First Mile / Last Mile tabs and give a leg filter like Carriers / Categories") */
+  const awaitingCount = useMemo(() => all.filter(awaitingPickup).length, [all])
   const legChips = pickupsOn && !fixture ? (
     <>
       <span className="pfp-chipbar-label">Leg:</span>
@@ -1124,13 +1123,14 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
         <button key={k} type="button" className="pfp-chip" data-size="sm" aria-pressed={tab === k && !awaitingMode}
           onClick={() => switchTab(tab === k ? 'all' : k)}>{label}<span className="pfp-chip-count">{tabCounts[k]}</span></button>
       ))}
-      {/* a quick filter that is ON stays visible here even when its cards are folded away (it silently narrowed the list before) */}
-      {quick && (
-        <button type="button" className="pfp-chip" data-size="sm" aria-pressed="true" title="Remove this quick filter"
-          onClick={() => { setQuick(''); setPage(1) }}>
-          {QUICK_FILTERS.find((f) => f.key === quick)?.label} ✕
-        </button>
-      )}
+      {/* NOT an exception: consignments nobody has booked a pickup for are an action queue — picked here, they appear, get selected
+          and planned (Schedule Pickup); otherwise they are not in the list */}
+      <span className="pfp-chipbar-sep" aria-hidden />
+      <button type="button" className="pfp-chip" data-size="sm" aria-pressed={quick === 'pickup'}
+        title="Consignments waiting for a pickup request — select them and Schedule Pickup"
+        onClick={() => { setQuick(quick === 'pickup' ? '' : 'pickup'); setPage(1) }}>
+        <Truck size={14} />Pending For Pickup<span className="pfp-chip-count">{awaitingCount}</span>
+      </button>
     </>
   ) : null
 
@@ -1246,20 +1246,25 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
           {/* ----------------------------------------------- row 2: the strip */}
           {/* ONE scope line: Leg · Carriers · Categories on the left, the Blind pickup action on the right; the quick-filter cards sit below */}
           {/* owner, 2026-10-08: permanent — Leg · Carriers · Categories AND the exception cards, on every leg and every view */}
-          {!fixture && (
+          {!fixture && (<>
+            {/* line 1: the scope — Leg and Pending For Pickup, then the Blind pickup action */}
             <div className="pfp-scope">
-              <div className="pfp-chipbar">
-                {legChips}
-                {legChips && <span className="pfp-chipbar-sep" aria-hidden />}
+              <div className="pfp-chipbar">{legChips}</div>
+              {canCreatePickup && <CreatePickupButton onPick={setCreating} />}
+            </div>
+            {/* line 2: Carriers stay put; ONLY the categories scroll (owner, 2026-10-08) */}
+            <div className="pfp-scope" style={{ marginTop: 8 }}>
+              <div className="pfp-chipbar" data-fixed="true">
                 <span className="pfp-chipbar-label">Carriers:</span>
                 {carriers.map((c) => carrierChip(c, 'sm'))}
                 <span className="pfp-chipbar-sep" aria-hidden />
                 <span className="pfp-chipbar-label">Categories:</span>
+              </div>
+              <div className="pfp-chipbar" data-scroll="true">
                 {categories.map((c) => categoryChip(c, 'sm'))}
               </div>
-              {canCreatePickup && <CreatePickupButton onPick={setCreating} />}
             </div>
-          )}
+          </>)}
           {!fixture && quickStrip}
         </>
       )}

@@ -489,3 +489,7 @@
 .pfp .pfp-exception-card h4 { margin: 0; font-size: 15px; font-weight: 700; color: var(--pfp-ink); }
 .pfp .pfp-exception-card p { margin: 0; font-size: 13px; line-height: 18px; color: var(--pfp-ink-muted); }
 .lc-exceptions .pfp-exception-note { margin: 6px 0 0; font-size: 12px; }
+
+/* the scope line: Leg · Pending For Pickup · Carriers are fixed; ONLY the categories scroll (owner, 2026-10-08) */
+.pfp-scope > .pfp-chipbar[data-fixed='true'] { flex: 0 1 auto; overflow-x: auto; scrollbar-width: none; }
+.pfp-scope > .pfp-chipbar[data-scroll='true'] { flex: 1 1 0; min-width: 0; overflow-x: auto; margin-left: -8px; }
