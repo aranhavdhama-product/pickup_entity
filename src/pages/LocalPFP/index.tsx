@@ -666,6 +666,11 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
       /* the ones a pickup can be booked for NOW: waiting, bookable, and the module is in Manual mode */
       /* where the selected consignments ARE decides what can be done with them (owner, 2026-10-08) */
       lastMile: selectedRows.filter((r) => r.activeLeg === 'Last Mile').length,
+      /* production lists some actions by WHERE the rows are (owner, 2026-10-08): Modify Storage Location / Assign To Driver for rows at the
+         facility, Modify Carrier / Add To Best Route once dispatch-ready, Close only before the facility */
+      allFacility: selectedRows.length > 0 && selectedRows.every((r) => r.state === 'At Facility'),
+      anyFacility: selectedRows.some((r) => r.state === 'At Facility'),
+      allCarrierReady: selectedRows.length > 0 && selectedRows.every((r) => r.state === 'At Facility' || r.secondaryState === 'Ready For Last Mile Dispatch'),
       forwardLastMile: selectedRows.filter((r) => r.activeLeg === 'Last Mile' && r.orderTypeLabel === 'Forward').length,
       awaiting: pickupCfg.mode === 'manual' && pickupsOn
         ? selectedRows.filter((r) => awaitingPickup(r) && canSchedulePickup(r.order, db.pickupRequests)).length : 0,
@@ -1751,6 +1756,7 @@ function SelectionPanel({ count, metrics, routable, profile, pickupMetrics, prIt
   profile: {
     total: number; consignments: number; pickups: number
     forward: number; reverse: number; reserved: number; ftl: number; mixed: boolean; awaiting: number; lastMile: number; forwardLastMile: number
+    allFacility: boolean; anyFacility: boolean; allCarrierReady: boolean
   }
   pickupMetrics: { orders: number; weight: number; known: boolean; approx: boolean }
   /** the shared pickup-request menu for the selected pickups (a pickups-only selection) */
@@ -1780,6 +1786,8 @@ function SelectionPanel({ count, metrics, routable, profile, pickupMetrics, prIt
     danger?: boolean
     /** production lists some actions for ONE selected consignment only (Modify …, Schedule, Assign To Driver, Add To Best Route) */
     only?: 'single' | 'multi'
+    /** listed only when this holds for the selection (production's lists differ by where the rows are) */
+    show?: boolean
   }[] = [
     /* ---- consignment actions: EXACTLY staging's list, in staging's order
             (owner, 2026-09-25). The five with no local implementation say so
@@ -1791,19 +1799,22 @@ function SelectionPanel({ count, metrics, routable, profile, pickupMetrics, prIt
     { key: 'addToExisting', label: 'Add to existing pickup request', icon: <Truck size={16} />, eligible: profile.awaiting, kind: 'consignment',
       blocked: 'Only consignments waiting for a pickup request — pick the "No Pickup Request" chip — with the pickup module in Manual mode.' },
     { key: 'modify', label: 'Modify Consignment Details', icon: <NotePencil size={16} />, eligible: c, kind: 'consignment', only: 'single' },
-    { key: 'schedule', label: 'Schedule', icon: <Clock size={16} />, eligible: profile.lastMile, kind: 'consignment', only: 'single',
+    { key: 'schedule', label: 'Schedule', icon: <Clock size={16} />, eligible: profile.lastMile, kind: 'consignment',
       blocked: 'Only consignments at the facility (last mile). A consignment waiting for a pickup is scheduled with Schedule Pickup.' },
     { key: 'rto', label: 'Initiate Return to Origin', icon: <ArrowUturnLeft size={16} />, eligible: profile.forwardLastMile,
       kind: 'consignment', blocked: 'Forward consignments at the facility only — a reverse order is already returning, and one not yet collected has nothing to return.' },
-    { key: 'carrier', label: 'Modify Carrier', icon: <PackageGlyph size={16} />, eligible: c, kind: 'consignment', only: 'single' },
-    { key: 'storage', label: 'Modify Storage Location', icon: <MapPin size={16} />, eligible: c, kind: 'consignment', only: 'single' },
-    { key: 'driver', label: 'Assign To Driver', icon: <Send size={16} />, eligible: c, kind: 'consignment', only: 'single' },
-    { key: 'bestRoute', label: 'Add To Best Route', icon: <Sparkles size={16} />, eligible: routable, kind: 'consignment', only: 'single',
+    { key: 'carrier', label: 'Modify Carrier', icon: <PackageGlyph size={16} />, eligible: c, kind: 'consignment', show: profile.allCarrierReady },
+    { key: 'storage', label: 'Modify Storage Location', icon: <MapPin size={16} />, eligible: c, kind: 'consignment', show: profile.allFacility },
+    { key: 'driver', label: 'Assign To Driver', icon: <Send size={16} />, eligible: c, kind: 'consignment', show: profile.allFacility },
+    /* the two routing entries are ALWAYS listed — greyed, with the reason on hover, when nothing qualifies */
+    { key: 'bestRoute', label: 'Add To Best Route', icon: <Sparkles size={16} />, eligible: routable, kind: 'consignment',
       scope: 'Shipments that are at the facility and have a delivery window.' },
     { key: 'plan', label: 'Plan For Routing', icon: <RoutePath size={16} />, eligible: routable, kind: 'consignment',
       scope: 'Shipments that are at the facility and have a delivery window.' },
     { key: 'ready', label: 'Mark Ready for Planning', icon: <CalendarCheck size={16} />, eligible: profile.lastMile, kind: 'consignment',
       blocked: 'Only consignments at the facility (last mile).' },
+    { key: 'close', label: c > 1 ? 'Close Consignments' : 'Close Consignment', icon: <ListChecks size={16} />, eligible: profile.lastMile, kind: 'consignment',
+      show: !profile.anyFacility, blocked: 'Only consignments at the facility (last mile).' },
     { key: 'csv', label: 'Download CSV', icon: <Download size={16} />, eligible: c, kind: 'both',
       scope: 'Exports the consignment rows.' },
     { key: 'cancel', label: 'Cancel Consignment', icon: <Trash size={16} />, eligible: c, kind: 'consignment', danger: true },
@@ -1833,6 +1844,7 @@ function SelectionPanel({ count, metrics, routable, profile, pickupMetrics, prIt
     if (a.kind === 'both') return true
     if (a.only === 'single' && c !== 1) return false
     if (a.only === 'multi' && c < 2) return false
+    if (a.show === false) return false
     if ((a.key === 'bookPickup' || a.key === 'addToExisting') && profile.awaiting === 0) return false
     return a.kind === 'consignment' && c > 0
   })
@@ -1852,8 +1864,10 @@ function SelectionPanel({ count, metrics, routable, profile, pickupMetrics, prIt
       reason: a.eligible === 0 ? reasonOf(a) : a.scope,
       count: (a.eligible > 0 && a.eligible < profile.total) || a.key === 'plan' || a.key === 'bestRoute' ? a.eligible : undefined,
       run: () => onAction(a.key) }))
-  const onRows = rows.filter((r) => !r.off)
-  const offRows = rows.filter((r) => r.off)
+  /* a consignment list greys what does not apply IN PLACE (owner, 2026-10-08); only the pickup-request menu folds it away */
+  const inPlace = !pickupsOnly
+  const onRows = inPlace ? rows : rows.filter((r) => !r.off)
+  const offRows = inPlace ? [] : rows.filter((r) => r.off)
 
   return (
     <div className="pfp-panel" onClick={(e) => e.stopPropagation()}>
@@ -1904,13 +1918,18 @@ function SelectionPanel({ count, metrics, routable, profile, pickupMetrics, prIt
         {onRows.length === 0 && (
           <p className="pfp-panel-breakdown" data-muted="true">No action fits all {count} rows. Select rows in the same status.</p>
         )}
-        {onRows.map((r) => (
+        {onRows.map((r) => (r.off ? (
+          <div key={r.key} className="pfp-panel-action" data-off="true" title={r.reason}>
+            {r.icon}<span>{r.label}</span>
+            {r.count !== undefined && <span className="pfp-panel-count">{r.count}</span>}
+          </div>
+        ) : (
           <button key={r.key} type="button" className="pfp-panel-action" data-danger={r.danger || undefined}
             title={r.reason} onClick={r.run}>
             {r.icon}<span>{r.label}</span>
             {r.count !== undefined && <span className="pfp-panel-count">{r.count}</span>}
           </button>
-        ))}
+        )))}
         {offRows.length > 0 && (
           <>
             <button type="button" className="pfp-panel-more" aria-expanded={showOff} data-first={onRows.length === 0 || undefined}
