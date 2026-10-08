@@ -29,13 +29,15 @@ import './pfpChrome.css'
 import { toast } from '../../nueva/toast'
 /* owner-finalised chrome, shared by every local page (spec §11) — logged in
    scratchpad/split/pixel-diff-log.md */
-import { ClearFilters, ColumnChooser, DateRange, FilterLine, LocalTabs, SearchBox } from '../../local/chrome'
+import { ClearFilters, ColumnChooser, DateRange, FilterLine, SearchBox } from '../../local/chrome'
 import { useColumnPrefs } from '../../local/columnPrefs'
 import { PFP_COLUMNS_CONSIGNMENT_KEY, PFP_COLUMNS_PICKUP_KEY, useViewSetup } from './viewSetup'
-import { Columns3, Rows3, ChevronDown as OpenChevron, ChevronRight as ClosedChevron, Layers, Package as PackageIcon, Truck } from 'lucide-react'
+import { Columns3, Rows3, ChevronDown as OpenChevron, ChevronRight as ClosedChevron, Truck } from 'lucide-react'
 import { useGrowOrders, growOrderActions } from '../../growOrders/store'
 import type { PrAction } from '../../growOrders/prActions'
+import { isPickupEligible } from '../../growOrders/tabs'
 import { PrActionDialogs } from '../LocalPickup/prSelectionActions'
+import { SchedulePickupDialog } from '../LocalConsignments/SchedulePickupDialog'
 import { prSelectionItems, type PrDialog, type PrSelectionItem } from '../LocalPickup/prSelectionItems'
 import { STATUS_FILTER_OPTIONS, matchesStatus, prCsv } from '../LocalPickup/prModel'
 import { CreatePickupButton, CreatePickupDialogs, type CreatePickupKind } from '../LocalPickup/createPickup'
@@ -43,14 +45,14 @@ import { cancelReasonLabel } from '../../growOrders/pickupReasons'
 import { usePickupModuleConfig } from '../../config/pickupModule'
 import {
   CATEGORY_FLAGS, csvOf, downloadCsv, isPendingForPlanning, isPendingPickup, isPickupRow,
-  pickupScheduleTargetOf, toConsignmentRow, toPickupRow,
+  canSchedulePickup, pickupScheduleTargetOf, toConsignmentRow, toPickupRow,
   type CategoryFlag, type LocalConsignmentRow, type UnifiedRow, executionOverlay,
 } from './adapter'
 import { hiddenStagingColumns } from './columnConfig'
 import { type RowType } from './fieldRegistry'
 import { planningActions, usePlanning } from './planningStore'
 import {
-  COMMON_COLUMNS, CONSIGNMENT_TAB_COLUMNS, LINK_COLUMNS, MEASURED_COLUMNS, PICKUP_NO_KEY, PILL_COLUMNS, PR_VIEW_COLUMNS, TABS,
+  COMMON_COLUMNS, CONSIGNMENT_TAB_COLUMNS, LINK_COLUMNS, MEASURED_COLUMNS, PICKUP_NO_KEY, PILL_COLUMNS, PR_VIEW_COLUMNS,
   TYPE_OPTIONS, extraCells, inTab, typeKeyOf, parseTab, viewOf, widthOf,
   type ColumnView, type ExtraCtx, type GroupBy, type TabKey,
 } from './viewColumns'
@@ -121,11 +123,18 @@ const QUICK_FILTERS = [
   { key: 'inbound', label: 'Inbound Pending', hint: 'Orders awaiting arrival at hub' },
   { key: 'scheduling', label: 'Pending For Scheduling', hint: 'Orders pending for confirmation' },
   { key: 'past', label: 'Past Delivery Date', hint: 'Orders past their delivery date' },
+  /* owner, 2026-10-08: consignments with no pickup request yet are NOT in the list unless this card is picked — then they can be
+     selected and planned (Schedule Pickup) right here */
+  { key: 'pickup', label: 'Pending For Pickup', hint: 'Consignments waiting for a pickup request' },
 ] as const
 
 type QuickKey = typeof QUICK_FILTERS[number]['key']
 
+/** a consignment nobody has booked a pickup for yet: ready for pickup (paid, no error) and on no pickup request — the Pickup page's "waiting" rule */
+const awaitingPickup = (r: UnifiedRow): boolean => !isPickupRow(r) && isPickupEligible(r.order) && !r.order.pickupRequestId
+
 const quickTest = (key: QuickKey, r: UnifiedRow): boolean => {
+  if (key === 'pickup') return awaitingPickup(r)
   if (isPickupRow(r)) {
     if (key === 'failed') return !!r.exception
     if (key === 'inbound') return r.request.status !== 'Completed'
@@ -251,8 +260,6 @@ const SORTABLE = new Set(['orderNumber', 'referenceNumber', 'shipByDate', 'palle
  * the old pickups / consignments slugs are aliases) narrows the queue before
  * any other filter runs, and picks the column set — see `viewColumns.ts`.
  */
-const TAB_ICON: Record<TabKey, typeof Layers> = { all: Layers, 'last-mile': PackageIcon, 'first-mile': Truck }
-
 /* ------------------------------------------------------------- the page ---- */
 
 type ModalKind = 'schedule' | 'rto' | 'plan' | 'close' | 'exception' | 'cancel'
@@ -308,8 +315,10 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
   const [exception, setException] = useState('')
   const [carrier, setCarrier] = useState('')
   const [flag, setFlag] = useState<CategoryFlag | ''>('')
-  const [quick, setQuick] = useState<QuickKey | ''>('')
-  const [quickOpen, setQuickOpen] = useState(false)
+  /* `?quick=pickup` opens the page on Pending For Pickup (deep link) */
+  const quickFromUrl = () => new URLSearchParams(window.location.search).get('quick') === 'pickup'
+  const [quick, setQuick] = useState<QuickKey | ''>(() => (quickFromUrl() ? 'pickup' : ''))
+  const [quickOpen, setQuickOpen] = useState(quickFromUrl)
   const [typeSel, setTypeSel] = useState('')
   /* whether the Carriers / Categories strip is shown, remembered per browser —
      an operator who hides it wants it hidden tomorrow too. OWNER-REQUESTED
@@ -334,6 +343,8 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
   const [prDialog, setPrDialog] = useState<PrDialog | null>(null)
   /* owner, 2026-10-05: in MANUAL mode the page books pickups itself — Create pickup ▾ (Pickup request · Blind) */
   const [creating, setCreating] = useState<CreatePickupKind | null>(null)
+  /** the consignments a Schedule Pickup is being booked for (Pending For Pickup → select → Schedule Pickup) */
+  const [scheduling, setScheduling] = useState<string[] | null>(null)
   const canCreatePickup = pickupsOn && pickupCfg.mode !== 'auto' && !fixture
 
   /* The saved column configuration still governs which of staging's 20 columns
@@ -373,10 +384,10 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
   /* ---- the tab: narrows the queue before any filter runs ---- */
   /* owner, 2026-09-24: with the pickup module OFF the page has no tabs at all — only the consignments */
   /* owner, 2026-09-29: All always opens first; with the module off it is the ONLY tab (every consignment) */
-  const tabs = pickupsOn ? TABS : TABS.filter((t) => t.key === 'all')
   /* an unknown value reads as All. With the module off there are no tabs: the
      queue holds only consignments, all of them, on the staging column set. */
-  const tab: TabKey = pickupsOn ? parseTab(params.get('tab')) : 'all'
+  /* owner, 2026-10-08: no tab strip — the LEG is a chip filter (`?leg=first-mile|last-mile`; an old `?tab=` still lands) */
+  const tab: TabKey = pickupsOn ? parseTab(params.get('leg') ?? params.get('tab')) : 'all'
   /* what each tab opens as (owner, 2026-10-08): the saved View setup — kept on the server for every visitor — or, for one visit,
      a `?view=` / `?group=` in the URL. All: its consignments (default) · the pickup requests. First Mile: the pickup requests
      (default) · their consignments. Consignments sit under their pickup request unless Group by is off. */
@@ -388,9 +399,11 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
     if (t === 'first-mile') return useUrl && urlView ? urlView === 'consignments' : vs.firstMile === 'consignments'
     return false
   }
-  const consView = consFor(tab, true)
+  /* the Pending For Pickup card lists consignments whatever the leg or view */
+  const awaitingMode = pickupsOn && !fixture && quick === 'pickup'
+  const consView = awaitingMode || consFor(tab, true)
   const urlGroup = params.get('group')
-  const grouped = consView && (urlGroup ? urlGroup !== 'none' : vs.grouped)
+  const grouped = consView && !awaitingMode && (urlGroup ? urlGroup !== 'none' : vs.grouped)
   const group: GroupBy = consView ? 'none' : 'pr'
   const viewFor = (t: TabKey, g: GroupBy, cons: boolean): ColumnView =>
     cons ? 'firstMileConsignment' : viewOf(t, g)
@@ -400,9 +413,14 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
      the common set (see FILTER_DIMS) */
   const filterMode: FilterMode = filterModeOf(view)
   const tabRows = useMemo(
-    () => (!pickupsOn ? all
-      : tab === 'all' && consView ? all.filter((r) => !isPickupRow(r))           // every consignment, first mile included
-        : all.filter((r) => inTab(tab, group, r))), [all, tab, group, pickupsOn, consView])   // All · Pickup requests = the requests + the last-mile consignments
+    () => {
+      if (!pickupsOn) return all
+      if (awaitingMode) return all.filter(awaitingPickup)
+      const base = tab === 'all' && consView ? all.filter((r) => !isPickupRow(r))   // every consignment, first mile included
+        : all.filter((r) => inTab(tab, group, r))                                   // All · Pickup requests = the requests + the last-mile consignments
+      /* consignments still waiting for a pickup request are not listed — until "Pending For Pickup" is picked */
+      return base.filter((r) => !awaitingPickup(r))
+    }, [all, tab, group, pickupsOn, consView, awaitingMode])
   /** what the pickup-request and All cells read */
   const cellCtx = useMemo<ExtraCtx>(() => ({
     stores: db.stores,
@@ -515,7 +533,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
   const tabCounts = useMemo(() => {
     const needle = q.trim().toLowerCase()
     const base = (r: UnifiedRow) => (!funnel.Merchant || r.merchant === funnel.Merchant) && (!needle || matchesSearch(r, needle))
-    const count = (t: TabKey) => (t === tab && tab !== 'all' && !consView ? filtered.length : all.filter((r) => inTab(t, 'pr', r) && base(r)).length)
+    const count = (t: TabKey) => (t === tab && tab !== 'all' && !consView ? filtered.length : all.filter((r) => inTab(t, 'pr', r) && !awaitingPickup(r) && base(r)).length)
     return { 'first-mile': count('first-mile'), 'last-mile': count('last-mile'), all: count('all') }
   }, [all, filtered, tab, group, q, funnel.Merchant])
 
@@ -627,8 +645,11 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
       reserved: picks.filter((p) => p.rowType === 'Reserved Pickup').length,
       ftl: picks.filter((p) => p.rowType === 'FTL Pickup').length,
       mixed: selectedRows.length > 0 && picks.length > 0,
+      /* the ones a pickup can be booked for NOW: waiting, bookable, and the module is in Manual mode */
+      awaiting: pickupCfg.mode === 'manual' && pickupsOn
+        ? selectedRows.filter((r) => awaitingPickup(r) && canSchedulePickup(r.order, db.pickupRequests)).length : 0,
     }
-  }, [selectedAll, selectedRows])
+  }, [selectedAll, selectedRows, pickupCfg.mode, pickupsOn, db.pickupRequests])
 
   const selMetrics = useMemo(() => ({
     weight: Math.round(selectedRows.reduce((n, r) => n + r.weightKg, 0) * 10) / 10,
@@ -708,7 +729,8 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
     const nextCons = opts?.cons ?? consFor(next, false)
     setParams((p) => {
       const n = new URLSearchParams(p)
-      if (next === 'all') n.delete('tab'); else n.set('tab', next)
+      n.delete('tab')
+      if (next === 'all') n.delete('leg'); else n.set('leg', next)
       n.delete('group'); n.delete('view')
       return n
     }, { replace: true })
@@ -1037,6 +1059,10 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
           toast.info('Not available in the prototype.')
           return
         }
+        if (kind === 'bookPickup') {
+          setScheduling(selectedRows.filter((r) => awaitingPickup(r) && canSchedulePickup(r.order, db.pickupRequests)).map((r) => r.orderId))
+          return
+        }
         if (kind === 'ready') {
           planningActions.markReadyForPlanning(selIds)
           done(`${selIds.length} marked ready for planning.`)
@@ -1051,6 +1077,8 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
       }} />
   )
 
+  const awaitingCount = useMemo(() => all.filter(awaitingPickup).length, [all])
+
   const quickStrip = (
     <div>
       <div className="pfp-strip" data-quick="true">
@@ -1059,13 +1087,24 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
             aria-pressed={quick === f.key}
             onClick={() => { setQuick(quick === f.key ? '' : f.key); setPage(1) }}>
             <h4>{f.label}</h4>
-            <p>{f.hint}</p>
+            <p>{f.key === 'pickup' ? `${awaitingCount} consignment${awaitingCount === 1 ? '' : 's'} waiting for a pickup request` : f.hint}</p>
           </button>
         ))}
       </div>
       <p className="pfp-exception-note">Selecting any exception type will update the order list accordingly.</p>
     </div>
   )
+
+  /* LEG (owner, 2026-10-08: "remove the First Mile / Last Mile tabs and give a leg filter like Carriers / Categories") */
+  const legChips = pickupsOn && !fixture ? (
+    <>
+      <span className="pfp-chipbar-label">Leg:</span>
+      {([['first-mile', 'First Mile'], ['last-mile', 'Last Mile']] as const).map(([k, label]) => (
+        <button key={k} type="button" className="pfp-chip" data-size="sm" aria-pressed={tab === k && !awaitingMode}
+          onClick={() => switchTab(tab === k ? 'all' : k)}>{label}<span className="pfp-chip-count">{tabCounts[k]}</span></button>
+      ))}
+    </>
+  ) : null
 
   const carrierChip = (c: string, size?: 'sm') => (
     <button key={c} type="button" className="pfp-chip" data-size={size} aria-pressed={carrier === c}
@@ -1091,23 +1130,6 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
     <div className="pfp" data-variant={variant} style={cssVars} onClick={() => pop && setPop(null)}>
       {replica ? (
         <>
-          {/* ------------------------------------------ row 0: the tab strip —
-              OWNER-REQUESTED on the replica (staging has none): the Carriers-
-              card chips (`.pfp-chip` / `.pfp-chip-count`), no new colour. Not
-              rendered under ?fixture=staging, so pfpdiff measures staging's own
-              chrome on this route. Logged in pixel-diff-log.md. */}
-          {!fixture && (
-            <div className="pfp-tabs" role="tablist">
-              {tabs.map((t) => (
-                <button key={t.key} type="button" role="tab" className="pfp-chip"
-                  aria-selected={tab === t.key} aria-pressed={tab === t.key}
-                  onClick={() => switchTab(t.key)}>
-                  {t.label}<span className="pfp-chip-count">{tabCounts[t.key]}</span>
-                </button>
-              ))}
-            </div>
-          )}
-
           {/* -------------------------------------------- row 1: filters —
               staging's order, plus Merchant and Type after State */}
           <FilterLine>
@@ -1159,6 +1181,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
               {selected.size ? `${selected.size} selected` : 'Select orders for more action'}
             </span>
             {downloadControl}
+            {canCreatePickup && <CreatePickupButton onPick={setCreating} />}
             {viewControl}
             {columnsControl}
             {settingsControl}
@@ -1206,36 +1229,29 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
             </span>
 
             {downloadControl}
+            {canCreatePickup && <CreatePickupButton onPick={setCreating} />}
             {viewControl}
             {columnsControl}
             {settingsControl}
             {selectionPanel}
           </FilterLine>
 
-          {/* ------------------------------------------ row 0: the tab strip —
-              owner-requested, not on staging: the app's own underline `Tabs`
-              (icons + "Label (n)"), same as /local/pickup and /local/consignments
-              — an explicit owner override of the replica rule, logged in
-              pixel-diff-log.md. Hidden under ?fixture=staging. */}
-          {!fixture && tabs.length > 0 && (
-            <LocalTabs
-              tabs={tabs.map((t) => ({ id: t.key, label: t.label, count: tabCounts[t.key], icon: TAB_ICON[t.key] }))}
-              active={tab} onChange={(id) => switchTab(id as TabKey)}
-              right={canCreatePickup ? <CreatePickupButton onPick={setCreating} /> : undefined} />
-          )}
-
           {/* ----------------------------------------------- row 2: the strip */}
-          {filterMode !== 'consignment' ? null : quickOpen ? quickStrip : stripOpen ? (
-            /* Carriers / Categories as ONE compact chip line (owner request) —
-               same chips, same filters, no card boxes; scrolls within itself */
+          {/* ONE chip line: Leg · Carriers · Categories (the last two only on the consignment grids); the quick-filter cards sit below it */}
+          {(legChips || (filterMode === 'consignment' && stripOpen && !quickOpen)) && (
             <div className="pfp-chipbar">
-              <span className="pfp-chipbar-label">Carriers:</span>
-              {carriers.map((c) => carrierChip(c, 'sm'))}
-              <span className="pfp-chipbar-sep" aria-hidden />
-              <span className="pfp-chipbar-label">Categories:</span>
-              {categories.map((c) => categoryChip(c, 'sm'))}
+              {legChips}
+              {legChips && filterMode === 'consignment' && stripOpen && !quickOpen && <span className="pfp-chipbar-sep" aria-hidden />}
+              {filterMode === 'consignment' && stripOpen && !quickOpen && (<>
+                <span className="pfp-chipbar-label">Carriers:</span>
+                {carriers.map((c) => carrierChip(c, 'sm'))}
+                <span className="pfp-chipbar-sep" aria-hidden />
+                <span className="pfp-chipbar-label">Categories:</span>
+                {categories.map((c) => categoryChip(c, 'sm'))}
+              </>)}
             </div>
-          ) : null}
+          )}
+          {filterMode === 'consignment' && quickOpen && quickStrip}
         </>
       )}
 
@@ -1477,6 +1493,17 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
 
       <PrActionDialogs dialog={prDialog} db={db} onClose={() => setPrDialog(null)} />
       {/* a new request lands on First Mile (and All) — from Last Mile, go where it is */}
+      {scheduling && (
+        <SchedulePickupDialog orderIds={scheduling} onClose={() => setScheduling(null)}
+          onDone={(results, failed) => {
+            clearSelection(); setScheduling(null)
+            if (results.length) {
+              const n = results.reduce((k, r) => k + r.count, 0)
+              toast.success(`${n} consignment${n === 1 ? '' : 's'} booked for pickup — ${results.map((r) => r.number).join(', ')}. They are in the list now.`)
+            }
+            if (failed.length) toast.error(`${failed.join(', ')} can no longer take consignments — nothing added there.`)
+          }} />
+      )}
       <CreatePickupDialogs kind={creating} onClose={() => setCreating(null)}
         onCreated={(prs) => { if (prs.length && tab === 'last-mile') switchTab('first-mile') }} />
 
@@ -1650,14 +1677,14 @@ function SelectionPanel({ count, metrics, routable, profile, pickupMetrics, prIt
   routable: number
   profile: {
     total: number; consignments: number; pickups: number
-    forward: number; reverse: number; reserved: number; ftl: number; mixed: boolean
+    forward: number; reverse: number; reserved: number; ftl: number; mixed: boolean; awaiting: number
   }
   pickupMetrics: { orders: number; weight: number; known: boolean; approx: boolean }
   /** the shared pickup-request menu for the selected pickups (a pickups-only selection) */
   prItems: PrSelectionItem[]
   onClose: () => void
   onAction: (kind: 'schedule' | 'rto' | 'plan' | 'ready' | 'close' | 'csv' | 'exception' | 'cancel'
-    | 'modify' | 'carrier' | 'storage' | 'driver' | 'bestRoute' | 'cancelMixed') => void
+    | 'modify' | 'carrier' | 'storage' | 'driver' | 'bestRoute' | 'cancelMixed' | 'bookPickup') => void
 }) {
   /**
    * Each action declares HOW MANY of the selected rows it can actually act on,
@@ -1682,6 +1709,9 @@ function SelectionPanel({ count, metrics, routable, profile, pickupMetrics, prIt
     /* ---- consignment actions: EXACTLY staging's list, in staging's order
             (owner, 2026-09-25). The five with no local implementation say so
             in a toast. ---- */
+    /* owner, 2026-10-08: consignments waiting for a pickup are planned FROM this page */
+    { key: 'bookPickup', label: 'Schedule Pickup', icon: <Truck size={16} />, eligible: profile.awaiting, kind: 'consignment',
+      scope: 'Consignments waiting for a pickup request, with the pickup module in Manual mode.' },
     { key: 'modify', label: 'Modify Order Details', icon: <NotePencil size={16} />, eligible: c, kind: 'consignment' },
     { key: 'schedule', label: 'Schedule', icon: <Clock size={16} />, eligible: c, kind: 'consignment',
       scope: 'A pickup is scheduled by its collection window instead.' },
