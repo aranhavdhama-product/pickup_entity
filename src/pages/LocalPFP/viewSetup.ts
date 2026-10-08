@@ -14,7 +14,7 @@ import { useState } from 'react'
 
 export const PFP_VIEW_KEY = 'pfp-view-setup-v1'
 export const PFP_COLUMNS_PICKUP_KEY = 'pfp-columns-pickup-v1'
-export const PFP_COLUMNS_CONSIGNMENT_KEY = 'pfp-columns-consignment-v1'
+export const PFP_COLUMNS_CONSIGNMENT_KEY = 'pfp-columns-consignment-v2'
 
 export interface PfpViewSetup {
   all: 'consignments' | 'pickups'

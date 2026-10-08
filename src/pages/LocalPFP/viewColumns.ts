@@ -111,16 +111,20 @@ export const LEG_COLUMN = LEG
  * class (Tag, 160) — logged in pixel-diff-log.md.
  */
 export const CONSIGNMENT_TAB_KEYS = [
-  'orderNumber', 'referenceNumber', 'shipByDate', 'activeLeg', 'state', 'carrier', 'secondaryState',
+  'orderNumber', 'referenceNumber', 'shipByDate', 'activeLeg', 'pickupNo', 'state', 'carrier', 'secondaryState',
   'dispatchDate', 'weight', 'volume', 'palletSpaces', 'sku', 'vas', 'serviceTime', 'tag',
   'specialInstructions', 'merchant', 'orderType', 'ageing', 'address',
 ] as const
+/** owner, 2026-10-08: with Group by off every consignment row names its pickup request */
+export const PICKUP_NO_KEY = 'pickupNo'
+const PICKUP_NO: StagingColumn = { key: PICKUP_NO_KEY, label: 'Pickup No', width: 130 }
 const VAS: StagingColumn = { key: 'vas', label: 'VAS', width: measured('tag') }
 export const CONSIGNMENT_TAB_COLUMNS: StagingColumn[] = [
   SELECT,
   onPage('_flags'),
   ...CONSIGNMENT_TAB_KEYS.map((k): StagingColumn => {
     if (k === 'vas') return VAS
+    if (k === 'pickupNo') return PICKUP_NO   // the pickup request a consignment belongs to — shown when Group by is off
     if (k === 'activeLeg') return LEG   // owner, 2026-10-08: Active Leg in every consignment grid, after the 3rd column
     const c = T.table.columns.find((x) => x.key === k)
     if (!c) throw new Error(`PFP measured column ${k} is missing`)

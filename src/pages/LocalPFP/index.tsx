@@ -50,7 +50,7 @@ import { hiddenStagingColumns } from './columnConfig'
 import { type RowType } from './fieldRegistry'
 import { planningActions, usePlanning } from './planningStore'
 import {
-  COMMON_COLUMNS, CONSIGNMENT_TAB_COLUMNS, LINK_COLUMNS, MEASURED_COLUMNS, PILL_COLUMNS, PR_VIEW_COLUMNS, TABS,
+  COMMON_COLUMNS, CONSIGNMENT_TAB_COLUMNS, LINK_COLUMNS, MEASURED_COLUMNS, PICKUP_NO_KEY, PILL_COLUMNS, PR_VIEW_COLUMNS, TABS,
   TYPE_OPTIONS, extraCells, inTab, typeKeyOf, parseTab, viewOf, widthOf,
   type ColumnView, type ExtraCtx, type GroupBy, type TabKey,
 } from './viewColumns'
@@ -174,7 +174,9 @@ interface DisplayRow {
 const toDisplay = (r: UnifiedRow, ctx: ExtraCtx): DisplayRow => {
   const d = toStagingDisplay(r)
   const extra = extraCells(r, d.cells, ctx)
-  return { ...d, cells: { ...d.cells, ...extra.cells }, titles: extra.titles }
+  /* a consignment names the pickup request it rides on (the Pickup No column) */
+  const pickupNo = isPickupRow(r) ? '-' : ctx.prById.get(r.order.pickupRequestId ?? '')?.number ?? '-'
+  return { ...d, cells: { ...d.cells, ...extra.cells, pickupNo }, titles: extra.titles }
 }
 
 const toStagingDisplay = (r: UnifiedRow): DisplayRow => {
@@ -747,6 +749,8 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
      hidden on `/local/columns` is hidden here too. */
   const tabColumns = pickupsOn && !fixture
     ? CONSIGNMENT_TAB_COLUMNS.filter((c) => c.key === '_select' || c.key === '_flags' || c.key === '_pad' || !hidden.has(c.key))
+      /* grouped = the header row names the pickup request, so the column would only repeat it */
+      .filter((c) => !(c.key === PICKUP_NO_KEY && grouped))
     : stagingColumns
   /* ⚙ Columns (owner, 2026-10-08: "how can I configure the pickup / consignment view"): each grid keeps its OWN choice —
      the pickup-request grid, and the consignment grid (Last Mile, First Mile consignments and All grouped share one, so they
@@ -948,22 +952,24 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
               <span>{label}</span>
             </button>
           ))}
-          {consView && (<>
-            <p className="lc-pop-group">Consignments</p>
-            <button type="button" className="pfp-pop-option" onClick={() => { setVs({ grouped: !grouped }); setParams((p) => { const n = new URLSearchParams(p); n.delete('group'); return n }, { replace: true }) }}>
-              <input type="checkbox" readOnly checked={grouped} tabIndex={-1} />
-              <span>Group by pickup request</span>
+          <p className="lc-pop-group">Group by</p>
+          {([[true, 'Pickup request'], [false, 'None']] as const).map(([g, label]) => (
+            <button key={label} type="button" className="pfp-pop-option" disabled={!consView} style={consView ? undefined : { opacity: 0.45, cursor: 'default' }}
+              title={consView ? undefined : 'Applies to the Consignments view'}
+              onClick={() => { setVs({ grouped: g }); setParams((p) => { const n = new URLSearchParams(p); n.delete('group'); return n }, { replace: true }) }}>
+              <input type="radio" readOnly checked={grouped === g || (!consView && vs.grouped === g)} tabIndex={-1} />
+              <span>{label}</span>
             </button>
-            {grouped && (() => {
-              const keys = [...new Set(display.map((x) => cellCtx.byId.get(x.orderId)?.pickupRequestId ?? ''))]
-              const allShut = keys.length > 0 && keys.every((k) => collapsedGroups.has(k))
-              return (
-                <button type="button" className="pfp-pop-option" onClick={() => setCollapsedGroups(allShut ? new Set() : new Set(keys))}>
-                  <span>{allShut ? 'Expand all groups' : 'Collapse all groups'}</span>
-                </button>
-              )
-            })()}
-          </>)}
+          ))}
+          {grouped && (() => {
+            const keys = [...new Set(display.map((x) => cellCtx.byId.get(x.orderId)?.pickupRequestId ?? ''))].filter(Boolean)
+            const allShut = keys.length > 0 && keys.every((k) => collapsedGroups.has(k))
+            return (
+              <button type="button" className="pfp-pop-option" onClick={() => setCollapsedGroups(allShut ? new Set() : new Set(keys))}>
+                <span>{allShut ? 'Expand all groups' : 'Collapse all groups'}</span>
+              </button>
+            )
+          })()}
           <p style={{ margin: 0, padding: '8px 16px 10px', fontSize: 12, color: 'var(--pfp-ink-hint)' }}>
             Saved for everyone — the page opens this way for every visitor.
           </p>
@@ -1288,7 +1294,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
               const open = params.get('expand') === '1' || expanded.has(r.id)   // ?expand=1 = every pickup open (deep link)
               /* a consignment under its pickup request (First Mile → Consignments, grouped) */
               const prId = grouped ? cellCtx.byId.get(r.orderId)?.pickupRequestId ?? '' : ''
-              const groupFirst = grouped && (ix === 0 || (cellCtx.byId.get(paged[ix - 1].orderId)?.pickupRequestId ?? '') !== prId)
+              const groupFirst = grouped && prId !== '' && (ix === 0 || (cellCtx.byId.get(paged[ix - 1].orderId)?.pickupRequestId ?? '') !== prId)
               const groupPr = groupFirst && prId ? cellCtx.prById.get(prId) : undefined
               const groupIds = groupFirst ? display.filter((x) => (cellCtx.byId.get(x.orderId)?.pickupRequestId ?? '') === prId).map((x) => x.id) : []
               const groupRow = groupPr ? toPickupRow(groupPr, db) : undefined
@@ -1320,20 +1326,12 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
                                 ({groupIds.length} consignment{groupIds.length === 1 ? '' : 's'}) · {groupRow.merchant} · Collect {groupRow.windowLabel} · {groupRow.state}
                               </span>
                             </>
-                          ) : (
-                            <>
-                              <PackageIcon size={14} style={{ color: 'var(--pfp-brand)' }} aria-label="Delivery" />
-                              <b style={{ fontSize: 13 }}>{tab === 'all' ? 'Deliveries' : 'No pickup request'}</b>
-                              <span style={{ fontSize: 12, color: 'var(--pfp-ink-hint)' }}>
-                                ({groupIds.length} consignment{groupIds.length === 1 ? '' : 's'}){tab === 'all' ? ' · last mile, no pickup needed' : ''}
-                              </span>
-                            </>
-                          )}
+                          ) : null}
                         </span>
                       </td>
                     </tr>
                   )}
-                  {!(grouped && collapsedGroups.has(prId)) && (<>
+                  {!(grouped && prId !== '' && collapsedGroups.has(prId)) && (<>
                   <tr data-selected={selected.has(r.id)}>
                     {columns.map((c) => (
                       <Cell key={c.key} col={c.key} row={r}
