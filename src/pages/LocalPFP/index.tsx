@@ -29,8 +29,9 @@ import './pfpChrome.css'
 import { toast } from '../../nueva/toast'
 /* owner-finalised chrome, shared by every local page (spec §11) — logged in
    scratchpad/split/pixel-diff-log.md */
-import { ClearFilters, DateRange, FilterLine, LocalTabs, SearchBox } from '../../local/chrome'
-import { ChevronDown as OpenChevron, ChevronRight as ClosedChevron, Layers, Package as PackageIcon, Truck } from 'lucide-react'
+import { ClearFilters, ColumnChooser, DateRange, FilterLine, LocalTabs, SearchBox } from '../../local/chrome'
+import { useColumnPrefs } from '../../local/columnPrefs'
+import { Columns3, ChevronDown as OpenChevron, ChevronRight as ClosedChevron, Layers, Package as PackageIcon, Truck } from 'lucide-react'
 import { useGrowOrders, growOrderActions } from '../../growOrders/store'
 import type { PrAction } from '../../growOrders/prActions'
 import { PrActionDialogs } from '../LocalPickup/prSelectionActions'
@@ -48,7 +49,7 @@ import { hiddenStagingColumns } from './columnConfig'
 import { type RowType } from './fieldRegistry'
 import { planningActions, usePlanning } from './planningStore'
 import {
-  COMMON_COLUMNS, CONSIGNMENT_TAB_COLUMNS, LEG_COLUMN, LINK_COLUMNS, MEASURED_COLUMNS, PILL_COLUMNS, PR_VIEW_COLUMNS, TABS,
+  COMMON_COLUMNS, CONSIGNMENT_TAB_COLUMNS, LINK_COLUMNS, MEASURED_COLUMNS, PILL_COLUMNS, PR_VIEW_COLUMNS, TABS,
   TYPE_OPTIONS, extraCells, inTab, typeKeyOf, parseTab, viewOf, widthOf,
   type ColumnView, type ExtraCtx, type GroupBy, type TabKey,
 } from './viewColumns'
@@ -65,7 +66,7 @@ import {
   ArrowUturnLeft, MapPin, Package as PackageGlyph, Send, Sparkles,
   StepDown, StepUp, TableEdit, Trash, WarningCircle, WarningTriangle, WineGlass,
 } from './icons'
-import { COLUMNS, FUNNEL_FILTERS, ROLE, TABLE_SCROLL_WIDTH, cssVars, type StagingColumn } from './stagingTokens'
+import { COLUMNS, FUNNEL_FILTERS, ROLE, TABLE_SCROLL_WIDTH, cssVars } from './stagingTokens'
 import { STATE_OPTIONS, matchesState } from './stateVocabulary'
 import {
   FIXTURE_CARRIERS, FIXTURE_CATEGORIES, FIXTURE_DATE_RANGE, FIXTURE_STATS,
@@ -719,18 +720,25 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
      Active Leg, no Pickup Request column (viewColumns.CONSIGNMENT_TAB_COLUMNS).
      Active Leg stays on All and on the module-off page (no tabs). A column
      hidden on `/local/columns` is hidden here too. */
-  /* All (owner, 2026-10-08: "very clear"): ONE short set of columns for planning — not staging's 19. Order · Ship By · State ·
-     Active Leg · Secondary State · Carrier · Merchant · Weight · Address, each placed once. */
-  const ALL_KEYS = ['_select', '_flags', 'orderNumber', 'shipByDate', 'state', 'activeLeg', 'secondaryState', 'carrier', 'merchant', 'weight', 'address', '_pad']
   const tabColumns = pickupsOn && !fixture
-    ? tab === 'all'
-      ? ALL_KEYS.map((k) => (k === 'activeLeg' ? LEG_COLUMN : CONSIGNMENT_TAB_COLUMNS.find((c) => c.key === k)))
-        .filter((c): c is StagingColumn => !!c && (c.key === '_select' || c.key === '_flags' || c.key === '_pad' || c.key === 'activeLeg' || !hidden.has(c.key)))
-      : CONSIGNMENT_TAB_COLUMNS.filter((c) => c.key === '_select' || c.key === '_flags' || c.key === '_pad' || !hidden.has(c.key))
+    ? CONSIGNMENT_TAB_COLUMNS.filter((c) => c.key === '_select' || c.key === '_flags' || c.key === '_pad' || !hidden.has(c.key))
     : stagingColumns
-  const columns = view === 'pickup' ? PR_VIEW_COLUMNS
+  /* ⚙ Columns (owner, 2026-10-08: "how can I configure the pickup / consignment view"): each grid keeps its OWN choice —
+     the pickup-request grid, and the consignment grid (Last Mile, First Mile consignments and All grouped share one, so they
+     always match). The `/local/columns` registry still hides what it hid; this picks within the rest. */
+  const isPickupGrid = view === 'pickup'
+  const isConsGrid = view === 'consignment' || view === 'firstMileConsignment'
+  const dataOf = (cols: typeof PR_VIEW_COLUMNS) => cols.filter((c) => c.key !== '_select' && c.key !== '_flags' && c.key !== '_pad')
+  const prData = useMemo(() => dataOf(PR_VIEW_COLUMNS), [])
+  const consData = useMemo(() => dataOf(tabColumns), [tabColumns])
+  const [prPick, setPrPick] = useColumnPrefs('pfp-columns-pickup-v1', prData.map((c) => c.key), prData.map((c) => c.key))
+  const [consPick, setConsPick] = useColumnPrefs('pfp-columns-consignment-v1', CONSIGNMENT_TAB_COLUMNS.filter((c) => !['_select', '_flags', '_pad'].includes(c.key)).map((c) => c.key), CONSIGNMENT_TAB_COLUMNS.map((c) => c.key))
+  const pick = (cols: typeof PR_VIEW_COLUMNS, keep: string[]) =>
+    cols.filter((c) => c.key === '_select' || c.key === '_flags' || c.key === '_pad' || keep.includes(c.key))
+  const columns = view === 'pickup' ? pick(PR_VIEW_COLUMNS, prPick)
     : view === 'common' ? COMMON_COLUMNS
-    : tabColumns
+      : isConsGrid && !fixture && pickupsOn ? pick(tabColumns, consPick)
+        : tabColumns
   /* the measured scroll width, less / plus what this set drops / adds against
      the measured capture (the grid keeps its measured horizontal rhythm) */
   const tableWidth = view === 'consignment' || view === 'firstMileConsignment'
@@ -897,6 +905,16 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
       <Download size={16} />
     </button>
   )
+
+  const columnsControl = !fixture && pickupsOn && (isPickupGrid || isConsGrid) ? (
+    <ColumnChooser title={isPickupGrid ? 'Pickup request columns' : 'Consignment columns'}
+      columns={(isPickupGrid ? prData : consData).map((c) => ({ key: c.key, label: c.label || c.key }))}
+      visible={isPickupGrid ? prPick : consPick}
+      onChange={isPickupGrid ? setPrPick : setConsPick}
+      onReset={() => (isPickupGrid ? setPrPick(null) : setConsPick(null))}>
+      <Columns3 size={16} />
+    </ColumnChooser>
+  ) : null
 
   const settingsControl = (
     <div style={{ position: 'relative' }} onClick={(e) => e.stopPropagation()}>
@@ -1069,6 +1087,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
               {selected.size ? `${selected.size} selected` : 'Select orders for more action'}
             </span>
             {downloadControl}
+            {columnsControl}
             {settingsControl}
             {selectionPanel}
           </div>
@@ -1114,6 +1133,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
             </span>
 
             {downloadControl}
+            {columnsControl}
             {settingsControl}
             {selectionPanel}
           </FilterLine>
