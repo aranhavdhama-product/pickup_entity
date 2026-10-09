@@ -21,7 +21,7 @@ import {
 export type PrAction =
   | 'reschedule' | 'cancel'
   | 'assignCarrier' | 'switchToFleet'
-  | 'addToRoute' | 'planCollection' | 'loadPlanning' | 'moveRoute' | 'removeFromRoute' | 'changeAssignee'
+  | 'addToRoute' | 'planCollection' | 'planRoute' | 'loadPlanning' | 'moveRoute' | 'removeFromRoute' | 'changeAssignee'
   | 'reattempt' | 'reattemptRemainder'
   | 'markPickedUp' | 'markFailed'
   | 'addConsignments' | 'removeConsignment' | 'split'
@@ -55,7 +55,7 @@ const MERCHANT_ACTIONS: PrAction[] = ['reschedule', 'cancel', 'addConsignments',
 export const SINGLE_ROW_ACTIONS: PrAction[] = ['addConsignments', 'removeConsignment', 'markPickedUp', 'closeHandover', 'moveRoute', 'reattemptRemainder']
 
 /** a route runs out of ONE hub (load planning fans out per hub itself) */
-const ONE_HUB: PrAction[] = ['addToRoute', 'planCollection']
+const ONE_HUB: PrAction[] = ['addToRoute', 'planCollection', 'planRoute']
 
 /** The pickup-address picker's "Other address…" sentinel (`GrowOrders/utils.OTHER_ADDRESS`). */
 const OTHER_ADDRESS_CODE = '__other__'
@@ -152,7 +152,7 @@ export function prActionState(action: PrAction, p: PrFacts, ctx: PrActionCtx): P
       if (p.carrierMode !== 'CARRIER') return no('Already on the own fleet')
       return beforeDispatch(p, 'switched') ?? ok
 
-    case 'addToRoute': case 'planCollection': case 'loadPlanning': {
+    case 'addToRoute': case 'planCollection': case 'planRoute': case 'loadPlanning': {
       const g = beforeDispatch(p, 'routed')
       if (g) return g
       if (p.carrierMode === 'CARRIER') return no('Assigned to a carrier')

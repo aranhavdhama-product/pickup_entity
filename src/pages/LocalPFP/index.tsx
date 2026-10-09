@@ -768,7 +768,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
   }), [selectedPickups, pickupCfg, db])
   /* the selected pickup requests that can be routed (the one "Plan For Routing" item of the pickup menu) */
   const bestPickupItem = prItems.find((i) => i.id === 'planCollection')   // Add To Best Route — runs from the list, no popup
-  const planPickupItem = prItems.find((i) => i.id === 'addToRoute')       // Manual — pick or create a route
+  const planPickupItem = prItems.find((i) => i.id === 'planRoute')        // Plan For Routing — a new route, no popup
   const pickupRoutable = bestPickupItem && !bestPickupItem.disabled ? selectedPickups.length : 0
 
   const clearAll = () => {
@@ -1130,7 +1130,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
         if (kind === 'addToExisting') { setJoining(bookable.map((r) => r.orderId)); return }
         /* an action runs on the rows it applies to; the selection narrows to them so nothing is acted on out of sight */
         /* a selection with pickup requests routes them too: consignments first (their own route), then the pickups' dialog */
-        if (kind === 'plan' && routable.length === 0 && planPickupItem && !planPickupItem.disabled) { planPickupItem.onClick?.(); return }   // Manual
+        if (kind === 'plan' && routable.length === 0 && planPickupItem && !planPickupItem.disabled) { planPickupItem.onClick?.(); return }
         const lastMileRows = selectedRows.filter((r) => r.activeLeg === 'Last Mile')
         const narrowTo = (rows: LocalConsignmentRow[]) => { if (rows.length !== selectedAll.length) setSelected(new Set(rows.map((r) => r.id))) }
         if (kind === 'ready') {

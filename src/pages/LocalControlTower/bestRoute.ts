@@ -7,6 +7,7 @@
 import { toast } from '../../nueva/toast'
 import { isOpenPr } from '../../growOrders/tabs'
 import type { GrowPickupRequest } from '../../growOrders/types'
+import { growOrdersSnapshot } from '../../growOrders/store'
 import { pickupTripBlock, planningActions, planningSnapshot } from '../LocalPFP/planningStore'
 
 const dayGap = (a: string, b: string) =>
@@ -36,5 +37,22 @@ export function addPickupsToBestRoute(prs: GrowPickupRequest[]): boolean {
   }
   if (!added.length) { toast.error(notes[0] ?? 'Nothing could be added.'); return false }
   toast.success(`${added.join(', ')} — see Control Tower → Trips.${notes.length ? ` Not added: ${notes.join(' ')}` : ''}`)
+  return true
+}
+
+/**
+ * "Plan For Routing" for pickup requests, straight from a list — no popup: the routing engine plans ONE NEW route for the selection
+ * (Un-assigned, on the first pickup window's date); assign a driver in Control Tower → Trips. The pickup-menu twin of Pending For
+ * Planning's Plan For Routing for consignments.
+ */
+export function planPickupsOnNewRoute(prs: GrowPickupRequest[]): boolean {
+  const open = prs.filter((p) => isOpenPr(p.status))
+  if (!open.length) { toast.error('None of the selected requests is open — nothing to plan.'); return false }
+  const stores = growOrdersSnapshot().stores
+  const trip = planningActions.planForRouting(open.map((p) => ({
+    orderId: p.id, orderNumber: p.number, kind: 'pickup' as const,
+    address: stores.find((x) => x.code === p.storeCode)?.name ?? p.storeCode,
+  })))
+  toast.success(`${open.length === 1 ? open[0].number : `${open.length} pickup requests`} planned on ${trip.id} (Un-assigned) — assign a driver in Control Tower → Trips.`)
   return true
 }

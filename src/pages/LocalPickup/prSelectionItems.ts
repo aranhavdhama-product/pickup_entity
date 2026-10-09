@@ -9,7 +9,7 @@
  * `prSelectionActions.tsx` `PrActionDialogs` renders the dialogs the items
  * open, so both pages share those too.
  */
-import { addPickupsToBestRoute } from '../LocalControlTower/bestRoute'
+import { addPickupsToBestRoute, planPickupsOnNewRoute } from '../LocalControlTower/bestRoute'
 import { toast } from '../../nueva/toast'
 import { growOrderActions, pickupRequestById } from '../../growOrders/store'
 import type { GrowOrdersDb, GrowPickupRequest } from '../../growOrders/types'
@@ -36,7 +36,7 @@ export interface PrSelectionItem {
 /** The label of the routing action on a pickup request (owner, 2026-09-25) — now the dialog's tab; the list says "Plan For Routing". */
 export const PLAN_PR_LABEL = 'Plan pickup request for routing'
 
-/** the two routing entries (owner, 2026-10-09): Add To Best Route runs straight from the list; Manual opens the route chooser */
+/** the three routing entries (owner, 2026-10-09), in this order: Add To Best Route · Plan For Routing (both run straight from the list) · Manual (the route chooser) */
 function routingItems(sel: GrowPickupRequest[], ctx: Parameters<typeof prBulkState>[2], openDialog: (d: PrDialog) => void, clear: () => void): PrSelectionItem[] {
   const plan = prBulkState('planCollection', sel, ctx), add = prBulkState('addToRoute', sel, ctx)
   const enabled = plan.enabled || add.enabled
@@ -44,6 +44,8 @@ function routingItems(sel: GrowPickupRequest[], ctx: Parameters<typeof prBulkSta
   return [
     { id: 'planCollection', label: 'Add To Best Route', disabled: !enabled, reason,
       onClick: enabled ? () => { if (addPickupsToBestRoute(sel)) clear() } : undefined },
+    { id: 'planRoute', label: 'Plan For Routing', disabled: !enabled, reason,
+      onClick: enabled ? () => { if (planPickupsOnNewRoute(sel)) clear() } : undefined },
     { id: 'addToRoute', label: 'Manual', disabled: !enabled, reason,
       onClick: enabled ? () => { openDialog({ kind: 'routeManual', prs: sel }); clear() } : undefined },
   ]
