@@ -49,10 +49,12 @@ export function planPickupsOnNewRoute(prs: GrowPickupRequest[]): boolean {
   const open = prs.filter((p) => isOpenPr(p.status))
   if (!open.length) { toast.error('None of the selected requests is open — nothing to plan.'); return false }
   const stores = growOrdersSnapshot().stores
-  const trip = planningActions.planForRouting(open.map((p) => ({
+  const byHub = new Map<string, GrowPickupRequest[]>()
+  for (const p of open) { const h = p.destinationCode ?? p.storeCode; byHub.set(h, [...(byHub.get(h) ?? []), p]) }
+  const trips = [...byHub.values()].map((group) => planningActions.planForRouting(group.map((p) => ({
     orderId: p.id, orderNumber: p.number, kind: 'pickup' as const,
     address: stores.find((x) => x.code === p.storeCode)?.name ?? p.storeCode,
-  })))
-  toast.success(`${open.length === 1 ? open[0].number : `${open.length} pickup requests`} planned on ${trip.id} (Un-assigned) — assign a driver in Control Tower → Trips.`)
+  }))))
+  toast.success(`${open.length === 1 ? open[0].number : `${open.length} pickup requests`} planned on ${trips.map((t) => t.id).join(', ')} (Un-assigned) — assign a driver in Control Tower → Trips.`)
   return true
 }

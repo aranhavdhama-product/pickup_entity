@@ -38,16 +38,13 @@ export const PLAN_PR_LABEL = 'Plan pickup request for routing'
 
 /** the three routing entries (owner, 2026-10-09), in this order: Add To Best Route · Plan For Routing (both run straight from the list) · Manual (the route chooser) */
 function routingItems(sel: GrowPickupRequest[], ctx: Parameters<typeof prBulkState>[2], openDialog: (d: PrDialog) => void, clear: () => void): PrSelectionItem[] {
-  const plan = prBulkState('planCollection', sel, ctx), add = prBulkState('addToRoute', sel, ctx)
-  const enabled = plan.enabled || add.enabled
-  const reason = enabled ? undefined : plan.reason ?? add.reason
+  const best = prBulkState('planCollection', sel, ctx), plan = prBulkState('planRoute', sel, ctx), add = prBulkState('addToRoute', sel, ctx)
+  const row = (id: PrSelectionItem['id'], label: string, st: typeof best, run: () => void): PrSelectionItem =>
+    ({ id, label, disabled: !st.enabled, reason: st.enabled ? undefined : st.reason, onClick: st.enabled ? run : undefined })
   return [
-    { id: 'planCollection', label: 'Add To Best Route', disabled: !enabled, reason,
-      onClick: enabled ? () => { if (addPickupsToBestRoute(sel)) clear() } : undefined },
-    { id: 'planRoute', label: 'Plan For Routing', disabled: !enabled, reason,
-      onClick: enabled ? () => { if (planPickupsOnNewRoute(sel)) clear() } : undefined },
-    { id: 'addToRoute', label: 'Manual', disabled: !enabled, reason,
-      onClick: enabled ? () => { openDialog({ kind: 'routeManual', prs: sel }); clear() } : undefined },
+    row('planCollection', 'Add To Best Route', best, () => { if (addPickupsToBestRoute(sel)) clear() }),
+    row('planRoute', 'Plan For Routing', plan, () => { if (planPickupsOnNewRoute(sel)) clear() }),
+    row('addToRoute', 'Manual', add, () => { openDialog({ kind: 'routeManual', prs: sel }); clear() }),
   ]
 }
 

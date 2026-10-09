@@ -54,8 +54,8 @@ const MERCHANT_ACTIONS: PrAction[] = ['reschedule', 'cancel', 'addConsignments',
 /** Actions that open a one-request dialog — in a selection they need exactly one row. */
 export const SINGLE_ROW_ACTIONS: PrAction[] = ['addConsignments', 'removeConsignment', 'markPickedUp', 'closeHandover', 'moveRoute', 'reattemptRemainder']
 
-/** a route runs out of ONE hub (load planning fans out per hub itself) */
-const ONE_HUB: PrAction[] = ['addToRoute', 'planCollection', 'planRoute']
+/** a route runs out of ONE hub — only the Manual chooser needs a one-hub selection; Add To Best Route and Plan For Routing split a selection per hub themselves (owner, 2026-10-09) */
+const ONE_HUB: PrAction[] = ['addToRoute']
 
 /** The pickup-address picker's "Other address…" sentinel (`GrowOrders/utils.OTHER_ADDRESS`). */
 const OTHER_ADDRESS_CODE = '__other__'

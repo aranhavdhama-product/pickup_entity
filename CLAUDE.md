@@ -859,3 +859,4 @@ bend one to its own shape.
   tabs (the dialog still has Add to best route · Manual when opened from a request's own page). Mixed PFP selection: Add To Best Route plans the
   consignments and sends the pickups to their best route; Plan For Routing plans the consignments and opens Manual for the pickups.
   (Owner, 2026-10-09, corrected: the options are Add To Best Route · Plan For Routing · Manual. **Plan For Routing** (`planPickupsOnNewRoute`, pickup action `planRoute`) also runs from the list: the routing engine plans ONE NEW Un-assigned route for the selection. The dialog keeps Add to best route · Manual only.)
+  Add To Best Route and Plan For Routing split a mixed-hub selection per hub; only Manual needs one hub (greyed with its reason otherwise).
