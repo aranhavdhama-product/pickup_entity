@@ -44,6 +44,7 @@ import ComingSoon from './pages/ComingSoon'
 
 import LocalPickup from './pages/LocalPickup'
 import LocalPickupSchedules from './pages/LocalPickup/SchedulesPage'
+import LocalMastersHub from './pages/LocalSettings/MastersHub'
 import LocalControlTower from './pages/LocalControlTower'
 import LocalTripDetail from './pages/LocalControlTower/TripDetail'
 import LocalInbound from './pages/LocalInbound'
@@ -157,6 +158,7 @@ export default function AppRoutes() {
         <Route path="/local/columns" element={<LocalColumnConfiguration />} />
         <Route path="/local/settings" element={<LocalSettings />} />
         <Route path="/local/settings/pickup" element={<LocalPickupSettings />} />
+        <Route path="/local/settings/masters" element={<LocalMastersHub />} />
         <Route path="/local/settings/masters/service_order" element={<LocalServiceOrderMasters page="category" />} />
         <Route path="/local/settings/masters/service_order/:subId" element={<LocalServiceOrderMasters page="sub" />} />
         <Route path="/local/settings/general" element={<LocalGeneralSettings />} />

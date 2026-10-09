@@ -27,6 +27,7 @@ const TITLES: [string, string][] = [
   ['/local/routing', 'Same/Next Day Routing'],
   ['/local/inbound', 'Inbound'],
   ['/local/settings/masters/service_order', 'Service & Order masters'],
+  ['/local/settings/masters', 'Masters'],
   ['/local/settings/pickup', 'Pickup module'],
   ['/local/settings/merchant-master', 'Merchant master'],
   ['/local/settings/general', 'General Settings'],

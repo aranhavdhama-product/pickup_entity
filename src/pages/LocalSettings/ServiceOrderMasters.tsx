@@ -118,7 +118,7 @@ function upsert(sub: SubMaster, values: MasterRow, rowId?: string) {
 export default function ServiceOrderMasters({ page }: { page: 'category' | 'sub' }) {
   const env = useMemo<MastersEnv>(() => ({
     base: SERVICE_ORDER_BASE,
-    backTo: '/local/settings',
+    backTo: '/local/settings/masters',
     catId: CAT_ID,
     actor: LOCAL_ACTOR,
     persist: {

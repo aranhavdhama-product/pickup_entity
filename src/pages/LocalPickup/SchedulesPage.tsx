@@ -199,7 +199,7 @@ export default function SchedulesPage() {
       {/* the MERCHANT MASTER (owner, 2026-10-08: "do not redirect to the pickup page — call it merchant master"): a settings page of its
           own, not a tab of the Pickup page */}
       <PageHeader title="Merchant master" subtitle="Merchant locations collected on set days — one pickup request per run, with or without orders"
-        onBack={() => nav('/local/settings/pickup')}
+        onBack={() => nav('/local/settings/masters')}
         right={<>
           <SearchBox value={q} onChange={setQ} placeholder="Search schedules" />
           <IconBtn title="Generate now" onClick={generate}><RefreshCw size={16} /></IconBtn>

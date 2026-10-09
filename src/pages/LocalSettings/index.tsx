@@ -11,7 +11,7 @@
  * Masters pages on local sample rows. Nothing here touches the auth module or the staging proxy.
  */
 import { useNavigate } from 'react-router-dom'
-import { Box, Columns3, Package, SlidersHorizontal, Store, Truck, Barcode } from 'lucide-react'
+import { Box, Columns3, Package, SlidersHorizontal, Truck } from 'lucide-react'
 import { ListCard, PageHeader } from '../../nueva/components'
 
 export default function LocalSettings() {
@@ -26,21 +26,15 @@ export default function LocalSettings() {
         <ListCard icon={<Truck size={18} />} title="Pickup module"
           desc="Turn pickups on or off, choose who books them and set the booking rules."
           onClick={() => navigate('/local/settings/pickup')} />
-        <ListCard icon={<Store size={18} />} title="Merchant master"
-          desc="Merchant locations collected on set days — the pickup schedules (runs, days, hub)."
-          onClick={() => navigate('/local/settings/merchant-master')} />
         <ListCard icon={<SlidersHorizontal size={18} />} title="General Settings"
           desc="Account-wide defaults: order view, splitting, scanning, task type and inbound stage."
           onClick={() => navigate('/local/settings/general')} />
         <ListCard icon={<Package size={18} />} title="Consignment Order"
           desc="User types, the default date filter, and the listing's columns and filters with their sequence."
           onClick={() => navigate('/local/settings/consignment-order')} />
-        <ListCard icon={<Box size={18} />} title="Service & Order masters"
-          desc="Service, package, consignment and slot types, VAS, sort codes, business parameters, SKUs and pallet space."
-          onClick={() => navigate('/local/settings/masters/service_order')} />
-        <ListCard icon={<Barcode size={18} />} title="SKU master"
-          desc="SKUs with category, dimensions, weight, HSN Code and Country of Origin — copied onto consignment SKU lines."
-          onClick={() => navigate('/local/settings/masters/service_order/sku')} />
+        <ListCard icon={<Box size={18} />} title="Masters"
+          desc="Merchant master, Service & Order masters, SKU, Holiday and Reason masters — all in one place."
+          onClick={() => navigate('/local/settings/masters')} />
       </div>
     </div>
   )
