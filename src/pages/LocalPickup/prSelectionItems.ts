@@ -9,6 +9,7 @@
  * `prSelectionActions.tsx` `PrActionDialogs` renders the dialogs the items
  * open, so both pages share those too.
  */
+import { addPickupsToBestRoute } from '../LocalControlTower/bestRoute'
 import { toast } from '../../nueva/toast'
 import { growOrderActions, pickupRequestById } from '../../growOrders/store'
 import type { GrowOrdersDb, GrowPickupRequest } from '../../growOrders/types'
@@ -19,7 +20,7 @@ import { prCsv } from './prModel'
 
 /** the dialogs a pickup-request selection opens */
 export type PrDialog =
-  | { kind: 'route' | 'plan' | 'carrier' | 'reschedule' | 'cancel' | 'fail'; prs: GrowPickupRequest[] }
+  | { kind: 'route' | 'routeManual' | 'plan' | 'carrier' | 'reschedule' | 'cancel' | 'fail'; prs: GrowPickupRequest[] }
   | { kind: 'add' | 'split' | 'manual' | 'handover'; pr: GrowPickupRequest }
 
 export interface PrSelectionItem {
@@ -35,14 +36,17 @@ export interface PrSelectionItem {
 /** The label of the routing action on a pickup request (owner, 2026-09-25) — now the dialog's tab; the list says "Plan For Routing". */
 export const PLAN_PR_LABEL = 'Plan pickup request for routing'
 
-/** the single "Plan For Routing" entry: enabled when either way is (plan a new collection / add to a route) */
-function routingItem(sel: GrowPickupRequest[], ctx: Parameters<typeof prBulkState>[2], openDialog: (d: PrDialog) => void, clear: () => void): PrSelectionItem {
+/** the two routing entries (owner, 2026-10-09): Add To Best Route runs straight from the list; Manual opens the route chooser */
+function routingItems(sel: GrowPickupRequest[], ctx: Parameters<typeof prBulkState>[2], openDialog: (d: PrDialog) => void, clear: () => void): PrSelectionItem[] {
   const plan = prBulkState('planCollection', sel, ctx), add = prBulkState('addToRoute', sel, ctx)
   const enabled = plan.enabled || add.enabled
-  return {
-    id: 'planCollection', label: 'Plan For Routing', disabled: !enabled, reason: enabled ? undefined : plan.reason ?? add.reason,
-    onClick: enabled ? () => { openDialog({ kind: plan.enabled ? 'plan' : 'route', prs: sel }); clear() } : undefined,
-  }
+  const reason = enabled ? undefined : plan.reason ?? add.reason
+  return [
+    { id: 'planCollection', label: 'Add To Best Route', disabled: !enabled, reason,
+      onClick: enabled ? () => { if (addPickupsToBestRoute(sel)) clear() } : undefined },
+    { id: 'addToRoute', label: 'Manual', disabled: !enabled, reason,
+      onClick: enabled ? () => { openDialog({ kind: 'routeManual', prs: sel }); clear() } : undefined },
+  ]
 }
 
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`
@@ -70,9 +74,8 @@ export function prSelectionItems(sel: GrowPickupRequest[], { cfg, db, openDialog
     clear()
   }
   return [
-    /* ONE routing item (owner, 2026-10-08): "Plan For Routing" opens the dialog whose tabs are Add to best route · Manual · Plan pickup
-       request for routing — they are no longer separate list entries */
-    routingItem(sel, ctx, openDialog, clear),
+    /* the routing entries (owner, 2026-10-09): Add To Best Route (no popup) · Manual */
+    ...routingItems(sel, ctx, openDialog, clear),
     item('assignCarrier', 'Assign carrier', open('carrier')),
     item('switchToFleet', 'Switch to fleet', each((p) => { growOrderActions.clearCarrier(p.id); return true },
       (n) => `${plural(n, 'request')} taken back from the carrier — add ${n === 1 ? 'it' : 'them'} to a route.`)),

@@ -19,8 +19,10 @@ export function PrActionDialogs({ dialog, db, onClose }: {
   if (!dialog) return null
   const close = onClose
   switch (dialog.kind) {
+    case 'routeManual':
+      return <AddToRouteDialog prIds={dialog.prs.map((p) => p.id)} manualOnly onClose={close} onDone={close} />
     case 'route': case 'plan':
-      return <AddToRouteDialog prIds={dialog.prs.map((p) => p.id)} initialWay={dialog.kind === 'plan' ? 'plan' : undefined} onClose={close} onDone={close} />
+      return <AddToRouteDialog prIds={dialog.prs.map((p) => p.id)} initialWay={dialog.kind === 'plan' ? 'manual' : undefined} onClose={close} onDone={close} />
     case 'add': return <AddConsignmentsDialog pr={dialog.pr} onClose={close} onDone={close} />
     case 'split': return <SplitPickupDialog pr={dialog.pr} merchantCode={merchantOfPr(dialog.pr, db.stores)} onClose={close} onDone={close} />
     case 'manual': return <ManualPickupDialog pr={dialog.pr} onClose={close} onDone={close} />

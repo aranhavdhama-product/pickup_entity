@@ -851,3 +851,10 @@ bend one to its own shape.
   http://localhost:3055/scripts/pickup-smoke.html` and read the `<pre id="out">`. It clears localStorage — never open it on a browser
   profile whose demo data you want to keep.
 - Surfaces under `/console/settings` and the whole `/local` app use the `fe-nueva` class to apply the Lato font.
+
+- **Pickup routing options (owner, 2026-10-09)**: the pickup-request selection menu (Pickup page, Pending For Planning) lists **Add To Best Route**
+  FIRST — it runs straight from the list, no popup (`LocalControlTower/bestRoute.ts` `addPickupsToBestRoute`: per hub the open route with the
+  nearest date, then the fewest stops, passing `pickupTripBlock`; refusals toast their reason) — and **Manual** SECOND (route chooser:
+  existing trip | new trip, `AddToRouteDialog manualOnly`). "Plan pickup request for routing" is gone from the pickup menu and the dialog's
+  tabs (the dialog still has Add to best route · Manual when opened from a request's own page). Mixed PFP selection: Add To Best Route plans the
+  consignments and sends the pickups to their best route; Plan For Routing plans the consignments and opens Manual for the pickups.

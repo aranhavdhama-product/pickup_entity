@@ -1,14 +1,11 @@
 /**
  * "Add to route" — the shared dialog the Pickup pages open on one or more
- * pickup requests (spec §3.3, §6.3 P1/P2, §9 "routes are trips"). THREE ways:
+ * pickup requests (spec §3.3, §6.3 P1/P2, §9 "routes are trips"). TWO ways (the list items "Add To Best Route" — no popup, see bestRoute.ts — and "Manual"):
  *
  *   Add to best route — the system picks the open route at the request's hub
  *                   that fits best (same day first, then nearest date, then the
  *                   fewest stops) and says why before you confirm;
  *   Manual          — you pick an existing route, or create a new one (below);
- *   Plan pickup request for routing — the routing engine plans a NEW route for the selection
- *                   (`planningActions.planForRouting`, as Pending For Planning's
- *                   Plan pickup request for routing does).
  *
  * Manual:
  *   Existing trip — an Un-assigned / Yet to start trip at the request's hub;
@@ -27,16 +24,18 @@ import { isOpenPr } from '../../growOrders/tabs'
 import { pickupTripBlock, planningActions, tripOf, usePlanning, type LocalTrip } from '../LocalPFP/planningStore'
 import { HUB_CODES, TRIP_TONE, fmtDay, hubLabel, knownDrivers, vehicleOf } from './tripUtils'
 
-const WAYS = ['Add to best route', 'Manual', 'Plan pickup request for routing']
+const WAYS = ['Add to best route', 'Manual']
 const MODES = ['Existing trip', 'New trip']
 
 const dayGap = (a: string, b: string) =>
   Math.abs(new Date(`${a}T00:00:00`).getTime() - new Date(`${b}T00:00:00`).getTime()) / 86_400_000
 
-export function AddToRouteDialog({ prIds, initialWay, onClose, onDone }: {
+export function AddToRouteDialog({ prIds, initialWay, manualOnly, onClose, onDone }: {
   prIds: string[]
-  /** open on a given tab — 'plan' = Plan pickup request for routing */
-  initialWay?: 'best' | 'manual' | 'plan'
+  /** open on a given tab */
+  initialWay?: 'best' | 'manual'
+  /** the list's "Manual" item: no tabs, just choosing or creating a route (owner, 2026-10-09) */
+  manualOnly?: boolean
   onClose(): void
   onDone?(tripId: string): void
 }) {
@@ -69,7 +68,7 @@ export function AddToRouteDialog({ prIds, initialWay, onClose, onDone }: {
     const ga = first ? dayGap(a.date, first.date) : 0, gb = first ? dayGap(b.date, first.date) : 0
     return ga !== gb ? ga - gb : a.stops.length - b.stops.length
   })[0], [candidates, first])
-  const [way, setWay] = useState(initialWay === 'plan' ? 2 : initialWay === 'manual' ? 1 : best ? 0 : 2)
+  const [way, setWay] = useState(manualOnly || initialWay === 'manual' || !best ? 1 : 0)
   const [mode, setMode] = useState(candidates.length ? 0 : 1)
   const [tripId, setTripId] = useState(candidates[0]?.id ?? '')
   const [name, setName] = useState('')
@@ -81,20 +80,10 @@ export function AddToRouteDialog({ prIds, initialWay, onClose, onDone }: {
   const hubOptions = [...new Set([...HUB_CODES, ...(prHub ? [prHub] : [])])]
 
   const canConfirm = open.length > 0 && (
-    way === 0 ? !!best : way === 2 ? true : mode === 0 ? !!tripId : !!hub && !!date)
+    way === 0 ? !!best : mode === 0 ? !!tripId : !!hub && !!date)
 
   const confirm = () => {
     if (!canConfirm) return
-    if (way === 2) {
-      const trip = planningActions.planForRouting(open.map((p) => ({
-        orderId: p.id, orderNumber: p.number, kind: 'pickup' as const,
-        address: db.stores.find((x) => x.code === p.storeCode)?.name ?? p.storeCode,
-      })))
-      toast.success(`${open.length === 1 ? open[0].number : `${open.length} pickup requests`} planned on ${trip.id} by the routing engine (Un-assigned — assign a driver in Control Tower → Trips).`)
-      onDone?.(trip.id)
-      onClose()
-      return
-    }
     let target = way === 0 ? best!.id : tripId
     if (way === 1 && mode === 1) {
       const t = planningActions.createTrip({ hubCode: hub, name: name.trim() || undefined, date, driverName: driver.trim() || null, vehicle: vehicle.trim() || null })
@@ -112,9 +101,9 @@ export function AddToRouteDialog({ prIds, initialWay, onClose, onDone }: {
   }
 
   return (
-    <Modal open title="Add to route" onClose={onClose}
+    <Modal open title={manualOnly ? 'Route manually' : 'Add to route'} onClose={onClose}
       footer={<><Button variant="outline" onClick={onClose}>Cancel</Button><Button disabled={!canConfirm} onClick={confirm}>
-        {way === 0 ? 'Add to best route' : way === 2 ? 'Plan pickup request for routing' : mode === 0 ? 'Add to trip' : 'Create trip & add'}
+        {way === 0 ? 'Add to best route' : mode === 0 ? 'Add to trip' : 'Create trip & add'}
       </Button></>}>
       <p className="pb-3 text-[13px] text-ink-2">
         {open.length === 0
@@ -131,13 +120,13 @@ export function AddToRouteDialog({ prIds, initialWay, onClose, onDone }: {
         <p className="pb-3 text-[12px] text-warning-fg">The selection drops at {hubsInSelection.length} hubs — the trip runs from {hubLabel(mode === 0 ? prHub : hub, db.stores)}.</p>
       )}
 
-      <Tabs size="sm" tabs={WAYS} active={way} onChange={setWay} />
+      {!manualOnly && <Tabs size="sm" tabs={WAYS} active={way} onChange={setWay} />}
 
       {way === 0 && (
         <div className="py-4">
           {!best ? (
             <EmptyState title={`No open route at ${hubLabel(prHub, db.stores)}`}
-              hint="Best route picks among Un-assigned or Yet to start routes at the request's hub. Use Plan pickup request for routing to have one planned, or Manual to create it." />
+              hint="Best route picks among Un-assigned or Yet to start routes at the request's hub. Use Manual to create it." />
           ) : (
             <div className="rounded-md border border-ink bg-warm-50 px-4 py-3 text-[13px]">
               <span className="flex items-center gap-2">
@@ -156,14 +145,6 @@ export function AddToRouteDialog({ prIds, initialWay, onClose, onDone }: {
         </div>
       )}
 
-      {way === 2 && (
-        <p className="py-4 text-[13px] text-ink-2">
-          The routing engine plans a <b>new route</b> for {open.length === 1 ? 'this collection' : `these ${open.length} collections`}
-          {' '}from {hubLabel(prHub, db.stores)}, on the pickup window's date — the same step as
-          Pending For Planning → Plan pickup request for routing. The route starts Un-assigned and the requests
-          become Planned; assign a driver in Control Tower → Trips.
-        </p>
-      )}
 
       {way === 1 && (
         <div className="pt-3">

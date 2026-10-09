@@ -23,6 +23,7 @@
  * staging order in `stagingTokens.json` is the DEFAULT sequence, and a column
  * the user has hidden there is hidden here.
  */
+import { addPickupsToBestRoute } from '../LocalControlTower/bestRoute'
 import { Fragment, useMemo, useState, type ReactNode } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import './pfpChrome.css'
@@ -766,8 +767,9 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
     cfg: pickupCfg, db, openDialog: setPrDialog, clear: clearSelection,
   }), [selectedPickups, pickupCfg, db])
   /* the selected pickup requests that can be routed (the one "Plan For Routing" item of the pickup menu) */
-  const planPickupItem = prItems.find((i) => i.id === 'planCollection')
-  const pickupRoutable = planPickupItem && !planPickupItem.disabled ? selectedPickups.length : 0
+  const bestPickupItem = prItems.find((i) => i.id === 'planCollection')   // Add To Best Route — runs from the list, no popup
+  const planPickupItem = prItems.find((i) => i.id === 'addToRoute')       // Manual — pick or create a route
+  const pickupRoutable = bestPickupItem && !bestPickupItem.disabled ? selectedPickups.length : 0
 
   const clearAll = () => {
     setFrom(''); setTo(''); setStateSel([]); setPrStatusSel([]); setFunnel({}); setQ(''); setTypeSel('')
@@ -1109,13 +1111,13 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
         if (kind === 'modify') { if (selectedRows[0]) nav(`/local/consignments/new?draft=${selectedRows[0].orderId}`); return }
         if (kind === 'bestRoute') {
           /* the best open route for these shipments — today a new Un-assigned route (the planner assigns the driver in Control Tower);
-             pickup requests in the selection go to the routing dialog, which opens on its "Add to best route" tab */
+             pickup requests in the selection go to their best open route straight away (no popup) */
           const pickupsToo = selectedPickups.length > 0 && pickupRoutable > 0
           if (routable.length) {
             const trip = planningActions.planForRouting(routable.map((r) => ({ orderId: r.orderId, orderNumber: r.orderNumber, address: r.address })))
             toast.success(`${trip.stops.length} shipment${trip.stops.length === 1 ? '' : 's'} added to the best route ${trip.id} (Un-assigned) — assign a driver in Control Tower.`)
           }
-          if (pickupsToo) { setPrDialog({ kind: 'route', prs: selectedPickups.map((r) => r.request) }); clearSelection() }
+          if (pickupsToo) { addPickupsToBestRoute(selectedPickups.map((r) => r.request)); clearSelection() }
           else done(routable.length ? 'Added to the best route.' : 'Nothing could be added.')
           return
         }
@@ -1128,7 +1130,7 @@ export default function LocalPendingForPlanning({ variant: variantProp }: { vari
         if (kind === 'addToExisting') { setJoining(bookable.map((r) => r.orderId)); return }
         /* an action runs on the rows it applies to; the selection narrows to them so nothing is acted on out of sight */
         /* a selection with pickup requests routes them too: consignments first (their own route), then the pickups' dialog */
-        if (kind === 'plan' && routable.length === 0 && planPickupItem && !planPickupItem.disabled) { planPickupItem.onClick?.(); return }
+        if (kind === 'plan' && routable.length === 0 && planPickupItem && !planPickupItem.disabled) { planPickupItem.onClick?.(); return }   // Manual
         const lastMileRows = selectedRows.filter((r) => r.activeLeg === 'Last Mile')
         const narrowTo = (rows: LocalConsignmentRow[]) => { if (rows.length !== selectedAll.length) setSelected(new Set(rows.map((r) => r.id))) }
         if (kind === 'ready') {
