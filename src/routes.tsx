@@ -51,6 +51,7 @@ import LocalInbound from './pages/LocalInbound'
 import LocalRouting from './pages/LocalRouting'
 import LocalRoutingPlanDetail from './pages/LocalRouting/PlanDetail'
 import LocalVehicleConfig from './pages/LocalRouting/VehicleConfig'
+import LocalDispatchPlanning from './pages/LocalDispatch'
 import LocalVehicleEditor from './pages/LocalRouting/VehicleEditor'
 import LocalInboundScanner from './pages/LocalInbound/Scanner'
 import LocalPendingForPlanning from './pages/LocalPFP'
@@ -147,6 +148,7 @@ export default function AppRoutes() {
         <Route path="/local/pickup/view/:prId" element={<LocalPickup />} />
         {/* the request = a slide-over over the list (owner, 2026-09-25) */}
         <Route path="/local/pickup/:id" element={<LocalPickup />} />
+        <Route path="/local/dispatch-planning" element={<LocalDispatchPlanning />} />
         <Route path="/local/control-tower" element={<LocalControlTower />} />
         <Route path="/local/control-tower/trips/:id" element={<LocalTripDetail />} />
         <Route path="/local/routing" element={<LocalRouting />} />

@@ -16,7 +16,7 @@ import { useLocation } from 'react-router-dom'
 import { pickupPagesVisible, usePickupModuleConfig } from '../config/pickupModule'
 import {
   CalendarClock, Package, Radar, RotateCcw, Route, Settings, Smartphone, Store, Truck,
-  Warehouse,
+  Warehouse, Waypoints,
 } from 'lucide-react'
 import { ShellRowBody, ShellSidebar, type ShellNavItem } from './shell'
 import { shellRowClass } from './shellClasses'
@@ -54,6 +54,8 @@ const LOCAL_NAV: LocalNavItem[] = [
   { id: 'pickup', label: 'Pickup', icon: Truck, path: '/local/pickup', owns: '/local/pickup' },
   /* Same/Next Day Routing (staging Route → Same/Next Day Routing) + its Vehicle Config */
   { id: 'routing', label: 'Routing', icon: Route, path: '/local/routing', owns: '/local/routing' },
+  /* the one-screen dispatch mockup: waves → crew per route → assign (2026-10-19) */
+  { id: 'dispatch-planning', label: 'Dispatch Planning', icon: Waypoints, path: '/local/dispatch-planning', owns: '/local/dispatch-planning' },
   { id: 'control-tower', label: 'Control Tower', icon: Radar, path: '/local/control-tower', owns: '/local/control-tower' },
   { id: 'inbound', label: 'Inbound', icon: Warehouse, path: '/local/inbound', owns: '/local/inbound' },
   /* Settings landing: Column configuration (/local/columns) + Pickup Request */

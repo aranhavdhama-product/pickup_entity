@@ -23,6 +23,7 @@ const TITLES: [string, string][] = [
   ['/local/pending-for-planning-replica', 'Pending For Planning'],
   ['/local/pending-for-planning', 'Pending For Planning'],
   ['/local/pickup', 'Pickup'],
+  ['/local/dispatch-planning', 'Dispatch Planning'],
   ['/local/control-tower', 'Control Tower'],
   ['/local/routing', 'Same/Next Day Routing'],
   ['/local/inbound', 'Inbound'],

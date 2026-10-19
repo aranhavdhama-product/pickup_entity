@@ -860,3 +860,23 @@ bend one to its own shape.
   consignments and sends the pickups to their best route; Plan For Routing plans the consignments and opens Manual for the pickups.
   (Owner, 2026-10-09, corrected: the options are Add To Best Route · Plan For Routing · Manual. **Plan For Routing** (`planPickupsOnNewRoute`, pickup action `planRoute`) also runs from the list: the routing engine plans ONE NEW Un-assigned route for the selection. The dialog keeps Add to best route · Manual only.)
   Add To Best Route and Plan For Routing split a mixed-hub selection per hub; only Manual needs one hub (greyed with its reason otherwise).
+
+## Dispatch Planning mockup — `/local/dispatch-planning` (owner, 2026-10-19)
+
+ONE screen for the dispatcher's job, merging production's Dispatch Planning (waves, Dock / Driver / Helper / Asset per
+route, Resources) with Route & Dispatch's information, in our shell. `src/pages/LocalDispatch/`: `dispatchModel.ts` (a
+deterministic FIXTURE — hub S127 Greater Noida, 3 waves, 9 routes, crew, per-route weight / volume / pallets / shift and
+tags; rules `canAssign` / `missingSlots`; no store, assignments are page state), `index.tsx`, `WaveMap.tsx` (Leaflet on
+`/osm` + `/osrm`, dashed fallback). Layout (owner): filter line = date · hub · **Pending n · Assigned n pills** (toggles;
+none picked = every route) · "x of y ready" · **Assign** · search · CSV → full-width **KPI band** = production's Route &
+Dispatch strip for the wave (lead: wave + window + unplanned; Total Cost · Assigned · Un-Assigned | Vehicles · SPR ·
+Stops/Orders · SPORH · Vehicle Utilised · Distance · Time) → LEFT collapsible **wave rail** (two-line cards) · centre =
+the route table with NO header of its own, **ONE row per route, two lines max, no colour bar** (line 1: name · vehicle
+type · status · alerts · tags · window; line 2: Stops | Orders | SPORH | Travel Distance | Cost | Utilisation ring, each
+with a Tooltip) then Dock · Driver · Helper · Vehicle; it SCROLLS SIDEWAYS (min 1050px) rather than squeeze; the expand
+chevron is on the LEFT (before the checkbox) and opens the route's consignments in production's Route & Dispatch columns
+(Consignment Number … Planned By, `STOP_COLUMNS`; # + Consignment Number pinned, the rest scroll; Route Start / End Time
+lines); utilisation % opens weight · volume · pallets · duration/shift · RIGHT collapsible **Resources**. The map is a
+popup (a route's ⋮ → Show on map). **Type rule (owner): nothing on this page below 14px**; table header 14/600/22 ink,
+table text 14/400/22 ink-2. Every refusal names its reason; a resource on another unassigned route is moved, never
+double-booked.
